@@ -3,6 +3,7 @@ package com.guardaplay
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -12,7 +13,7 @@ class GuardaPlayProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    // Gestione Sessione/Cookie
+    // Cache per i cookie di sessione per evitare blocchi/404
     private var sessionCookies: Map<String, String> = emptyMap()
 
     override val mainPage = mainPageOf(
@@ -60,10 +61,12 @@ class GuardaPlayProvider : MainAPI() {
         val title = document.selectFirst("h1.entry-title")?.text() ?: ""
         val poster = document.selectFirst(".post-thumbnail img")?.attr("src")
         val plot = document.selectFirst(".description p")?.text()
+        val trailer = document.selectFirst("iframe[src*='youtube']")?.attr("src")
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = plot
+            addTrailer(trailer)
         }
     }
 
@@ -74,23 +77,22 @@ class GuardaPlayProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         getCookies()
-        Log.d("GP_DEBUG", "Inizio analisi link: $data")
+        Log.d("GP_DEBUG", "Analisi pagina: $data")
         val response = app.get(data, cookies = sessionCookies)
         val document = response.document
 
         val candidateUrls = mutableSetOf<String>()
 
-        // 1. Estrazione iframe (anche lazy-loaded)
-        document.select("iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("data-litespeed-src") }
-            if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("twitter")) {
-                candidateUrls.add(src)
-            }
+        // 1. Estrazione ID dal sistema trembed (trid)
+        val html = document.html()
+        val trid = Regex("""trid=(\d+)""").find(html)?.groupValues?.get(1)
+        if (trid != null) {
+            candidateUrls.add("$mainUrl/?trembed=0&trid=$trid&trtype=1")
         }
 
-        // 2. Regex per link nascosti negli script
+        // 2. Ricerca diretta di loadm.cam negli script
         val scriptText = document.select("script").joinToString { it.data() }
-        Regex("""https?://[^\s"'<>]+(?:trembed|trid=|loadm\.cam)[^\s"'<>]+""").findAll(scriptText).forEach { 
+        Regex("""https?://loadm\.cam/[^\s"'<>]+""").findAll(scriptText + html).forEach { 
             candidateUrls.add(it.value.replace("\\/", "/")) 
         }
 
@@ -108,50 +110,50 @@ class GuardaPlayProvider : MainAPI() {
     ) {
         var cleanUrl = if (url.startsWith("//")) "https:$url" else url
         
-        // Fix specifico LoadM: Il sito usa l'hash per caricare via JS. Proviamo a bypassarlo
-        if (cleanUrl.contains("loadm.cam/#")) {
-            val id = cleanUrl.substringAfter("#")
-            // Proviamo a richiedere la versione video o embed direttamente
-            cleanUrl = "https://loadm.cam/v/$id" 
+        // Correzione URL LoadM per evitare il 404
+        if (cleanUrl.contains("loadm.cam")) {
+            val id = if (cleanUrl.contains("/v/")) {
+                cleanUrl.substringAfter("/v/").substringBefore("/")
+            } else {
+                cleanUrl.substringAfter("#", "").ifEmpty { cleanUrl.substringAfterLast("/") }
+            }
+            // Spesso l'endpoint /e/ (embed) è più stabile di /v/ (video) per il bypass
+            cleanUrl = "https://loadm.cam/e/$id"
         }
 
         Log.d("GP_DEBUG", "Tentativo sorgente: $cleanUrl")
 
         try {
-            val res = app.get(cleanUrl, headers = mapOf("Referer" to referer), cookies = sessionCookies)
-            val html = res.text
+            // È fondamentale inviare Referer e User-Agent corretti per non ricevere 404
+            val res = app.get(cleanUrl, headers = mapOf(
+                "Referer" to referer,
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            ), cookies = sessionCookies)
 
-            // Regex flessibile per m3u8 (cerca sia con virgolette singole che doppie)
-            val m3u8Match = Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(html)
+            val pageContent = res.text
 
-            if (m3u8Match != null) {
-                val finalVideoUrl = m3u8Match.groupValues[1].replace("\\/", "/")
-                val uri = java.net.URI(cleanUrl)
-                
+            // Regex per trovare il file video (m3u8 o mp4)
+            val videoUrl = Regex("""file\s*[:=]\s*["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(pageContent)?.groupValues?.get(1)
+                ?: Regex("""src\s*[:=]\s*["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(pageContent)?.groupValues?.get(1)
+
+            if (videoUrl != null) {
+                val finalVideo = videoUrl.replace("\\/", "/")
                 callback.invoke(
                     newExtractorLink(
                         name = "GuardaPlay Server",
                         source = this.name,
-                        url = finalVideoUrl
+                        url = finalVideo
                     ) {
                         this.quality = Qualities.Unknown.value
-                        this.type = ExtractorLinkType.M3U8
-                        this.headers = mapOf(
-                            "Referer" to cleanUrl,
-                            "Origin" to "${uri.scheme}://${uri.host}",
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                        )
+                        this.type = if (finalVideo.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.Direct
+                        // Il file video finale spesso richiede il referer del server di streaming
+                        this.headers = mapOf("Referer" to "https://loadm.cam/")
                     }
                 )
-            } else if (html.contains("iframe")) {
-                // Se non c'è il video ma c'è un altro iframe, scava ancora
-                val nestedIframe = res.document.selectFirst("iframe")?.attr("src")
-                if (!nestedIframe.isNullOrEmpty() && nestedIframe != cleanUrl) {
-                    processVideoSource(nestedIframe, cleanUrl, callback)
-                }
             }
         } catch (e: Exception) {
-            Log.e("GP_DEBUG", "Errore sorgente: ${e.message}")
+            Log.e("GP_DEBUG", "Errore sorgente $cleanUrl: ${e.message}")
         }
     }
 }
