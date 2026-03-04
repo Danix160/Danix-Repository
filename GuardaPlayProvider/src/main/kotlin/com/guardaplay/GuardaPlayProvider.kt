@@ -1,9 +1,8 @@
-package com.guardaplay
+package com.lagradost.cloudstream3.movieproviders
 
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -25,8 +24,12 @@ class GuardaPlayProvider : MainAPI() {
 
     private suspend fun getCookies() {
         if (sessionCookies.isEmpty()) {
-            val res = app.get(mainUrl)
-            sessionCookies = res.cookies
+            try {
+                val res = app.get(mainUrl, timeout = 15)
+                sessionCookies = res.cookies
+            } catch (e: Exception) {
+                Log.e("GP_DEBUG", "Errore inizializzazione cookie: ${e.message}")
+            }
         }
     }
 
@@ -48,10 +51,19 @@ class GuardaPlayProvider : MainAPI() {
     private fun Element.toSearchResult(): SearchResponse? {
         val title = selectFirst(".entry-title")?.text() ?: return null
         val href = selectFirst("a.lnk-blk")?.attr("href") ?: return null
+        
+        // Pulizia URL Poster per evitare errori CoilImgLoader
         val posterUrl = selectFirst("img")?.attr("src")?.let { src ->
-            if (src.startsWith("//")) "https:$src" else src
+            when {
+                src.startsWith("//") -> "https:$src"
+                src.startsWith("/") -> "https://image.tmdb.org$src" 
+                else -> src
+            }
         }
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        
+        return newMovieSearchResponse(title, href, TvType.Movie) { 
+            this.posterUrl = posterUrl 
+        }
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -60,12 +72,10 @@ class GuardaPlayProvider : MainAPI() {
         val title = document.selectFirst("h1.entry-title")?.text() ?: ""
         val poster = document.selectFirst(".post-thumbnail img")?.attr("src")
         val plot = document.selectFirst(".description p")?.text()
-        val trailer = document.selectFirst("iframe[src*='youtube']")?.attr("src")
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = plot
-            addTrailer(trailer)
         }
     }
 
@@ -76,26 +86,26 @@ class GuardaPlayProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         getCookies()
-        val response = app.get(data, cookies = sessionCookies)
-        val document = response.document
+        val doc = app.get(data, cookies = sessionCookies).document
+        
+        // Estrazione Server usando la logica Streamflix (#aa-options)
+        val serverIframes = doc.select("#aa-options div[id^=options-]").mapIndexedNotNull { _, optionDiv ->
+            optionDiv.selectFirst("iframe[data-src]")?.attr("data-src")
+                ?: optionDiv.selectFirst("iframe")?.attr("src")
+        }.toMutableSet()
 
-        val candidateUrls = mutableSetOf<String>()
-        val html = document.html()
-
-        // 1. ID trembed
-        val trid = Regex("""trid=(\d+)""").find(html)?.groupValues?.get(1)
-        if (trid != null) {
-            candidateUrls.add("$mainUrl/?trembed=0&trid=$trid&trtype=1")
+        // Fallback: cerca link trembed se #aa-options è vuoto
+        if (serverIframes.isEmpty()) {
+            val trid = Regex("""trid=(\d+)""").find(doc.html())?.groupValues?.get(1)
+            if (trid != null) {
+                serverIframes.add("$mainUrl/?trembed=0&trid=$trid&trtype=1")
+            }
         }
 
-        // 2. Loadm.cam
-        val scriptText = document.select("script").joinToString { it.data() }
-        Regex("""https?://loadm\.cam/[^\s"'<>]+""").findAll(scriptText + html).forEach { 
-            candidateUrls.add(it.value.replace("\\/", "/")) 
-        }
+        if (serverIframes.isEmpty()) return false
 
-        candidateUrls.forEach { url ->
-            processVideoSource(url, data, callback)
+        serverIframes.forEach { serverUrl ->
+            processVideoSource(serverUrl, data, callback)
         }
 
         return true
@@ -106,44 +116,48 @@ class GuardaPlayProvider : MainAPI() {
         referer: String,
         callback: (ExtractorLink) -> Unit
     ) {
-        var cleanUrl = if (url.startsWith("//")) "https:$url" else url
+        val cleanUrl = if (url.startsWith("//")) "https:$url" else url
         
-        if (cleanUrl.contains("loadm.cam")) {
-            val id = if (cleanUrl.contains("/v/")) {
-                cleanUrl.substringAfter("/v/").substringBefore("/")
-            } else {
-                cleanUrl.substringAfter("#", "").ifEmpty { cleanUrl.substringAfterLast("/") }
-            }
-            cleanUrl = "https://loadm.cam/e/$id"
-        }
-
         try {
-            val res = app.get(cleanUrl, headers = mapOf(
-                "Referer" to referer,
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ), cookies = sessionCookies)
+            // Primo passaggio: Caricamento dell'iframe selezionato
+            val embedRes = app.get(cleanUrl, headers = mapOf("Referer" to referer), cookies = sessionCookies)
+            val embedDoc = embedRes.document
+            
+            // Secondo passaggio: Cerca l'iframe del player vero e proprio (spesso LoadM)
+            val finalIframe = embedDoc.selectFirst(".Video iframe[src]")?.attr("src")
+                ?: embedDoc.selectFirst("iframe[src*='loadm']")?.attr("src")
+                ?: cleanUrl
 
-            val pageContent = res.text
-            val videoUrl = Regex("""file\s*[:=]\s*["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(pageContent)?.groupValues?.get(1)
-                ?: Regex("""src\s*[:=]\s*["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(pageContent)?.groupValues?.get(1)
+            val videoPageUrl = if (finalIframe.startsWith("//")) "https:$finalIframe" else finalIframe
 
-            if (videoUrl != null) {
-                val finalVideo = videoUrl.replace("\\/", "/")
+            // Terzo passaggio: Estrazione del link video finale (.m3u8 o .mp4)
+            val videoPageRes = app.get(videoPageUrl, headers = mapOf("Referer" to cleanUrl))
+            val html = videoPageRes.text
+
+            val videoLink = Regex("""["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(html)?.groupValues?.get(1)
+
+            if (videoLink != null) {
+                val finalVideo = videoLink.replace("\\/", "/")
+                val isM3u8 = finalVideo.contains("m3u8")
+                
                 callback.invoke(
                     newExtractorLink(
-                        name = "GuardaPlay Server",
+                        name = "Server LoadM",
                         source = this.name,
                         url = finalVideo
                     ) {
                         this.quality = Qualities.Unknown.value
-                        // CORREZIONE QUI: Usiamo VIDEO invece di Direct
-                        this.type = if (finalVideo.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                        this.headers = mapOf("Referer" to "https://loadm.cam/")
+                        this.type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        // Headers critici per evitare errori 403/404 durante il play
+                        this.headers = mapOf(
+                            "Referer" to "https://loadm.cam/",
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        )
                     }
                 )
             }
         } catch (e: Exception) {
-            Log.e("GP_DEBUG", "Errore: ${e.message}")
+            Log.e("GP_DEBUG", "Errore in processVideoSource: ${e.message}")
         }
     }
 }
