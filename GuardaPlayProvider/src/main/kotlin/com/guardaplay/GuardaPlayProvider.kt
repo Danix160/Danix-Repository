@@ -68,14 +68,14 @@ class GuardaPlayProvider : MainAPI() {
             val postId = document.selectFirst("div#player")?.attr("data-post")
                 ?: document.selectFirst("input#wp-post-id")?.attr("value")
             if (postId != null) {
-                if (fetchDooPlayAjax(postId, "1", "0", data, callback)) foundAny = true
+                if (fetchDooPlayAjax(postId, "1", "0", data, subtitleCallback, callback)) foundAny = true
             }
         } else {
             options.forEach { option ->
                 val post = option.attr("data-post")
                 val nume = option.attr("data-nume")
                 val type = option.attr("data-type")
-                if (fetchDooPlayAjax(post, nume, type, data, callback)) foundAny = true
+                if (fetchDooPlayAjax(post, nume, type, data, subtitleCallback, callback)) foundAny = true
             }
         }
         return foundAny
@@ -86,6 +86,7 @@ class GuardaPlayProvider : MainAPI() {
         nume: String,
         type: String,
         refererUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return try {
@@ -109,10 +110,10 @@ class GuardaPlayProvider : MainAPI() {
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
                 if (cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio")) {
-                    VidStack().getUrl(cleanUrl, refererUrl, callback)
+                    VidStack().getUrl(cleanUrl, refererUrl, subtitleCallback, callback)
                     true
                 } else {
-                    loadExtractor(cleanUrl, refererUrl, callback)
+                    loadExtractor(cleanUrl, refererUrl, subtitleCallback, callback)
                 }
             } else false
         } catch (e: Exception) {
@@ -122,7 +123,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Corretto per errori di compilazione referer)
+// ESTRATTORE: VidStack (Versione Super-Compatibile)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -149,16 +150,16 @@ open class VidStack : ExtractorApi() {
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
+                // Usiamo solo i parametri posizionali certi per evitare errori di compilazione
                 callback.invoke(
                     newExtractorLink(
-                        source = "GuardaPlay",
-                        name = "Server HD",
-                        url = m3u8,
-                        referer = "", // Lasciamo vuoto il parametro problematico
-                        type = ExtractorLinkType.M3U8,
-                        quality = Qualities.P1080.value
+                        "GuardaPlay",
+                        "Server HD",
+                        m3u8,
+                        "", 
+                        Qualities.P1080.value,
+                        true 
                     ).apply { 
-                        // Iniettiamo il referer manualmente nelle headers dell'oggetto creato
                         this.headers = mapOf(
                             "Referer" to url,
                             "Origin" to "https://guardaplay.space"
