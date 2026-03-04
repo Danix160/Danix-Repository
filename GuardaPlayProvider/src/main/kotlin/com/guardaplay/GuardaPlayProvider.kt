@@ -3,6 +3,7 @@ package com.guardaplay
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -72,7 +73,7 @@ class GuardaPlayProvider : MainAPI() {
 
         val candidateUrls = mutableSetOf<String>()
 
-        // 1. Estrazione Iframe (inclusi lazy-load)
+        // 1. Estrazione Iframe (inclusi vari attributi lazy-load)
         document.select("iframe").forEach { iframe ->
             listOf("src", "data-src", "data-litespeed-src", "data-lazy-src").forEach { attr ->
                 val src = iframe.attr(attr)
@@ -80,7 +81,7 @@ class GuardaPlayProvider : MainAPI() {
             }
         }
 
-        // 2. Regex per link nascosti negli script o attributi data
+        // 2. Regex per link "trembed" o "loadm" che sono spesso dentro script
         val regex = Regex("""https?://[^\s"'<>]+(?:trembed|trid=|embed|loadm\.cam)[^\s"'<>]+""")
         regex.findAll(html).forEach { match ->
             val clean = match.value.replace("&#038;", "&")
@@ -89,7 +90,7 @@ class GuardaPlayProvider : MainAPI() {
             candidateUrls.add(clean)
         }
 
-        // 3. Processamento candidati
+        // 3. Processamento ricorsivo dei link trovati
         candidateUrls.forEach { url ->
             if (!url.contains("facebook.com") && !url.contains("twitter.com")) {
                 processVideoSource(url, data, subtitleCallback, callback)
@@ -110,45 +111,47 @@ class GuardaPlayProvider : MainAPI() {
         
         Log.d("GP_DEBUG", "Analisi sorgente: $cleanUrl")
 
-        // Gestione interna GuardaPlay (trembed/trid)
-        if (cleanUrl.contains("guardaplay.space") && (cleanUrl.contains("trid=") || cleanUrl.contains("trembed"))) {
-            try {
-                val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
-                val docHtml = res.text
-                
-                val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
-                if (m3u8Match != null) {
-                    val finalUrl = m3u8Match.groupValues[1].replace("\\/", "/")
-                    generateFinalLink(finalUrl, cleanUrl, baseReferer, callback)
-                } else {
-                    val nestedIframe = res.document.selectFirst("iframe")?.attr("src") 
-                        ?: res.document.selectFirst("iframe")?.attr("data-src")
+        try {
+            when {
+                // Caso A: Link interno di GuardaPlay che agisce da contenitore
+                cleanUrl.contains("guardaplay.space") && (cleanUrl.contains("trid=") || cleanUrl.contains("trembed")) -> {
+                    val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
+                    val docHtml = res.text
                     
-                    if (nestedIframe != null) {
-                        processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
+                    // Cerchiamo direttamente l'm3u8 nel contenitore
+                    val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
+                    if (m3u8Match != null) {
+                        generateFinalLink(m3u8Match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
+                    } else {
+                        // Se non c'è m3u8, cerca un iframe annidato (spesso punta a loadm.cam)
+                        val nestedIframe = res.document.selectFirst("iframe")?.attr("src") 
+                            ?: res.document.selectFirst("iframe")?.attr("data-src")
+                        
+                        if (!nestedIframe.isNullOrEmpty()) {
+                            processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("GP_DEBUG", "Errore step interno: ${e.message}")
-            }
-        } 
-        // Gestione LoadM
-        else if (cleanUrl.contains("loadm.cam")) {
-            try {
-                val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
-                val videoRegex = Regex("""(?:file|source|src)\s*[:=]\s*["'](http[^"']+\.m3u8[^"']*)["']""")
-                val match = videoRegex.find(res.text)
-                
-                if (match != null) {
-                    generateFinalLink(match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
+
+                // Caso B: Server LoadM (quello del tuo log)
+                cleanUrl.contains("loadm.cam") -> {
+                    val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
+                    // Regex estesa per intercettare il player video
+                    val videoRegex = Regex("""(?:file|source|src|url)\s*[:=]\s*["'](http[^"']+\.m3u8[^"']*)["']""")
+                    val match = videoRegex.find(res.text)
+                    
+                    if (match != null) {
+                        generateFinalLink(match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e("GP_DEBUG", "Errore LoadM: ${e.message}")
+
+                // Caso C: Estrattori standard (Streamtape, Mixdrop, ecc.)
+                else -> {
+                    loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
+                }
             }
-        }
-        // Altri estrattori
-        else {
-            loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
+        } catch (e: Exception) {
+            Log.e("GP_DEBUG", "Errore estrazione sorgente $cleanUrl: ${e.message}")
         }
     }
 
