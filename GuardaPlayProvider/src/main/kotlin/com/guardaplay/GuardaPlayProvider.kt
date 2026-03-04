@@ -67,13 +67,11 @@ class GuardaPlayProvider : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
         var foundAny = false
-
         val options = document.select("li.dooplay_player_option")
         
         if (options.isEmpty()) {
             val postId = document.selectFirst("div#player")?.attr("data-post")
                 ?: document.selectFirst("input#wp-post-id")?.attr("value")
-            
             if (postId != null) {
                 if (fetchDooPlayAjax(postId, "1", "0", data, subtitleCallback, callback)) foundAny = true
             }
@@ -85,7 +83,6 @@ class GuardaPlayProvider : MainAPI() {
                 if (fetchDooPlayAjax(post, nume, type, data, subtitleCallback, callback)) foundAny = true
             }
         }
-
         return foundAny
     }
 
@@ -115,8 +112,7 @@ class GuardaPlayProvider : MainAPI() {
 
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
-                
-                if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio")) {
+                if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio") || cleanUrl.contains("loadm.cam")) {
                     VidStack().getUrl(cleanUrl, referer, subtitleCallback, callback)
                     true
                 } else {
@@ -130,7 +126,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack
+// ESTRATTORE: VidStack (Ripristinato newExtractorLink corretto)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -170,23 +166,13 @@ open class VidStack : ExtractorApi() {
                         type = ExtractorLinkType.M3U8
                     ) {
                         this.quality = Qualities.P1080.value
+                        // Header necessari per evitare l'errore 403 su loadm.cam
                         this.headers = mapOf(
                             "Origin" to "https://guardaplay.space",
                             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                         )
                     }
                 )
-            }
-
-            // CORREZIONE QUI: Parametro 'url' invece di 'referer'
-            Regex("\"subtitle\":\\{(.*?)\\}").find(decrypted)?.groupValues?.get(1)?.let { subSection ->
-                Regex("\"([^\"]+)\":\\s*\"([^\"]+)\"").findAll(subSection).forEach { match ->
-                    val lang = match.groupValues[1]
-                    val path = match.groupValues[2].split("#")[0].replace("\\/", "/")
-                    if (path.isNotEmpty()) {
-                        subtitleCallback(newSubtitleFile(lang, "$baseurl$path"))
-                    }
-                }
             }
         } catch (e: Exception) { }
     }
