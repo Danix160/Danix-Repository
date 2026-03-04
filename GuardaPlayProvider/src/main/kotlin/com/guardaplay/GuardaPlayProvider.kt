@@ -1,4 +1,4 @@
-package com.lagradost.cloudstream3.movieproviders
+package com.guardaplay
 
 import android.util.Log
 import com.lagradost.cloudstream3.*
