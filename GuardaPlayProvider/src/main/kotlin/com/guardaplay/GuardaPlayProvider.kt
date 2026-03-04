@@ -65,15 +65,36 @@ class GuardaPlayProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
-        
+        Log.d("GP_DEBUG", "Caricamento link per: $data")
+        val response = app.get(data)
+        val document = response.document
+        val html = response.text
+
+        // 1. Ricerca tramite Iframe (Standard)
         val iframes = document.select("iframe")
-        
+        Log.d("GP_DEBUG", "Trovati ${iframes.size} iframe")
+
         iframes.forEach { iframe ->
-            val iframeUrl = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+            val iframeUrl = iframe.attr("src")
+                .ifEmpty { iframe.attr("data-src") }
+                .ifEmpty { iframe.attr("data-litespeed-src") }
+            
             if (iframeUrl.isNotEmpty() && !iframeUrl.contains("facebook.com")) {
+                Log.d("GP_DEBUG", "Iframe trovato: $iframeUrl")
                 processVideoSource(iframeUrl, data, subtitleCallback, callback)
             }
+        }
+
+        // 2. Ricerca tramite Regex (Per link nascosti negli script)
+        // Questa regex cerca link che portano a player comuni
+        val regex = Regex("""https?://[^\s"'<>]+(?:trembed|loadm|trid=|embed)[^\s"'<>]+""")
+        val matches = regex.findAll(html).toList()
+        Log.d("GP_DEBUG", "Trovati ${matches.size} link tramite Regex")
+
+        matches.forEach { match ->
+            val foundUrl = match.value.replace("\\/", "/")
+            Log.d("GP_DEBUG", "Link Regex trovato: $foundUrl")
+            processVideoSource(foundUrl, data, subtitleCallback, callback)
         }
 
         return true
@@ -89,42 +110,46 @@ class GuardaPlayProvider : MainAPI() {
 
         if (cleanUrl.contains("loadm.cam") || cleanUrl.contains("trembed") || cleanUrl.contains("trid=")) {
             try {
+                Log.d("GP_DEBUG", "Analizzando sorgente: $cleanUrl")
                 val response = app.get(cleanUrl, headers = mapOf("Referer" to referer))
-                val doc = response.document
+                val docHtml = response.text
                 
-                val directSource = doc.selectFirst("video source")?.attr("src")
-                val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(doc.html())
+                // Cerca il master.m3u8 nel testo o nel tag source
+                val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
+                val directSource = response.document.selectFirst("video source")?.attr("src")
                 
                 val finalUrl = directSource ?: m3u8Match?.groupValues?.get(1)
 
                 if (finalUrl != null) {
-                    generateFinalLink(finalUrl.replace("\\/", "/"), cleanUrl, callback)
+                    val decodedUrl = finalUrl.replace("\\/", "/")
+                    Log.d("GP_DEBUG", "FINAL LINK TROVATO: $decodedUrl")
+                    generateFinalLink(decodedUrl, cleanUrl, callback)
                 } else {
-                    val nestedIframe = doc.selectFirst("iframe")?.attr("src")
-                    if (nestedIframe != null) {
-                        loadExtractor(nestedIframe, cleanUrl, subtitleCallback, callback)
-                    }
+                    Log.d("GP_DEBUG", "Nessun m3u8 trovato in questa sorgente")
                 }
             } catch (e: Exception) {
-                Log.e("GP_DEBUG", "Errore estrazione: ${e.message}")
+                Log.e("GP_DEBUG", "Errore durante processVideoSource: ${e.message}")
             }
         } else {
+            // Se è un hoster conosciuto (Mixdrop, Supervideo ecc), usa gli estrattori di sistema
             loadExtractor(cleanUrl, referer, subtitleCallback, callback)
         }
     }
 
-    // Aggiunto 'suspend' qui per risolvere l'errore di compilazione
     private suspend fun generateFinalLink(videoUrl: String, url: String, callback: (ExtractorLink) -> Unit) {
+        val uri = java.net.URI(url)
+        val baseReferer = "${uri.scheme}://${uri.host}/"
+
         val link = newExtractorLink(
-            name = "GuardaPlay Player",
+            name = "GuardaPlay HD",
             source = this.name,
             url = videoUrl,
         ) {
             this.quality = Qualities.Unknown.value
             this.type = ExtractorLinkType.M3U8
             this.headers = mapOf(
-                "Referer" to "https://loadm.cam/",
-                "Origin" to "https://loadm.cam",
+                "Referer" to baseReferer,
+                "Origin" to "${uri.scheme}://${uri.host}",
                 "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
         }
