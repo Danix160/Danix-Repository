@@ -13,7 +13,6 @@ class GuardaPlayProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    // Cache per i cookie di sessione per evitare blocchi/404
     private var sessionCookies: Map<String, String> = emptyMap()
 
     override val mainPage = mainPageOf(
@@ -77,20 +76,19 @@ class GuardaPlayProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         getCookies()
-        Log.d("GP_DEBUG", "Analisi pagina: $data")
         val response = app.get(data, cookies = sessionCookies)
         val document = response.document
 
         val candidateUrls = mutableSetOf<String>()
-
-        // 1. Estrazione ID dal sistema trembed (trid)
         val html = document.html()
+
+        // 1. ID trembed
         val trid = Regex("""trid=(\d+)""").find(html)?.groupValues?.get(1)
         if (trid != null) {
             candidateUrls.add("$mainUrl/?trembed=0&trid=$trid&trtype=1")
         }
 
-        // 2. Ricerca diretta di loadm.cam negli script
+        // 2. Loadm.cam
         val scriptText = document.select("script").joinToString { it.data() }
         Regex("""https?://loadm\.cam/[^\s"'<>]+""").findAll(scriptText + html).forEach { 
             candidateUrls.add(it.value.replace("\\/", "/")) 
@@ -110,30 +108,22 @@ class GuardaPlayProvider : MainAPI() {
     ) {
         var cleanUrl = if (url.startsWith("//")) "https:$url" else url
         
-        // Correzione URL LoadM per evitare il 404
         if (cleanUrl.contains("loadm.cam")) {
             val id = if (cleanUrl.contains("/v/")) {
                 cleanUrl.substringAfter("/v/").substringBefore("/")
             } else {
                 cleanUrl.substringAfter("#", "").ifEmpty { cleanUrl.substringAfterLast("/") }
             }
-            // Spesso l'endpoint /e/ (embed) è più stabile di /v/ (video) per il bypass
             cleanUrl = "https://loadm.cam/e/$id"
         }
 
-        Log.d("GP_DEBUG", "Tentativo sorgente: $cleanUrl")
-
         try {
-            // È fondamentale inviare Referer e User-Agent corretti per non ricevere 404
             val res = app.get(cleanUrl, headers = mapOf(
                 "Referer" to referer,
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             ), cookies = sessionCookies)
 
             val pageContent = res.text
-
-            // Regex per trovare il file video (m3u8 o mp4)
             val videoUrl = Regex("""file\s*[:=]\s*["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(pageContent)?.groupValues?.get(1)
                 ?: Regex("""src\s*[:=]\s*["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(pageContent)?.groupValues?.get(1)
 
@@ -146,14 +136,14 @@ class GuardaPlayProvider : MainAPI() {
                         url = finalVideo
                     ) {
                         this.quality = Qualities.Unknown.value
-                        this.type = if (finalVideo.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.Direct
-                        // Il file video finale spesso richiede il referer del server di streaming
+                        // CORREZIONE QUI: Usiamo VIDEO invece di Direct
+                        this.type = if (finalVideo.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                         this.headers = mapOf("Referer" to "https://loadm.cam/")
                     }
                 )
             }
         } catch (e: Exception) {
-            Log.e("GP_DEBUG", "Errore sorgente $cleanUrl: ${e.message}")
+            Log.e("GP_DEBUG", "Errore: ${e.message}")
         }
     }
 }
