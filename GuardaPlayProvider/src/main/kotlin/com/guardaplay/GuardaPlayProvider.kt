@@ -108,7 +108,8 @@ class GuardaPlayProvider : MainAPI() {
                 val nestedIframe = res.document.selectFirst("iframe")?.attr("src") ?: res.document.selectFirst("iframe")?.attr("data-src")
 
                 if (m3u8Match != null) {
-                    generateFinalLink(m3u8Match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
+                    val finalUrl = m3u8Match.groupValues[1].replace("\\/", "/")
+                    generateFinalLink(finalUrl, cleanUrl, baseReferer, callback)
                 } else if (nestedIframe != null) {
                     processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
                 }
@@ -136,7 +137,8 @@ class GuardaPlayProvider : MainAPI() {
         }
     }
 
-    private fun generateFinalLink(videoUrl: String, currentUrl: String, baseReferer: String, callback: (ExtractorLink) -> Unit) {
+    // Aggiunto "suspend" qui per permettere la chiamata a newExtractorLink
+    private suspend fun generateFinalLink(videoUrl: String, currentUrl: String, baseReferer: String, callback: (ExtractorLink) -> Unit) {
         val uri = java.net.URI(currentUrl)
         
         callback.invoke(
