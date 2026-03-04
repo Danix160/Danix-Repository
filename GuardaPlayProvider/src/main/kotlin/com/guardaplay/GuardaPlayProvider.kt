@@ -123,7 +123,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Versione Super-Compatibile)
+// ESTRATTORE: VidStack (Fix finale per parametri newExtractorLink)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -150,16 +150,16 @@ open class VidStack : ExtractorApi() {
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
-                // Usiamo solo i parametri posizionali certi per evitare errori di compilazione
+                // Chiamata con soli 3 parametri obbligatori + blocco di inizializzazione
                 callback.invoke(
                     newExtractorLink(
-                        "GuardaPlay",
-                        "Server HD",
-                        m3u8,
-                        "", 
-                        Qualities.P1080.value,
-                        true 
-                    ).apply { 
+                        source = "GuardaPlay",
+                        name = "Server HD",
+                        url = m3u8
+                    ) {
+                        // Tutto il resto va impostato qui dentro
+                        this.quality = Qualities.P1080.value
+                        this.type = ExtractorLinkType.M3U8
                         this.headers = mapOf(
                             "Referer" to url,
                             "Origin" to "https://guardaplay.space"
