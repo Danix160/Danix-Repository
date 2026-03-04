@@ -3,7 +3,6 @@ package com.guardaplay
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -13,6 +12,9 @@ class GuardaPlayProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
+    // Gestione Sessione/Cookie
+    private var sessionCookies: Map<String, String> = emptyMap()
+
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Ultimi Film",
         "$mainUrl/category/animazione/" to "Animazione",
@@ -21,16 +23,25 @@ class GuardaPlayProvider : MainAPI() {
         "$mainUrl/category/horror/" to "Horror"
     )
 
+    private suspend fun getCookies() {
+        if (sessionCookies.isEmpty()) {
+            val res = app.get(mainUrl)
+            sessionCookies = res.cookies
+        }
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        getCookies()
         val url = if (page <= 1) request.data else "${request.data}page/$page/"
-        val document = app.get(url).document
+        val document = app.get(url, cookies = sessionCookies).document
         val home = document.select("article.movies").mapNotNull { it.toSearchResult() }
         return newHomePageResponse(request.name, home)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
+        getCookies()
         val url = "$mainUrl/?s=$query"
-        val document = app.get(url).document
+        val document = app.get(url, cookies = sessionCookies).document
         return document.select("article.movies").mapNotNull { it.toSearchResult() }
     }
 
@@ -40,18 +51,14 @@ class GuardaPlayProvider : MainAPI() {
         val posterUrl = selectFirst("img")?.attr("src")?.let { src ->
             if (src.startsWith("//")) "https:$src" else src
         }
-        
-        return newMovieSearchResponse(title, href, TvType.Movie) { 
-            this.posterUrl = posterUrl 
-        }
+        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url).document
+        getCookies()
+        val document = app.get(url, cookies = sessionCookies).document
         val title = document.selectFirst("h1.entry-title")?.text() ?: ""
-        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")?.let { src ->
-            if (src.startsWith("//")) "https:$src" else src
-        }
+        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")
         val plot = document.selectFirst(".description p")?.text()
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -66,35 +73,29 @@ class GuardaPlayProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("GP_DEBUG", "Inizio analisi profonda: $data")
-        val response = app.get(data)
-        val html = response.text
+        getCookies()
+        Log.d("GP_DEBUG", "Inizio analisi link: $data")
+        val response = app.get(data, cookies = sessionCookies)
         val document = response.document
 
         val candidateUrls = mutableSetOf<String>()
 
-        // 1. Estrazione Iframe (inclusi vari attributi lazy-load)
+        // 1. Estrazione iframe (anche lazy-loaded)
         document.select("iframe").forEach { iframe ->
-            listOf("src", "data-src", "data-litespeed-src", "data-lazy-src").forEach { attr ->
-                val src = iframe.attr(attr)
-                if (src.isNotEmpty()) candidateUrls.add(src)
+            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("data-litespeed-src") }
+            if (src.isNotEmpty() && !src.contains("facebook") && !src.contains("twitter")) {
+                candidateUrls.add(src)
             }
         }
 
-        // 2. Regex per link "trembed" o "loadm" che sono spesso dentro script
-        val regex = Regex("""https?://[^\s"'<>]+(?:trembed|trid=|embed|loadm\.cam)[^\s"'<>]+""")
-        regex.findAll(html).forEach { match ->
-            val clean = match.value.replace("&#038;", "&")
-                .replace("\\/", "/")
-                .replace(Regex("""\\$"""), "")
-            candidateUrls.add(clean)
+        // 2. Regex per link nascosti negli script
+        val scriptText = document.select("script").joinToString { it.data() }
+        Regex("""https?://[^\s"'<>]+(?:trembed|trid=|loadm\.cam)[^\s"'<>]+""").findAll(scriptText).forEach { 
+            candidateUrls.add(it.value.replace("\\/", "/")) 
         }
 
-        // 3. Processamento ricorsivo dei link trovati
         candidateUrls.forEach { url ->
-            if (!url.contains("facebook.com") && !url.contains("twitter.com")) {
-                processVideoSource(url, data, subtitleCallback, callback)
-            }
+            processVideoSource(url, data, callback)
         }
 
         return true
@@ -102,81 +103,55 @@ class GuardaPlayProvider : MainAPI() {
 
     private suspend fun processVideoSource(
         url: String,
-        baseReferer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
+        referer: String,
         callback: (ExtractorLink) -> Unit
     ) {
         var cleanUrl = if (url.startsWith("//")) "https:$url" else url
-        cleanUrl = cleanUrl.trim().removeSurrounding("\"", "'")
         
-        Log.d("GP_DEBUG", "Analisi sorgente: $cleanUrl")
+        // Fix specifico LoadM: Il sito usa l'hash per caricare via JS. Proviamo a bypassarlo
+        if (cleanUrl.contains("loadm.cam/#")) {
+            val id = cleanUrl.substringAfter("#")
+            // Proviamo a richiedere la versione video o embed direttamente
+            cleanUrl = "https://loadm.cam/v/$id" 
+        }
+
+        Log.d("GP_DEBUG", "Tentativo sorgente: $cleanUrl")
 
         try {
-            when {
-                // Caso A: Link interno di GuardaPlay che agisce da contenitore
-                cleanUrl.contains("guardaplay.space") && (cleanUrl.contains("trid=") || cleanUrl.contains("trembed")) -> {
-                    val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
-                    val docHtml = res.text
-                    
-                    // Cerchiamo direttamente l'm3u8 nel contenitore
-                    val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
-                    if (m3u8Match != null) {
-                        generateFinalLink(m3u8Match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
-                    } else {
-                        // Se non c'è m3u8, cerca un iframe annidato (spesso punta a loadm.cam)
-                        val nestedIframe = res.document.selectFirst("iframe")?.attr("src") 
-                            ?: res.document.selectFirst("iframe")?.attr("data-src")
-                        
-                        if (!nestedIframe.isNullOrEmpty()) {
-                            processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
-                        }
-                    }
-                }
+            val res = app.get(cleanUrl, headers = mapOf("Referer" to referer), cookies = sessionCookies)
+            val html = res.text
 
-                // Caso B: Server LoadM (quello del tuo log)
-                cleanUrl.contains("loadm.cam") -> {
-                    val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
-                    // Regex estesa per intercettare il player video
-                    val videoRegex = Regex("""(?:file|source|src|url)\s*[:=]\s*["'](http[^"']+\.m3u8[^"']*)["']""")
-                    val match = videoRegex.find(res.text)
-                    
-                    if (match != null) {
-                        generateFinalLink(match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
-                    }
-                }
+            // Regex flessibile per m3u8 (cerca sia con virgolette singole che doppie)
+            val m3u8Match = Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(html)
 
-                // Caso C: Estrattori standard (Streamtape, Mixdrop, ecc.)
-                else -> {
-                    loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
+            if (m3u8Match != null) {
+                val finalVideoUrl = m3u8Match.groupValues[1].replace("\\/", "/")
+                val uri = java.net.URI(cleanUrl)
+                
+                callback.invoke(
+                    newExtractorLink(
+                        name = "GuardaPlay Server",
+                        source = this.name,
+                        url = finalVideoUrl
+                    ) {
+                        this.quality = Qualities.Unknown.value
+                        this.type = ExtractorLinkType.M3U8
+                        this.headers = mapOf(
+                            "Referer" to cleanUrl,
+                            "Origin" to "${uri.scheme}://${uri.host}",
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        )
+                    }
+                )
+            } else if (html.contains("iframe")) {
+                // Se non c'è il video ma c'è un altro iframe, scava ancora
+                val nestedIframe = res.document.selectFirst("iframe")?.attr("src")
+                if (!nestedIframe.isNullOrEmpty() && nestedIframe != cleanUrl) {
+                    processVideoSource(nestedIframe, cleanUrl, callback)
                 }
             }
         } catch (e: Exception) {
-            Log.e("GP_DEBUG", "Errore estrazione sorgente $cleanUrl: ${e.message}")
+            Log.e("GP_DEBUG", "Errore sorgente: ${e.message}")
         }
-    }
-
-    private suspend fun generateFinalLink(
-        videoUrl: String, 
-        currentUrl: String, 
-        baseReferer: String, 
-        callback: (ExtractorLink) -> Unit
-    ) {
-        val uri = java.net.URI(currentUrl)
-        
-        callback.invoke(
-            newExtractorLink(
-                name = "GuardaPlay Server",
-                source = this.name,
-                url = videoUrl
-            ) {
-                this.quality = Qualities.Unknown.value
-                this.type = ExtractorLinkType.M3U8
-                this.headers = mapOf(
-                    "Referer" to baseReferer,
-                    "Origin" to "${uri.scheme}://${uri.host}",
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                )
-            }
-        )
     }
 }
