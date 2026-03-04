@@ -3,7 +3,6 @@ package com.guardaplay
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
-import java.net.URI
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -69,14 +68,14 @@ class GuardaPlayProvider : MainAPI() {
             val postId = document.selectFirst("div#player")?.attr("data-post")
                 ?: document.selectFirst("input#wp-post-id")?.attr("value")
             if (postId != null) {
-                if (fetchDooPlayAjax(postId, "1", "0", data, subtitleCallback, callback)) foundAny = true
+                if (fetchDooPlayAjax(postId, "1", "0", data, callback)) foundAny = true
             }
         } else {
             options.forEach { option ->
                 val post = option.attr("data-post")
                 val nume = option.attr("data-nume")
                 val type = option.attr("data-type")
-                if (fetchDooPlayAjax(post, nume, type, data, subtitleCallback, callback)) foundAny = true
+                if (fetchDooPlayAjax(post, nume, type, data, callback)) foundAny = true
             }
         }
         return foundAny
@@ -87,7 +86,6 @@ class GuardaPlayProvider : MainAPI() {
         nume: String,
         type: String,
         refererUrl: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return try {
@@ -110,11 +108,11 @@ class GuardaPlayProvider : MainAPI() {
 
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
-                if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio") || cleanUrl.contains("loadm.cam")) {
-                    VidStack().getUrl(cleanUrl, refererUrl, subtitleCallback, callback)
+                if (cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio")) {
+                    VidStack().getUrl(cleanUrl, refererUrl, callback)
                     true
                 } else {
-                    loadExtractor(cleanUrl, refererUrl, subtitleCallback, callback)
+                    loadExtractor(cleanUrl, refererUrl, callback)
                 }
             } else false
         } catch (e: Exception) {
@@ -124,7 +122,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Versione Stable-Safe)
+// ESTRATTORE: VidStack (Corretto per errori di compilazione referer)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -138,38 +136,32 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // Usiamo solo headers per evitare il parametro 'referer' incriminato
-        val doc = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
+        val res = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
         
         val hash = url.substringAfterLast("#").substringAfter("/")
-            .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) else it } ?: return
+            .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(res)?.groupValues?.get(1) else it } ?: return
 
         val apiResponse = app.get("https://vidstack.io/api/v1/video?id=$hash", headers = mapOf("Referer" to url)).text
         if (apiResponse.isBlank()) return
 
-        val key = "kiemtienmua911ca"
-        val iv = "1234567890oiuytr" 
-
         try {
-            val decrypted = AesHelper.decryptAES(apiResponse.trim(), key, iv)
+            val decrypted = AesHelper.decryptAES(apiResponse.trim(), "kiemtienmua911ca", "1234567890oiuytr")
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
-                // Usiamo newExtractorLink (Helper ufficiale per la Stable)
                 callback.invoke(
                     newExtractorLink(
                         source = "GuardaPlay",
                         name = "Server HD",
                         url = m3u8,
-                        referer = "", // Lasciato vuoto fuori
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        // Passiamo tutto qui dentro per evitare errori di compilazione
-                        this.quality = Qualities.P1080.value
+                        referer = "", // Lasciamo vuoto il parametro problematico
+                        type = ExtractorLinkType.M3U8,
+                        quality = Qualities.P1080.value
+                    ).apply { 
+                        // Iniettiamo il referer manualmente nelle headers dell'oggetto creato
                         this.headers = mapOf(
                             "Referer" to url,
-                            "Origin" to "https://guardaplay.space",
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                            "Origin" to "https://guardaplay.space"
                         )
                     }
                 )
