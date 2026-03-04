@@ -139,21 +139,21 @@ class GuardaPlayProvider : MainAPI() {
 
     private suspend fun generateFinalLink(videoUrl: String, url: String, callback: (ExtractorLink) -> Unit) {
         val uri = java.net.URI(url)
-        val domain = "${uri.scheme}://${uri.host}"
+        val baseReferer = "${uri.scheme}://${uri.host}/"
 
-        callback.invoke(
-            newExtractorLink(
-                name = "GuardaPlay Server",
-                source = this.name,
-                url = videoUrl,
-                referer = "$domain/",
-                quality = Qualities.P1080.value,
-                type = ExtractorLinkType.M3U8,
-                headers = mapOf(
-                    "Origin" to domain,
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                )
+        val link = newExtractorLink(
+            name = "GuardaPlay HD",
+            source = this.name,
+            url = videoUrl,
+        ) {
+            this.quality = Qualities.Unknown.value
+            this.type = ExtractorLinkType.M3U8
+            this.headers = mapOf(
+                "Referer" to baseReferer,
+                "Origin" to "${uri.scheme}://${uri.host}",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
-        )
+        }
+        callback.invoke(link)
     }
 }
