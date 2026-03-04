@@ -2,7 +2,6 @@ package com.guardaplay
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 import java.net.URI
 import javax.crypto.Cipher
@@ -69,11 +68,9 @@ class GuardaPlayProvider : MainAPI() {
         val document = app.get(data).document
         var foundAny = false
 
-        // 1. Cerchiamo le opzioni del player DooPlay
         val options = document.select("li.dooplay_player_option")
         
         if (options.isEmpty()) {
-            // Fallback: prova a prendere l'ID del post se non ci sono bottoni
             val postId = document.selectFirst("div#player")?.attr("data-post")
                 ?: document.selectFirst("input#wp-post-id")?.attr("value")
             
@@ -119,7 +116,6 @@ class GuardaPlayProvider : MainAPI() {
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
                 
-                // Se è un link trembed (come quello che hai postato), forziamo VidStack
                 if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio")) {
                     VidStack().getUrl(cleanUrl, referer, subtitleCallback, callback)
                     true
@@ -134,7 +130,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Gestisce loadm.cam e decriptazione AES)
+// ESTRATTORE: VidStack
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -148,25 +144,20 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // 1. Carichiamo la pagina dell'embed per estrarre l'ID video (hash)
         val doc = app.get(url, referer = referer).text
         val hash = url.substringAfterLast("#").substringAfter("/")
-            .ifBlank { Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) } ?: return
+            .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) else it } ?: return
 
         val baseurl = try { URI(url).let { "${it.scheme}://${it.host}" } } catch(e: Exception) { "https://vidstack.io" }
 
-        // 2. Chiamata API per ottenere i dati criptati
         val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", referer = url).text
-        if (apiResponse.isBlank() || apiResponse.length < 10) return
+        if (apiResponse.isBlank()) return
 
-        // 3. Decriptazione AES (Chiave e IV usate da VidStack/GuardaPlay)
         val key = "kiemtienmua911ca"
         val iv = "1234567890oiuytr" 
 
         try {
             val decrypted = AesHelper.decryptAES(apiResponse.trim(), key, iv)
-            
-            // 4. Estrazione Master M3U8 (loadm.cam)
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
@@ -179,7 +170,6 @@ open class VidStack : ExtractorApi() {
                         type = ExtractorLinkType.M3U8
                     ) {
                         this.quality = Qualities.P1080.value
-                        // L'Origin è fondamentale per superare il blocco 403 di loadm.cam
                         this.headers = mapOf(
                             "Origin" to "https://guardaplay.space",
                             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -188,7 +178,7 @@ open class VidStack : ExtractorApi() {
                 )
             }
 
-            // 5. Sottotitoli (se presenti)
+            // CORREZIONE QUI: Parametro 'url' invece di 'referer'
             Regex("\"subtitle\":\\{(.*?)\\}").find(decrypted)?.groupValues?.get(1)?.let { subSection ->
                 Regex("\"([^\"]+)\":\\s*\"([^\"]+)\"").findAll(subSection).forEach { match ->
                     val lang = match.groupValues[1]
@@ -198,21 +188,16 @@ open class VidStack : ExtractorApi() {
                     }
                 }
             }
-        } catch (e: Exception) {
-            // Log.d("GuardaPlay", "Errore Decriptazione: ${e.message}")
-        }
+        } catch (e: Exception) { }
     }
 }
 
-// Utility per la decriptazione dei dati AES-128-CBC
 object AesHelper {
     fun decryptAES(inputHex: String, key: String, iv: String): String {
         val cipher = Cipher.getInstance("AES/CBC/PKCS5PADDING")
         val secretKey = SecretKeySpec(key.toByteArray(), "AES")
         val ivSpec = IvParameterSpec(iv.toByteArray())
         cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
-        
-        // Converte l'esadecimale in byte array
         val decodedHex = inputHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         return String(cipher.doFinal(decodedHex))
     }
