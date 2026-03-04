@@ -65,36 +65,31 @@ class GuardaPlayProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("GP_DEBUG", "Caricamento link per: $data")
+        Log.d("GP_DEBUG", "Inizio analisi pagina: $data")
         val response = app.get(data)
-        val document = response.document
         val html = response.text
+        val document = response.document
 
-        // 1. Ricerca tramite Iframe (Standard)
-        val iframes = document.select("iframe")
-        Log.d("GP_DEBUG", "Trovati ${iframes.size} iframe")
+        val candidateUrls = mutableSetOf<String>()
 
-        iframes.forEach { iframe ->
-            val iframeUrl = iframe.attr("src")
-                .ifEmpty { iframe.attr("data-src") }
-                .ifEmpty { iframe.attr("data-litespeed-src") }
-            
-            if (iframeUrl.isNotEmpty() && !iframeUrl.contains("facebook.com")) {
-                Log.d("GP_DEBUG", "Iframe trovato: $iframeUrl")
-                processVideoSource(iframeUrl, data, subtitleCallback, callback)
+        // 1. Estrazione da Iframe (inclusi attributi lazy-load)
+        document.select("iframe").forEach { iframe ->
+            listOf("src", "data-src", "data-litespeed-src").forEach { attr ->
+                val src = iframe.attr(attr)
+                if (src.isNotEmpty()) candidateUrls.add(src)
             }
         }
 
-        // 2. Ricerca tramite Regex (Per link nascosti negli script)
-        // Questa regex cerca link che portano a player comuni
-        val regex = Regex("""https?://[^\s"'<>]+(?:trembed|loadm|trid=|embed)[^\s"'<>]+""")
-        val matches = regex.findAll(html).toList()
-        Log.d("GP_DEBUG", "Trovati ${matches.size} link tramite Regex")
+        // 2. Estrazione tramite Regex per link offuscati o in script
+        // Gestisce anche la decodifica di HTML entities come &#038;
+        val regex = Regex("""https?://[^\s"'<>]+(?:trembed|trid=|embed)[^\s"'<>]+""")
+        regex.findAll(html).forEach { match ->
+            val clean = match.value.replace("&#038;", "&").replace("\\/", "/")
+            candidateUrls.add(clean)
+        }
 
-        matches.forEach { match ->
-            val foundUrl = match.value.replace("\\/", "/")
-            Log.d("GP_DEBUG", "Link Regex trovato: $foundUrl")
-            processVideoSource(foundUrl, data, subtitleCallback, callback)
+        candidateUrls.filter { it.contains("trid=") || it.contains("trembed") || !it.contains("facebook.com") }.forEach { url ->
+            processVideoSource(url, data, subtitleCallback, callback)
         }
 
         return true
@@ -107,52 +102,58 @@ class GuardaPlayProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         val cleanUrl = if (url.startsWith("//")) "https:$url" else url
+        Log.d("GP_DEBUG", "Analizzando sorgente: $cleanUrl")
 
-        if (cleanUrl.contains("loadm.cam") || cleanUrl.contains("trembed") || cleanUrl.contains("trid=")) {
+        if (cleanUrl.contains("guardaplay.space") && (cleanUrl.contains("trid=") || cleanUrl.contains("trembed"))) {
             try {
-                Log.d("GP_DEBUG", "Analizzando sorgente: $cleanUrl")
-                val response = app.get(cleanUrl, headers = mapOf("Referer" to referer))
-                val docHtml = response.text
-                
-                // Cerca il master.m3u8 nel testo o nel tag source
-                val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
-                val directSource = response.document.selectFirst("video source")?.attr("src")
-                
-                val finalUrl = directSource ?: m3u8Match?.groupValues?.get(1)
+                // Carichiamo la pagina intermedia del player
+                val res = app.get(cleanUrl, headers = mapOf("Referer" to referer))
+                val docHtml = res.text
+                val doc = res.document
 
-                if (finalUrl != null) {
-                    val decodedUrl = finalUrl.replace("\\/", "/")
-                    Log.d("GP_DEBUG", "FINAL LINK TROVATO: $decodedUrl")
-                    generateFinalLink(decodedUrl, cleanUrl, callback)
+                // Tentativo A: Cerca m3u8 diretto negli script
+                val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
+                
+                // Tentativo B: Cerca un iframe verso un hoster esterno (es. MixDrop, Fastream)
+                val nestedIframe = doc.selectFirst("iframe")?.attr("src") 
+                    ?: doc.selectFirst("iframe")?.attr("data-src")
+
+                if (m3u8Match != null) {
+                    val finalUrl = m3u8Match.groupValues[1].replace("\\/", "/")
+                    Log.d("GP_DEBUG", "Link M3U8 Finale trovato: $finalUrl")
+                    generateFinalLink(finalUrl, cleanUrl, callback)
+                } else if (nestedIframe != null) {
+                    Log.d("GP_DEBUG", "Trovato iframe nidificato verso: $nestedIframe")
+                    loadExtractor(nestedIframe, cleanUrl, subtitleCallback, callback)
                 } else {
-                    Log.d("GP_DEBUG", "Nessun m3u8 trovato in questa sorgente")
+                    Log.d("GP_DEBUG", "Nessuna risorsa utile in questa sottopagina")
                 }
             } catch (e: Exception) {
-                Log.e("GP_DEBUG", "Errore durante processVideoSource: ${e.message}")
+                Log.e("GP_DEBUG", "Errore nel processing interno: ${e.message}")
             }
         } else {
-            // Se è un hoster conosciuto (Mixdrop, Supervideo ecc), usa gli estrattori di sistema
+            // Se è un link esterno noto, delega agli estrattori di CloudStream
             loadExtractor(cleanUrl, referer, subtitleCallback, callback)
         }
     }
 
     private suspend fun generateFinalLink(videoUrl: String, url: String, callback: (ExtractorLink) -> Unit) {
         val uri = java.net.URI(url)
-        val baseReferer = "${uri.scheme}://${uri.host}/"
+        val domain = "${uri.scheme}://${uri.host}"
 
-        val link = newExtractorLink(
-            name = "GuardaPlay HD",
-            source = this.name,
-            url = videoUrl,
-        ) {
-            this.quality = Qualities.Unknown.value
-            this.type = ExtractorLinkType.M3U8
-            this.headers = mapOf(
-                "Referer" to baseReferer,
-                "Origin" to "${uri.scheme}://${uri.host}",
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        callback.invoke(
+            newExtractorLink(
+                name = "GuardaPlay Server",
+                source = this.name,
+                url = videoUrl,
+                referer = "$domain/",
+                quality = Qualities.P1080.value,
+                type = ExtractorLinkType.M3U8,
+                headers = mapOf(
+                    "Origin" to domain,
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                )
             )
-        }
-        callback.invoke(link)
+        )
     }
 }
