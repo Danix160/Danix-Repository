@@ -8,10 +8,6 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-// =============================================================================
-// PROVIDER: GuardaPlay
-// =============================================================================
-
 class GuardaPlayProvider : MainAPI() {
     override var mainUrl = "https://guardaplay.space"
     override var name = "GuardaPlay"
@@ -90,7 +86,7 @@ class GuardaPlayProvider : MainAPI() {
         post: String,
         nume: String,
         type: String,
-        referer: String,
+        refererUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
@@ -105,7 +101,7 @@ class GuardaPlayProvider : MainAPI() {
                 ),
                 headers = mapOf(
                     "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to referer
+                    "Referer" to refererUrl
                 )
             ).text
 
@@ -115,10 +111,10 @@ class GuardaPlayProvider : MainAPI() {
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
                 if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio") || cleanUrl.contains("loadm.cam")) {
-                    VidStack().getUrl(cleanUrl, referer, subtitleCallback, callback)
+                    VidStack().getUrl(cleanUrl, refererUrl, subtitleCallback, callback)
                     true
                 } else {
-                    loadExtractor(cleanUrl, referer, subtitleCallback, callback)
+                    loadExtractor(cleanUrl, refererUrl, subtitleCallback, callback)
                 }
             } else false
         } catch (e: Exception) {
@@ -128,7 +124,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Fix referer headers)
+// ESTRATTORE: VidStack (Nessun parametro nominato referer)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -142,15 +138,16 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // CORREZIONE RIGA 166: Uso headers invece del parametro nominato referer
+        // CORREZIONE DEFINITIVA: Rimosso parametro nominato 'referer' e usato 'headers'
         val doc = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
         
         val hash = url.substringAfterLast("#").substringAfter("/")
             .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) else it } ?: return
 
-        val baseurl = try { URI(url).let { "${it.scheme}://${it.host}" } } catch(e: Exception) { "https://vidstack.io" }
+        val uri = URI(url)
+        val baseurl = "${uri.scheme}://${uri.host}"
 
-        // CORREZIONE: Stessa logica per la chiamata API
+        // CORREZIONE DEFINITIVA: Rimosso parametro nominato 'referer'
         val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", headers = mapOf("Referer" to url)).text
         if (apiResponse.isBlank()) return
 
