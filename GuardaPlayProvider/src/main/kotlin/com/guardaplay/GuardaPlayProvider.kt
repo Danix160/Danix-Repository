@@ -65,28 +65,35 @@ class GuardaPlayProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("GP_DEBUG", "Inizio analisi pagina: $data")
+        Log.d("GP_DEBUG", "Inizio analisi profonda: $data")
         val response = app.get(data)
         val html = response.text
         val document = response.document
 
         val candidateUrls = mutableSetOf<String>()
 
+        // 1. Estrazione Iframe (inclusi lazy-load)
         document.select("iframe").forEach { iframe ->
-            listOf("src", "data-src", "data-litespeed-src").forEach { attr ->
+            listOf("src", "data-src", "data-litespeed-src", "data-lazy-src").forEach { attr ->
                 val src = iframe.attr(attr)
                 if (src.isNotEmpty()) candidateUrls.add(src)
             }
         }
 
-        val regex = Regex("""https?://[^\s"'<>]+(?:trembed|trid=|embed)[^\s"'<>]+""")
+        // 2. Regex per link nascosti negli script o attributi data
+        val regex = Regex("""https?://[^\s"'<>]+(?:trembed|trid=|embed|loadm\.cam)[^\s"'<>]+""")
         regex.findAll(html).forEach { match ->
-            val clean = match.value.replace("&#038;", "&").replace("\\/", "/")
+            val clean = match.value.replace("&#038;", "&")
+                .replace("\\/", "/")
+                .replace(Regex("""\\$"""), "")
             candidateUrls.add(clean)
         }
 
+        // 3. Processamento candidati
         candidateUrls.forEach { url ->
-            processVideoSource(url, data, subtitleCallback, callback)
+            if (!url.contains("facebook.com") && !url.contains("twitter.com")) {
+                processVideoSource(url, data, subtitleCallback, callback)
+            }
         }
 
         return true
@@ -98,47 +105,59 @@ class GuardaPlayProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val cleanUrl = if (url.startsWith("//")) "https:$url" else url
+        var cleanUrl = if (url.startsWith("//")) "https:$url" else url
+        cleanUrl = cleanUrl.trim().removeSurrounding("\"", "'")
+        
+        Log.d("GP_DEBUG", "Analisi sorgente: $cleanUrl")
 
+        // Gestione interna GuardaPlay (trembed/trid)
         if (cleanUrl.contains("guardaplay.space") && (cleanUrl.contains("trid=") || cleanUrl.contains("trembed"))) {
             try {
                 val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
                 val docHtml = res.text
+                
                 val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
-                val nestedIframe = res.document.selectFirst("iframe")?.attr("src") ?: res.document.selectFirst("iframe")?.attr("data-src")
-
                 if (m3u8Match != null) {
                     val finalUrl = m3u8Match.groupValues[1].replace("\\/", "/")
                     generateFinalLink(finalUrl, cleanUrl, baseReferer, callback)
-                } else if (nestedIframe != null) {
-                    processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
+                } else {
+                    val nestedIframe = res.document.selectFirst("iframe")?.attr("src") 
+                        ?: res.document.selectFirst("iframe")?.attr("data-src")
+                    
+                    if (nestedIframe != null) {
+                        processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("GP_DEBUG", "Errore step interno: ${e.message}")
             }
         } 
+        // Gestione LoadM
         else if (cleanUrl.contains("loadm.cam")) {
             try {
                 val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
-                val videoRegex = Regex("""(?:file|source):\s*["'](http[^"']+\.m3u8[^"']*)["']""")
+                val videoRegex = Regex("""(?:file|source|src)\s*[:=]\s*["'](http[^"']+\.m3u8[^"']*)["']""")
                 val match = videoRegex.find(res.text)
                 
                 if (match != null) {
                     generateFinalLink(match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
-                } else {
-                    loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
                 Log.e("GP_DEBUG", "Errore LoadM: ${e.message}")
             }
         }
+        // Altri estrattori
         else {
             loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
         }
     }
 
-    // Aggiunto "suspend" qui per permettere la chiamata a newExtractorLink
-    private suspend fun generateFinalLink(videoUrl: String, currentUrl: String, baseReferer: String, callback: (ExtractorLink) -> Unit) {
+    private suspend fun generateFinalLink(
+        videoUrl: String, 
+        currentUrl: String, 
+        baseReferer: String, 
+        callback: (ExtractorLink) -> Unit
+    ) {
         val uri = java.net.URI(currentUrl)
         
         callback.invoke(
