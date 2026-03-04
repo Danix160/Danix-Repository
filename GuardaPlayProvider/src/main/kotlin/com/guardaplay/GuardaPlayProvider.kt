@@ -67,7 +67,6 @@ class GuardaPlayProvider : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
         
-        // Cerchiamo tutti gli iframe nella pagina
         val iframes = document.select("iframe")
         
         iframes.forEach { iframe ->
@@ -88,16 +87,12 @@ class GuardaPlayProvider : MainAPI() {
     ) {
         val cleanUrl = if (url.startsWith("//")) "https:$url" else url
 
-        // Gestione specifica per loadm.cam e trembed
         if (cleanUrl.contains("loadm.cam") || cleanUrl.contains("trembed") || cleanUrl.contains("trid=")) {
             try {
                 val response = app.get(cleanUrl, headers = mapOf("Referer" to referer))
                 val doc = response.document
                 
-                // 1. Prova a cercare il tag <source src="..."> direttamente
                 val directSource = doc.selectFirst("video source")?.attr("src")
-                
-                // 2. Prova a cercare nel testo (per link m3u8 dinamici)
                 val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(doc.html())
                 
                 val finalUrl = directSource ?: m3u8Match?.groupValues?.get(1)
@@ -105,7 +100,6 @@ class GuardaPlayProvider : MainAPI() {
                 if (finalUrl != null) {
                     generateFinalLink(finalUrl.replace("\\/", "/"), cleanUrl, callback)
                 } else {
-                    // Se non trova nulla, prova a cercare un iframe annidato (fallback)
                     val nestedIframe = doc.selectFirst("iframe")?.attr("src")
                     if (nestedIframe != null) {
                         loadExtractor(nestedIframe, cleanUrl, subtitleCallback, callback)
@@ -115,26 +109,25 @@ class GuardaPlayProvider : MainAPI() {
                 Log.e("GP_DEBUG", "Errore estrazione: ${e.message}")
             }
         } else {
-            // Se è un provider standard (Mixdrop, ecc)
             loadExtractor(cleanUrl, referer, subtitleCallback, callback)
         }
     }
 
-    private fun generateFinalLink(videoUrl: String, url: String, callback: (ExtractorLink) -> Unit) {
-        callback.invoke(
-            newExtractorLink(
-                name = "GuardaPlay Player",
-                source = this.name,
-                url = videoUrl,
-            ) {
-                this.quality = Qualities.Unknown.value
-                this.type = ExtractorLinkType.M3U8
-                this.headers = mapOf(
-                    "Referer" to "https://loadm.cam/", // Fondamentale per loadm.cam
-                    "Origin" to "https://loadm.cam",
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                )
-            }
-        )
+    // Aggiunto 'suspend' qui per risolvere l'errore di compilazione
+    private suspend fun generateFinalLink(videoUrl: String, url: String, callback: (ExtractorLink) -> Unit) {
+        val link = newExtractorLink(
+            name = "GuardaPlay Player",
+            source = this.name,
+            url = videoUrl,
+        ) {
+            this.quality = Qualities.Unknown.value
+            this.type = ExtractorLinkType.M3U8
+            this.headers = mapOf(
+                "Referer" to "https://loadm.cam/",
+                "Origin" to "https://loadm.cam",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+        }
+        callback.invoke(link)
     }
 }
