@@ -8,10 +8,6 @@ import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-// =============================================================================
-// PROVIDER: GuardaPlay
-// =============================================================================
-
 class GuardaPlayProvider : MainAPI() {
     override var mainUrl = "https://guardaplay.space"
     override var name = "GuardaPlay"
@@ -103,8 +99,10 @@ class GuardaPlayProvider : MainAPI() {
                     "nume" to nume,
                     "type" to type
                 ),
-                referer = referer,
-                headers = mapOf("X-Requested-With" to "XMLHttpRequest")
+                headers = mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Referer" to referer
+                )
             ).text
 
             val iframeUrl = Regex("""(?:src|href)\s*[:=]\s*["']([^"']+)["']""").find(response)?.groupValues?.get(1)
@@ -126,7 +124,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Ripristinato newExtractorLink corretto)
+// ESTRATTORE: VidStack (Versione senza parametri nominati problematici)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -140,13 +138,16 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val doc = app.get(url, referer = referer).text
+        // CORREZIONE RIGA 165: Rimosso parametro nominato referer
+        val doc = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
+        
         val hash = url.substringAfterLast("#").substringAfter("/")
             .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) else it } ?: return
 
         val baseurl = try { URI(url).let { "${it.scheme}://${it.host}" } } catch(e: Exception) { "https://vidstack.io" }
 
-        val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", referer = url).text
+        // CORREZIONE: Anche qui referer rimosso dai parametri nominati
+        val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", headers = mapOf("Referer" to url)).text
         if (apiResponse.isBlank()) return
 
         val key = "kiemtienmua911ca"
@@ -166,7 +167,6 @@ open class VidStack : ExtractorApi() {
                         type = ExtractorLinkType.M3U8
                     ) {
                         this.quality = Qualities.P1080.value
-                        // Header necessari per evitare l'errore 403 su loadm.cam
                         this.headers = mapOf(
                             "Origin" to "https://guardaplay.space",
                             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
