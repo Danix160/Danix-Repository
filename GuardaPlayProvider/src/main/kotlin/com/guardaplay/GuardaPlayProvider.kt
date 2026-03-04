@@ -86,7 +86,7 @@ class GuardaPlayProvider : MainAPI() {
         post: String,
         nume: String,
         type: String,
-        refererUrl: String,
+        ref: String, // Rinominato per evitare conflitti con parametri nominati
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
@@ -101,7 +101,7 @@ class GuardaPlayProvider : MainAPI() {
                 ),
                 headers = mapOf(
                     "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to refererUrl
+                    "Referer" to ref
                 )
             ).text
 
@@ -111,10 +111,10 @@ class GuardaPlayProvider : MainAPI() {
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
                 if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio") || cleanUrl.contains("loadm.cam")) {
-                    VidStack().getUrl(cleanUrl, refererUrl, subtitleCallback, callback)
+                    VidStack().getUrl(cleanUrl, ref, subtitleCallback, callback)
                     true
                 } else {
-                    loadExtractor(cleanUrl, refererUrl, subtitleCallback, callback)
+                    loadExtractor(cleanUrl, ref, subtitleCallback, callback)
                 }
             } else false
         } catch (e: Exception) {
@@ -124,7 +124,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Nessun parametro nominato referer)
+// ESTRATTORE: VidStack (Versione Corretta Headers)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -138,16 +138,18 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // CORREZIONE DEFINITIVA: Rimosso parametro nominato 'referer' e usato 'headers'
+        // CORREZIONE RIGA 167: Uso esplicito di headers map
         val doc = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
         
         val hash = url.substringAfterLast("#").substringAfter("/")
             .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) else it } ?: return
 
-        val uri = URI(url)
-        val baseurl = "${uri.scheme}://${uri.host}"
+        val baseurl = try { 
+            val uri = URI(url)
+            "${uri.scheme}://${uri.host}"
+        } catch(e: Exception) { "https://vidstack.io" }
 
-        // CORREZIONE DEFINITIVA: Rimosso parametro nominato 'referer'
+        // Chiamata API corretta senza parametro nominato 'referer'
         val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", headers = mapOf("Referer" to url)).text
         if (apiResponse.isBlank()) return
 
