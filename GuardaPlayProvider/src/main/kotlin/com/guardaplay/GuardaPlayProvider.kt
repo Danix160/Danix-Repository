@@ -2,7 +2,7 @@ package com.guardaplay
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.api.Log
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 import java.net.URI
 import javax.crypto.Cipher
@@ -10,7 +10,7 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 // =============================================================================
-// PROVIDER PRINCIPALE: GuardaPlay
+// PROVIDER: GuardaPlay
 // =============================================================================
 
 class GuardaPlayProvider : MainAPI() {
@@ -25,7 +25,6 @@ class GuardaPlayProvider : MainAPI() {
         "$mainUrl/category/animazione/" to "Animazione",
         "$mainUrl/category/azione/" to "Azione",
         "$mainUrl/category/commedia/" to "Commedia",
-        "$mainUrl/category/fantascienza/" to "Fantascienza",
         "$mainUrl/category/horror/" to "Horror"
     )
 
@@ -45,18 +44,14 @@ class GuardaPlayProvider : MainAPI() {
     private fun Element.toSearchResult(): SearchResponse? {
         val title = selectFirst(".entry-title")?.text() ?: return null
         val href = selectFirst("a.lnk-blk")?.attr("href") ?: return null
-        val posterUrl = selectFirst("img")?.attr("src")?.let { 
-            if (it.startsWith("//")) "https:$it" else it 
-        }
+        val posterUrl = selectFirst("img")?.attr("src")
         return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
         val title = document.selectFirst("h1.entry-title")?.text() ?: ""
-        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")?.let {
-            if (it.startsWith("//")) "https:$it" else it
-        }
+        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")
         val plot = document.selectFirst(".description p")?.text()
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -74,19 +69,24 @@ class GuardaPlayProvider : MainAPI() {
         val document = app.get(data).document
         var foundAny = false
 
+        // 1. Cerchiamo le opzioni del player DooPlay
         val options = document.select("li.dooplay_player_option")
-        val fallbackPost = document.selectFirst("div#player")?.attr("data-post") 
-            ?: document.selectFirst("link[rel='shortlink']")?.attr("href")?.substringAfter("p=")
-
-        if (options.isEmpty() && fallbackPost != null) {
-            if (fetchDooPlayAjax(fallbackPost, "1", "0", data, subtitleCallback, callback)) foundAny = true
-        }
-
-        options.forEach { option ->
-            val post = option.attr("data-post")
-            val nume = option.attr("data-nume")
-            val type = option.attr("data-type")
-            if (fetchDooPlayAjax(post, nume, type, data, subtitleCallback, callback)) foundAny = true
+        
+        if (options.isEmpty()) {
+            // Fallback: prova a prendere l'ID del post se non ci sono bottoni
+            val postId = document.selectFirst("div#player")?.attr("data-post")
+                ?: document.selectFirst("input#wp-post-id")?.attr("value")
+            
+            if (postId != null) {
+                if (fetchDooPlayAjax(postId, "1", "0", data, subtitleCallback, callback)) foundAny = true
+            }
+        } else {
+            options.forEach { option ->
+                val post = option.attr("data-post")
+                val nume = option.attr("data-nume")
+                val type = option.attr("data-type")
+                if (fetchDooPlayAjax(post, nume, type, data, subtitleCallback, callback)) foundAny = true
+            }
         }
 
         return foundAny
@@ -116,33 +116,25 @@ class GuardaPlayProvider : MainAPI() {
             val iframeUrl = Regex("""(?:src|href)\s*[:=]\s*["']([^"']+)["']""").find(response)?.groupValues?.get(1)
                 ?: Regex("""https?://[^\s"']+""").find(response)?.value
 
-            iframeUrl?.let { 
-                processFinalUrl(it, referer, subtitleCallback, callback)
-            } ?: false
+            if (iframeUrl != null) {
+                val cleanUrl = iframeUrl.replace("\\/", "/")
+                
+                // Se è un link trembed (come quello che hai postato), forziamo VidStack
+                if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio")) {
+                    VidStack().getUrl(cleanUrl, referer, subtitleCallback, callback)
+                    true
+                } else {
+                    loadExtractor(cleanUrl, referer, subtitleCallback, callback)
+                }
+            } else false
         } catch (e: Exception) {
             false
-        }
-    }
-
-    private suspend fun processFinalUrl(
-        url: String, 
-        referer: String, 
-        subtitleCallback: (SubtitleFile) -> Unit, 
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val cleanUrl = url.replace("\\/", "/").let { if (it.startsWith("//")) "https:$it" else it }
-        
-        return if (cleanUrl.contains("server1.uns.bio") || cleanUrl.contains("vidstack")) {
-            VidStack().getUrl(cleanUrl, referer, subtitleCallback, callback)
-            true
-        } else {
-            loadExtractor(cleanUrl, referer, subtitleCallback, callback)
         }
     }
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Corretto per compilazione)
+// ESTRATTORE: VidStack (Gestisce loadm.cam e decriptazione AES)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -156,55 +148,71 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0")
+        // 1. Carichiamo la pagina dell'embed per estrarre l'ID video (hash)
+        val doc = app.get(url, referer = referer).text
         val hash = url.substringAfterLast("#").substringAfter("/")
-        val baseurl = try { URI(url).let { "${it.scheme}://${it.host}" } } catch(e: Exception) { mainUrl }
+            .ifBlank { Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) } ?: return
 
-        val response = app.get("$baseurl/api/v1/video?id=$hash", headers = headers)
-        if (response.code != 200) return
-        val encoded = response.text.trim()
+        val baseurl = try { URI(url).let { "${it.scheme}://${it.host}" } } catch(e: Exception) { "https://vidstack.io" }
 
+        // 2. Chiamata API per ottenere i dati criptati
+        val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", referer = url).text
+        if (apiResponse.isBlank() || apiResponse.length < 10) return
+
+        // 3. Decriptazione AES (Chiave e IV usate da VidStack/GuardaPlay)
         val key = "kiemtienmua911ca"
-        val ivList = listOf("1234567890oiuytr", "0123456789abcdef")
+        val iv = "1234567890oiuytr" 
 
-        val decryptedText = ivList.firstNotNullOfOrNull { iv ->
-            try { AesHelper.decryptAES(encoded, key, iv) } catch (e: Exception) { null }
-        } ?: return
+        try {
+            val decrypted = AesHelper.decryptAES(apiResponse.trim(), key, iv)
+            
+            // 4. Estrazione Master M3U8 (loadm.cam)
+            val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
+            
+            if (m3u8 != null) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = "GuardaPlay",
+                        name = "Server HD",
+                        url = m3u8,
+                        referer = url,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.quality = Qualities.P1080.value
+                        // L'Origin è fondamentale per superare il blocco 403 di loadm.cam
+                        this.headers = mapOf(
+                            "Origin" to "https://guardaplay.space",
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                        )
+                    }
+                )
+            }
 
-        Regex("\"source\":\"(.*?)\"").find(decryptedText)?.groupValues?.get(1)?.replace("\\/", "/")?.let { m3u8 ->
-            // FIX: Utilizzo corretto di newExtractorLink per evitare l'errore di tipi
-            callback.invoke(
-                newExtractorLink(
-                    source = this.name,
-                    name = this.name,
-                    url = m3u8,
-                    type = ExtractorLinkType.M3U8
-                ) {
-                    this.quality = Qualities.P1080.value
-                    this.referer = url
-                }
-            )
-        }
-
-        val subtitleSection = Regex("\"subtitle\":\\{(.*?)\\}").find(decryptedText)?.groupValues?.get(1)
-        subtitleSection?.let { section ->
-            Regex("\"([^\"]+)\":\\s*\"([^\"]+)\"").findAll(section).forEach { match ->
-                val lang = match.groupValues[1]
-                val path = match.groupValues[2].split("#")[0].replace("\\/", "/")
-                if (path.isNotEmpty()) {
-                    subtitleCallback(newSubtitleFile(lang, fixUrl("$baseurl$path")))
+            // 5. Sottotitoli (se presenti)
+            Regex("\"subtitle\":\\{(.*?)\\}").find(decrypted)?.groupValues?.get(1)?.let { subSection ->
+                Regex("\"([^\"]+)\":\\s*\"([^\"]+)\"").findAll(subSection).forEach { match ->
+                    val lang = match.groupValues[1]
+                    val path = match.groupValues[2].split("#")[0].replace("\\/", "/")
+                    if (path.isNotEmpty()) {
+                        subtitleCallback(newSubtitleFile(lang, "$baseurl$path"))
+                    }
                 }
             }
+        } catch (e: Exception) {
+            // Log.d("GuardaPlay", "Errore Decriptazione: ${e.message}")
         }
     }
 }
 
+// Utility per la decriptazione dei dati AES-128-CBC
 object AesHelper {
     fun decryptAES(inputHex: String, key: String, iv: String): String {
         val cipher = Cipher.getInstance("AES/CBC/PKCS5PADDING")
         val secretKey = SecretKeySpec(key.toByteArray(), "AES")
         val ivSpec = IvParameterSpec(iv.toByteArray())
         cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec)
+        
+        // Converte l'esadecimale in byte array
         val decodedHex = inputHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         return String(cipher.doFinal(decodedHex))
     }
