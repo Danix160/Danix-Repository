@@ -72,7 +72,6 @@ class GuardaPlayProvider : MainAPI() {
 
         val candidateUrls = mutableSetOf<String>()
 
-        // 1. Estrazione da Iframe (inclusi attributi lazy-load)
         document.select("iframe").forEach { iframe ->
             listOf("src", "data-src", "data-litespeed-src").forEach { attr ->
                 val src = iframe.attr(attr)
@@ -80,15 +79,13 @@ class GuardaPlayProvider : MainAPI() {
             }
         }
 
-        // 2. Estrazione tramite Regex per link offuscati o in script
-        // Gestisce anche la decodifica di HTML entities come &#038;
         val regex = Regex("""https?://[^\s"'<>]+(?:trembed|trid=|embed)[^\s"'<>]+""")
         regex.findAll(html).forEach { match ->
             val clean = match.value.replace("&#038;", "&").replace("\\/", "/")
             candidateUrls.add(clean)
         }
 
-        candidateUrls.filter { it.contains("trid=") || it.contains("trembed") || !it.contains("facebook.com") }.forEach { url ->
+        candidateUrls.forEach { url ->
             processVideoSource(url, data, subtitleCallback, callback)
         }
 
@@ -97,63 +94,65 @@ class GuardaPlayProvider : MainAPI() {
 
     private suspend fun processVideoSource(
         url: String,
-        referer: String,
+        baseReferer: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
         val cleanUrl = if (url.startsWith("//")) "https:$url" else url
-        Log.d("GP_DEBUG", "Analizzando sorgente: $cleanUrl")
 
         if (cleanUrl.contains("guardaplay.space") && (cleanUrl.contains("trid=") || cleanUrl.contains("trembed"))) {
             try {
-                // Carichiamo la pagina intermedia del player
-                val res = app.get(cleanUrl, headers = mapOf("Referer" to referer))
+                val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
                 val docHtml = res.text
-                val doc = res.document
-
-                // Tentativo A: Cerca m3u8 diretto negli script
                 val m3u8Match = Regex("""["'](http[^"']+\.m3u8[^"']*)""").find(docHtml)
-                
-                // Tentativo B: Cerca un iframe verso un hoster esterno (es. MixDrop, Fastream)
-                val nestedIframe = doc.selectFirst("iframe")?.attr("src") 
-                    ?: doc.selectFirst("iframe")?.attr("data-src")
+                val nestedIframe = res.document.selectFirst("iframe")?.attr("src") ?: res.document.selectFirst("iframe")?.attr("data-src")
 
                 if (m3u8Match != null) {
-                    val finalUrl = m3u8Match.groupValues[1].replace("\\/", "/")
-                    Log.d("GP_DEBUG", "Link M3U8 Finale trovato: $finalUrl")
-                    generateFinalLink(finalUrl, cleanUrl, callback)
+                    generateFinalLink(m3u8Match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
                 } else if (nestedIframe != null) {
-                    Log.d("GP_DEBUG", "Trovato iframe nidificato verso: $nestedIframe")
-                    loadExtractor(nestedIframe, cleanUrl, subtitleCallback, callback)
-                } else {
-                    Log.d("GP_DEBUG", "Nessuna risorsa utile in questa sottopagina")
+                    processVideoSource(nestedIframe, cleanUrl, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                Log.e("GP_DEBUG", "Errore nel processing interno: ${e.message}")
+                Log.e("GP_DEBUG", "Errore step interno: ${e.message}")
             }
-        } else {
-            // Se è un link esterno noto, delega agli estrattori di CloudStream
-            loadExtractor(cleanUrl, referer, subtitleCallback, callback)
+        } 
+        else if (cleanUrl.contains("loadm.cam")) {
+            try {
+                val res = app.get(cleanUrl, headers = mapOf("Referer" to baseReferer))
+                val videoRegex = Regex("""(?:file|source):\s*["'](http[^"']+\.m3u8[^"']*)["']""")
+                val match = videoRegex.find(res.text)
+                
+                if (match != null) {
+                    generateFinalLink(match.groupValues[1].replace("\\/", "/"), cleanUrl, baseReferer, callback)
+                } else {
+                    loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
+                }
+            } catch (e: Exception) {
+                Log.e("GP_DEBUG", "Errore LoadM: ${e.message}")
+            }
+        }
+        else {
+            loadExtractor(cleanUrl, baseReferer, subtitleCallback, callback)
         }
     }
 
-    private suspend fun generateFinalLink(videoUrl: String, url: String, callback: (ExtractorLink) -> Unit) {
-        val uri = java.net.URI(url)
-        val baseReferer = "${uri.scheme}://${uri.host}/"
-
-        val link = newExtractorLink(
-            name = "GuardaPlay HD",
-            source = this.name,
-            url = videoUrl,
-        ) {
-            this.quality = Qualities.Unknown.value
-            this.type = ExtractorLinkType.M3U8
-            this.headers = mapOf(
-                "Referer" to baseReferer,
-                "Origin" to "${uri.scheme}://${uri.host}",
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            )
-        }
-        callback.invoke(link)
+    private fun generateFinalLink(videoUrl: String, currentUrl: String, baseReferer: String, callback: (ExtractorLink) -> Unit) {
+        val uri = java.net.URI(currentUrl)
+        
+        callback.invoke(
+            newExtractorLink(
+                name = "GuardaPlay Server",
+                source = this.name,
+                url = videoUrl
+            ) {
+                this.quality = Qualities.Unknown.value
+                this.type = ExtractorLinkType.M3U8
+                this.headers = mapOf(
+                    "Referer" to baseReferer,
+                    "Origin" to "${uri.scheme}://${uri.host}",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                )
+            }
+        )
     }
 }
