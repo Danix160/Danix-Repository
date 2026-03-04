@@ -86,7 +86,7 @@ class GuardaPlayProvider : MainAPI() {
         post: String,
         nume: String,
         type: String,
-        ref: String, // Rinominato per evitare conflitti con parametri nominati
+        refUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
@@ -101,7 +101,7 @@ class GuardaPlayProvider : MainAPI() {
                 ),
                 headers = mapOf(
                     "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to ref
+                    "Referer" to refUrl
                 )
             ).text
 
@@ -111,10 +111,10 @@ class GuardaPlayProvider : MainAPI() {
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
                 if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio") || cleanUrl.contains("loadm.cam")) {
-                    VidStack().getUrl(cleanUrl, ref, subtitleCallback, callback)
+                    VidStack().getUrl(cleanUrl, refUrl, subtitleCallback, callback)
                     true
                 } else {
-                    loadExtractor(cleanUrl, ref, subtitleCallback, callback)
+                    loadExtractor(cleanUrl, refUrl, subtitleCallback, callback)
                 }
             } else false
         } catch (e: Exception) {
@@ -124,7 +124,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Versione Corretta Headers)
+// ESTRATTORE: VidStack (Pulizia totale parametri nominati)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -138,19 +138,13 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // CORREZIONE RIGA 167: Uso esplicito di headers map
+        // CORREZIONE RIGA 169: Rimosso 'referer = ...' e usato solo headers
         val doc = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
         
         val hash = url.substringAfterLast("#").substringAfter("/")
             .let { if (it.isBlank()) Regex("""id\s*:\s*["']([^"']+)""").find(doc)?.groupValues?.get(1) else it } ?: return
 
-        val baseurl = try { 
-            val uri = URI(url)
-            "${uri.scheme}://${uri.host}"
-        } catch(e: Exception) { "https://vidstack.io" }
-
-        // Chiamata API corretta senza parametro nominato 'referer'
-        val apiResponse = app.get("$baseurl/api/v1/video?id=$hash", headers = mapOf("Referer" to url)).text
+        val apiResponse = app.get("https://vidstack.io/api/v1/video?id=$hash", headers = mapOf("Referer" to url)).text
         if (apiResponse.isBlank()) return
 
         val key = "kiemtienmua911ca"
@@ -161,20 +155,21 @@ open class VidStack : ExtractorApi() {
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
+                // CORREZIONE: Rimosso 'referer = url' anche qui, messo in headers
                 callback.invoke(
-                    newExtractorLink(
+                    ExtractorLink(
                         source = "GuardaPlay",
                         name = "Server HD",
                         url = m3u8,
-                        referer = url,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.quality = Qualities.P1080.value
-                        this.headers = mapOf(
+                        referer = "", // Lasciato vuoto per evitare il crash del parametro nominato
+                        quality = Qualities.P1080.value,
+                        type = ExtractorLinkType.M3U8,
+                        headers = mapOf(
+                            "Referer" to url,
                             "Origin" to "https://guardaplay.space",
                             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                         )
-                    }
+                    )
                 )
             }
         } catch (e: Exception) { }
