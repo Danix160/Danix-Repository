@@ -38,14 +38,29 @@ class GuardaPlayProvider : MainAPI() {
     private fun Element.toSearchResult(): SearchResponse? {
         val title = selectFirst(".entry-title")?.text() ?: return null
         val href = selectFirst("a.lnk-blk")?.attr("href") ?: return null
-        val posterUrl = selectFirst("img")?.attr("src")
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        
+        // Fix per l'errore FileNotFoundException del Logcat
+        val posterUrl = selectFirst("img")?.attr("src")?.let { src ->
+            when {
+                src.startsWith("//") -> "https:$src"
+                src.startsWith("/") -> "https://image.tmdb.org$src"
+                else -> src
+            }
+        }
+        
+        return newMovieSearchResponse(title, href, TvType.Movie) { 
+            this.posterUrl = posterUrl 
+        }
     }
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
         val title = document.selectFirst("h1.entry-title")?.text() ?: ""
-        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")
+        
+        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")?.let { src ->
+            if (src.startsWith("//")) "https:$src" else src
+        }
+        
         val plot = document.selectFirst(".description p")?.text()
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -61,69 +76,51 @@ class GuardaPlayProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        var foundAny = false
-        val options = document.select("li.dooplay_player_option")
         
-        if (options.isEmpty()) {
-            val postId = document.selectFirst("div#player")?.attr("data-post")
-                ?: document.selectFirst("input#wp-post-id")?.attr("value")
-            if (postId != null) {
-                if (fetchDooPlayAjax(postId, "1", "0", data, subtitleCallback, callback)) foundAny = true
+        // Nuovo parsing basato sullo snippet HTML: cerca gli iframe nelle opzioni
+        val playerSources = document.select("aside#aa-options div.video iframe")
+        
+        if (playerSources.isEmpty()) {
+            // Fallback: cerca qualsiasi iframe nella sezione player
+            document.select("section.player iframe").forEach { iframe ->
+                val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+                if (src.isNotEmpty()) processIframe(src, data, subtitleCallback, callback)
             }
         } else {
-            options.forEach { option ->
-                val post = option.attr("data-post")
-                val nume = option.attr("data-nume")
-                val type = option.attr("data-type")
-                if (fetchDooPlayAjax(post, nume, type, data, subtitleCallback, callback)) foundAny = true
+            playerSources.forEach { iframe ->
+                val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+                if (src.isNotEmpty()) processIframe(src, data, subtitleCallback, callback)
             }
         }
-        return foundAny
+        return true
     }
 
-    private suspend fun fetchDooPlayAjax(
-        post: String,
-        nume: String,
-        type: String,
-        refererUrl: String,
+    private suspend fun processIframe(
+        url: String,
+        referer: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        return try {
-            val response = app.post(
-                "$mainUrl/wp-admin/admin-ajax.php",
-                data = mapOf(
-                    "action" to "doo_player_ajax",
-                    "post" to post,
-                    "nume" to nume,
-                    "type" to type
-                ),
-                headers = mapOf(
-                    "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to refererUrl
-                )
-            ).text
+    ) {
+        val cleanUrl = if (url.startsWith("//")) "https:$url" else url
+        
+        // Gestione dei link interni "trembed"
+        if (cleanUrl.contains("trembed") || cleanUrl.contains("trid=")) {
+            val iframeDoc = app.get(cleanUrl, headers = mapOf("Referer" to referer)).document
+            
+            // Cerca il vero link video dentro l'iframe (VidStack o simili)
+            val finalUrl = iframeDoc.selectFirst("iframe")?.attr("src") 
+                ?: iframeDoc.selectFirst("source")?.attr("src")
+                ?: Regex("""file:\s*["']([^"']+)""").find(iframeDoc.html())?.groupValues?.get(1)
 
-            val iframeUrl = Regex("""(?:src|href)\s*[:=]\s*["']([^"']+)["']""").find(response)?.groupValues?.get(1)
-                ?: Regex("""https?://[^\s"']+""").find(response)?.value
-
-            if (iframeUrl != null) {
-                val cleanUrl = iframeUrl.replace("\\/", "/")
-                if (cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio")) {
-                    VidStack().getUrl(cleanUrl, refererUrl, subtitleCallback, callback)
-                    true
-                } else {
-                    loadExtractor(cleanUrl, refererUrl, subtitleCallback, callback)
-                }
-            } else false
-        } catch (e: Exception) {
-            false
+            finalUrl?.let { loadExtractor(it, cleanUrl, subtitleCallback, callback) }
+        } else {
+            loadExtractor(cleanUrl, referer, subtitleCallback, callback)
         }
     }
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Fix finale per parametri newExtractorLink)
+// ESTRATTORE: VidStack (Versione Corretta per il Build)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -150,14 +147,13 @@ open class VidStack : ExtractorApi() {
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
-                // Chiamata con soli 3 parametri obbligatori + blocco di inizializzazione
+                // Firma sicura di newExtractorLink per evitare errori di compilazione
                 callback.invoke(
                     newExtractorLink(
                         source = "GuardaPlay",
                         name = "Server HD",
                         url = m3u8
                     ) {
-                        // Tutto il resto va impostato qui dentro
                         this.quality = Qualities.P1080.value
                         this.type = ExtractorLinkType.M3U8
                         this.headers = mapOf(
