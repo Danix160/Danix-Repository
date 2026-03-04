@@ -86,7 +86,7 @@ class GuardaPlayProvider : MainAPI() {
         post: String,
         nume: String,
         type: String,
-        refUrl: String,
+        refererUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
@@ -101,7 +101,7 @@ class GuardaPlayProvider : MainAPI() {
                 ),
                 headers = mapOf(
                     "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to refUrl
+                    "Referer" to refererUrl
                 )
             ).text
 
@@ -111,10 +111,10 @@ class GuardaPlayProvider : MainAPI() {
             if (iframeUrl != null) {
                 val cleanUrl = iframeUrl.replace("\\/", "/")
                 if (cleanUrl.contains("trembed=") || cleanUrl.contains("vidstack") || cleanUrl.contains("uns.bio") || cleanUrl.contains("loadm.cam")) {
-                    VidStack().getUrl(cleanUrl, refUrl, subtitleCallback, callback)
+                    VidStack().getUrl(cleanUrl, refererUrl, subtitleCallback, callback)
                     true
                 } else {
-                    loadExtractor(cleanUrl, refUrl, subtitleCallback, callback)
+                    loadExtractor(cleanUrl, refererUrl, subtitleCallback, callback)
                 }
             } else false
         } catch (e: Exception) {
@@ -124,7 +124,7 @@ class GuardaPlayProvider : MainAPI() {
 }
 
 // =============================================================================
-// ESTRATTORE: VidStack (Pulizia totale parametri nominati)
+// ESTRATTORE: VidStack (Versione Stable-Safe)
 // =============================================================================
 
 open class VidStack : ExtractorApi() {
@@ -138,7 +138,7 @@ open class VidStack : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // CORREZIONE RIGA 169: Rimosso 'referer = ...' e usato solo headers
+        // Usiamo solo headers per evitare il parametro 'referer' incriminato
         val doc = app.get(url, headers = mapOf("Referer" to (referer ?: ""))).text
         
         val hash = url.substringAfterLast("#").substringAfter("/")
@@ -155,21 +155,23 @@ open class VidStack : ExtractorApi() {
             val m3u8 = Regex("\"source\":\"(.*?)\"").find(decrypted)?.groupValues?.get(1)?.replace("\\/", "/")
             
             if (m3u8 != null) {
-                // CORREZIONE: Rimosso 'referer = url' anche qui, messo in headers
+                // Usiamo newExtractorLink (Helper ufficiale per la Stable)
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "GuardaPlay",
                         name = "Server HD",
                         url = m3u8,
-                        referer = "", // Lasciato vuoto per evitare il crash del parametro nominato
-                        quality = Qualities.P1080.value,
-                        type = ExtractorLinkType.M3U8,
-                        headers = mapOf(
+                        referer = "", // Lasciato vuoto fuori
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        // Passiamo tutto qui dentro per evitare errori di compilazione
+                        this.quality = Qualities.P1080.value
+                        this.headers = mapOf(
                             "Referer" to url,
                             "Origin" to "https://guardaplay.space",
                             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                         )
-                    )
+                    }
                 )
             }
         } catch (e: Exception) { }
