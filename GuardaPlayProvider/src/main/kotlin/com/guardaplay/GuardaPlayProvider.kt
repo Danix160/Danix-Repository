@@ -29,21 +29,32 @@ class GuardaPlayProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h3 a")?.text() ?: return null
-        val href = this.selectFirst("h3 a")?.attr("href") ?: return null
-        
-        // FIX POSTER: Risolve l'errore ENOENT (No such file or directory)
-        var posterUrl = this.selectFirst("img")?.attr("src") ?: ""
-        if (posterUrl.startsWith("//")) {
-            posterUrl = "https:$posterUrl"
-        } else if (posterUrl.startsWith("/")) {
-            posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
-        }
-
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
-        }
+    // Cerchiamo il titolo e il link all'interno del tag 'a' che di solito avvolge l'immagine o il titolo
+    val title = this.selectFirst("h3 a, a")?.text() ?: "Senza Titolo"
+    val href = this.selectFirst("h3 a, a")?.attr("href") ?: return null
+    
+    // ESTRAZIONE LOCANDINA dal codice che mi hai mandato
+    // Cerchiamo il tag 'img' dentro '.post-thumbnail'
+    val imgElement = this.selectFirst(".post-thumbnail img, img")
+    var posterUrl = imgElement?.attr("src") ?: ""
+    
+    // Se il sito usa il lazy loading, l'immagine vera potrebbe essere in 'data-src' o 'data-lazy-src'
+    if (posterUrl.isBlank() || posterUrl.contains("data:image")) {
+        posterUrl = imgElement?.attr("data-src") ?: imgElement?.attr("data-lazy-src") ?: ""
     }
+
+    // FIX DEFINITIVO: Se l'URL inizia con //, aggiungiamo https:
+    if (posterUrl.startsWith("//")) {
+        posterUrl = "https:$posterUrl"
+    } else if (posterUrl.startsWith("/")) {
+        // Se è un percorso relativo tipo /t/p/w500/...
+        posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
+    }
+
+    return newMovieSearchResponse(title, href, TvType.Movie) {
+        this.posterUrl = posterUrl
+    }
+}
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
