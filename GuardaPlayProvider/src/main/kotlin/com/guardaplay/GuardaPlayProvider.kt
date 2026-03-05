@@ -12,7 +12,6 @@ class GuardaPlayProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    // Errore 1 risolto: mainPage deve restituire List<MainPageData>
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Ultimi Film",
         "$mainUrl/category/animazione/" to "Animazione",
@@ -38,7 +37,6 @@ class GuardaPlayProvider : MainAPI() {
         getCookies()
         val url = if (page <= 1) request.data else "${request.data}page/$page/"
         val document = app.get(url, cookies = sessionCookies).document
-        // Cerchiamo gli articoli usando i selettori corretti per GuardaPlay
         val home = document.select("article.movies, li.post-lst, .post-lst li").mapNotNull { 
             it.toSearchResult() 
         }
@@ -85,7 +83,6 @@ class GuardaPlayProvider : MainAPI() {
         getCookies()
         val doc = app.get(data, cookies = sessionCookies).document
 
-        // Selezione opzioni basata sul sorgente HTML fornito
         val options = doc.select("#aa-options div.video[id^=options-]")
         
         if (options.isEmpty()) {
@@ -123,7 +120,6 @@ class GuardaPlayProvider : MainAPI() {
             val embedRes = app.get(cleanUrl, headers = mapOf("Referer" to referer), cookies = sessionCookies)
             val embedDoc = embedRes.document
             
-            // Logica multi-iframe per arrivare al player finale
             val finalIframe = embedDoc.selectFirst(".Video iframe[src]")?.attr("src")
                 ?: embedDoc.selectFirst("iframe[src*='loadm']")?.attr("src")
                 ?: embedDoc.selectFirst("iframe")?.attr("src")
@@ -134,7 +130,6 @@ class GuardaPlayProvider : MainAPI() {
             val videoPageRes = app.get(videoPageUrl, headers = mapOf("Referer" to cleanUrl))
             val html = videoPageRes.text
             
-            // Estrazione link video diretto
             val videoLink = Regex("""["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(html)?.groupValues?.get(1)
 
             if (videoLink != null) {
