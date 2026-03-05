@@ -14,7 +14,7 @@ cloudstream {
     extra["prefix"] = "GuardaPlay"
     extra["displayName"] = "GuardaPlay"
     
-    version = 40
+    version = 41
     description = "GuardaPlay Contiene Solo Film"
     authors = listOf("Danix")
     
