@@ -53,7 +53,7 @@
         "tvTypes": [
             "Movie"
         ],
-        "version": 39,
+        "version": 41,
         "internalName": "GuardaPlayProvider",
         "description": "GuardaPlay Contiene Solo Film",
         "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/GuardaPlayProvider.cs3",
