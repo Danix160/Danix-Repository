@@ -1,9 +1,7 @@
 package com.guardaplay
 
-import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -13,8 +11,6 @@ class GuardaPlayProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    private var sessionCookies: Map<String, String> = emptyMap()
-
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Ultimi Film",
         "$mainUrl/category/animazione/" to "Animazione",
@@ -23,47 +19,25 @@ class GuardaPlayProvider : MainAPI() {
         "$mainUrl/category/horror/" to "Horror"
     )
 
-    private suspend fun getCookies() {
-        if (sessionCookies.isEmpty()) {
-            try {
-                val res = app.get(mainUrl, timeout = 15)
-                sessionCookies = res.cookies
-            } catch (e: Exception) {
-                Log.e("GP_DEBUG", "Errore inizializzazione cookie: ${e.message}")
-            }
-        }
-    }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        getCookies()
         val url = if (page <= 1) request.data else "${request.data}page/$page/"
-        val res = app.get(url, cookies = sessionCookies)
-        val document = res.document
-        
-        val home = document.select("article.movies, li.post-lst, .post-lst li").mapNotNull {
+        val document = app.get(url).document
+        val home = document.select("article.item").mapNotNull {
             it.toSearchResult()
         }
         return newHomePageResponse(request.name, home)
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        getCookies()
-        val url = "$mainUrl/?s=$query"
-        val document = app.get(url, cookies = sessionCookies).document
-        return document.select("article.movies, .post-lst li").mapNotNull {
-            it.toSearchResult()
-        }
-    }
-
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = selectFirst(".entry-title, .title")?.text() ?: return null
-        val href = selectFirst("a")?.attr("href") ?: return null
+        val title = this.selectFirst("h3 a")?.text() ?: return null
+        val href = this.selectFirst("h3 a")?.attr("href") ?: return null
         
-        // Correzione per i poster TMDB che causavano l'errore FileNotFound nel log
-        var posterUrl = selectFirst("img")?.attr("src")
-        if (posterUrl != null) {
-            if (posterUrl.startsWith("//")) posterUrl = "https:$posterUrl"
-            if (posterUrl.startsWith("/")) posterUrl = "https://image.tmdb.org/t/p/w185$posterUrl"
+        // FIX POSTER: Risolve l'errore ENOENT (No such file or directory)
+        var posterUrl = this.selectFirst("img")?.attr("src") ?: ""
+        if (posterUrl.startsWith("//")) {
+            posterUrl = "https:$posterUrl"
+        } else if (posterUrl.startsWith("/")) {
+            posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
         }
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
@@ -71,16 +45,24 @@ class GuardaPlayProvider : MainAPI() {
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
-        getCookies()
-        val document = app.get(url, cookies = sessionCookies).document
-        val title = document.selectFirst("h1.entry-title")?.text()?.trim() ?: ""
-        val poster = document.selectFirst(".post-thumbnail img")?.attr("src")
-        val plot = document.selectFirst(".description p")?.text()?.trim()
+    override suspend fun load(url: String): LoadResponse? {
+        val document = app.get(url).document
+        val title = document.selectFirst("h1")?.text() ?: return null
+        
+        var posterUrl = document.selectFirst("div.poster img")?.attr("src") ?: ""
+        if (posterUrl.startsWith("//")) {
+            posterUrl = "https:$posterUrl"
+        } else if (posterUrl.startsWith("/")) {
+            posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
+        }
+
+        val description = document.selectFirst("div.wp-content p")?.text()
+        val year = Regex("\\d{4}").find(document.select("span.date").text())?.value?.toIntOrNull()
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            this.posterUrl = poster
-            this.plot = plot
+            this.posterUrl = posterUrl
+            this.plot = description
+            this.year = year
         }
     }
 
@@ -90,83 +72,44 @@ class GuardaPlayProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        getCookies()
-        val res = app.get(data, cookies = sessionCookies)
-        val doc = res.document
-
-        // Tentativo 1: Server nei tab (#aa-options)
-        val options = doc.select("#aa-options div.video[id^=options-]")
+        val document = app.get(data).document
         
-        if (options.isEmpty()) {
-            // Tentativo 2: Player caricato via trid/trembed (comune su GuardaPlay)
-            val html = doc.html()
-            val trid = Regex("""trid=(\d+)""").find(html)?.groupValues?.get(1)
-            val trtype = Regex("""trtype=(\d+)""").find(html)?.groupValues?.get(1) ?: "1"
+        // Il confronto tra i tuoi due file mostra che i link sono dentro i "Source Box" 
+        // o nelle liste dei player (li[id^=player-option-])
+        
+        // 1. Cerchiamo tutti i possibili iframe (sia con src che con data-src)
+        val sources = document.select("div.source-box iframe, div[id^=option-] iframe, .Video iframe")
+        
+        sources.forEach { iframe ->
+            // Prendiamo data-src se src è vuoto (comune prima del click)
+            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
             
-            if (trid != null) {
-                processVideoSource("$mainUrl/?trembed=0&trid=$trid&trtype=$trtype", data, "Server Principale", callback)
-                return true
-            }
-        } else {
-            // Processa ogni server trovato nei tab
-            options.forEach { optionDiv ->
-                val id = optionDiv.attr("id")
-                val iframeUrl = optionDiv.selectFirst("iframe")?.attr("data-src")
-                    ?: optionDiv.selectFirst("iframe")?.attr("src")
-                    ?: return@forEach
-
-                val serverName = doc.select("a[href='#$id'] span.server").text().trim()
-                    .replace("-ITA", "")
-                    .ifEmpty { "Opzione ${id.replace("options-", "")}" }
-
-                processVideoSource(iframeUrl, data, serverName, callback)
+            if (src.isNotBlank()) {
+                val finalUrl = if (src.startsWith("//")) "https:$src" else src
+                
+                // Log per debug interno (opzionale)
+                // println("Trovato link: $finalUrl")
+                
+                loadExtractor(finalUrl, data, subtitleCallback, callback)
             }
         }
-        return true
-    }
 
-    private suspend fun processVideoSource(
-        url: String,
-        referer: String,
-        serverName: String,
-        callback: (ExtractorLink) -> Unit
-    ) {
-        val cleanUrl = if (url.startsWith("//")) "https:$url" else url
-        try {
-            // Carica la pagina dell'embed
-            val embedRes = app.get(cleanUrl, headers = mapOf("Referer" to referer), cookies = sessionCookies)
-            val embedDoc = embedRes.document
-            
-            // Cerca l'iframe reale (spesso LoadM o simili)
-            val finalIframe = embedDoc.selectFirst(".Video iframe[src], .videocontainer iframe[src], iframe[src*='loadm']")?.attr("src")
-                ?: embedDoc.selectFirst("iframe")?.attr("src")
-                ?: cleanUrl
-
-            val videoPageUrl = if (finalIframe.startsWith("//")) "https:$finalIframe" else finalIframe
-
-            // Carica la pagina finale che contiene il file video
-            val videoPageRes = app.get(videoPageUrl, headers = mapOf("Referer" to cleanUrl))
-            val html = videoPageRes.text
-            
-            // Estrae link .m3u8 o .mp4
-            val videoLink = Regex("""["'](https?://[^"']+\.(?:m3u8|mp4)[^"']*)["']""").find(html)?.groupValues?.get(1)
-
-            if (videoLink != null) {
-                val finalVideo = videoLink.replace("\\/", "/")
-                callback.invoke(
-                    newExtractorLink(serverName, this.name, finalVideo) {
-                        this.quality = Qualities.Unknown.value
-                        this.type = if (finalVideo.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                        this.headers = mapOf(
-                            "Referer" to videoPageUrl,
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                            "Accept" to "*/*"
-                        )
+        // 2. Metodo alternativo: Scansione script per link nascosti (se il punto 1 fallisce)
+        if (document.select("iframe").isEmpty()) {
+            document.select("script").forEach { script ->
+                val content = script.data()
+                if (content.contains("src=\"http") || content.contains("data-src=\"http")) {
+                    val regex = Regex("""(?:src|data-src)="([^"]+)"""")
+                    regex.findAll(content).forEach { match ->
+                        val foundUrl = match.groupValues[1]
+                        if (foundUrl.contains("embed") || foundUrl.contains("player")) {
+                             loadExtractor(foundUrl, data, subtitleCallback, callback)
+                        }
                     }
-                )
+                }
             }
-        } catch (e: Exception) {
-            Log.e("GP_DEBUG", "Errore estrazione da $serverName: ${e.message}")
         }
+        
+        return true
     }
 }
