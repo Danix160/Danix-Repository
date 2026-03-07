@@ -13,14 +13,13 @@ class CbProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    // Configurazione Proxy Privato con Auth
-    private val myProxyUrl = "https://esproxy.onrender.com/proxy?url="
+    // Configurazione Proxy Privato (Root URL testata su Chromebook)
+    private val myProxyUrl = "https://esproxy.onrender.com/"
     private val proxyAuth = "1601"
 
     private val commonHeaders = mapOf(
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer" to "$mainUrl/",
-        "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
     )
 
     private val supportedHosts = listOf(
@@ -134,13 +133,15 @@ class CbProvider : MainAPI() {
                     cleanLink.replace("msf/", "embed-") + ".html"
                 } else cleanLink
 
-                val proxiedUrl = "$myProxyUrl${URLEncoder.encode(embedUrl, "UTF-8")}"
-                
                 try {
+                    val encodedTarget = URLEncoder.encode(embedUrl, "UTF-8")
                     val res = app.get(
-                        proxiedUrl, 
-                        headers = mapOf("Authorization" to proxyAuth, "X-Proxy-Key" to proxyAuth),
-                        timeout = 15
+                        url = "$myProxyUrl?url=$encodedTarget", 
+                        headers = mapOf(
+                            "Authorization" to proxyAuth,
+                            "X-Proxy-Key" to proxyAuth
+                        ),
+                        timeout = 20
                     )
 
                     if (res.code == 200) {
@@ -148,21 +149,23 @@ class CbProvider : MainAPI() {
                         val directVideo = Regex("""file:\s*["'](http[^"']+)["']""").find(response)?.groupValues?.get(1)
                         
                         if (directVideo != null) {
+                            val isM3u8 = directVideo.contains(".m3u8") || directVideo.contains(".ts")
+                            
+                            // Sintassi DSL corretta e sensata
                             callback.invoke(
                                 newExtractorLink(
-                                    name = "Max (Proxy OK)",
-                                    source = "MaxStream",
-                                    url = directVideo,
-                                    referer = embedUrl,
-                                    quality = Qualities.P720.value,
-                                    isM3u8 = directVideo.contains(".m3u8")
-                                )
+                                    name = "CB-Proxy",
+                                    source = this.name,
+                                    url = directVideo
+                                ) {
+                                    this.quality = Qualities.P720.value
+                                    this.referer = embedUrl
+                                    this.type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                }
                             )
                         } else {
                             loadExtractor(embedUrl, subtitleCallback, callback)
                         }
-                    } else {
-                        loadExtractor(embedUrl, subtitleCallback, callback)
                     }
                 } catch (e: Exception) {
                     loadExtractor(embedUrl, subtitleCallback, callback)
