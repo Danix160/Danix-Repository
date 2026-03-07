@@ -13,6 +13,7 @@ class CbProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
+    // Configurazione Proxy Privato con Auth
     private val myProxyUrl = "https://esproxy.onrender.com/proxy?url="
     private val proxyAuth = "1601"
 
@@ -148,21 +149,19 @@ class CbProvider : MainAPI() {
                         
                         if (directVideo != null) {
                             callback.invoke(
-                                ExtractorLink(
-                                    "Max (Proxy OK)",
-                                    "MaxStream",
-                                    directVideo,
-                                    embedUrl,
-                                    Qualities.P720.value,
-                                    directVideo.contains(".m3u8")
+                                newExtractorLink(
+                                    name = "Max (Proxy OK)",
+                                    source = "MaxStream",
+                                    url = directVideo,
+                                    referer = embedUrl,
+                                    quality = Qualities.P720.value,
+                                    isM3u8 = directVideo.contains(".m3u8")
                                 )
                             )
                         } else {
-                            // Se il proxy risponde ma non trova il video, proviamo l'estrattore standard
                             loadExtractor(embedUrl, subtitleCallback, callback)
                         }
                     } else {
-                        // Se il proxy dà errore (es. 401 o 500), usiamo il metodo standard
                         loadExtractor(embedUrl, subtitleCallback, callback)
                     }
                 } catch (e: Exception) {
