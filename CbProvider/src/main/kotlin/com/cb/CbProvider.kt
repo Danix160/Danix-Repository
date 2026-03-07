@@ -13,10 +13,6 @@ class CbProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    // Configurazione Proxy Privato
-    private val myProxyUrl = "https://esproxy.onrender.com/"
-    private val proxyAuth = "1601"
-
     private val commonHeaders = mapOf(
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer" to "$mainUrl/",
@@ -125,70 +121,27 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        data.split("###").forEach { rawLink ->
-            val cleanLink = rawLink.trim()
-            
-            // Gestione Host con Proxy (Uprot, MaxStream, Maxsa)
+        // Separiamo i link e diamo priorità a MixDrop e Voe (i più stabili)
+        val allLinks = data.split("###").map { it.trim() }.sortedByDescending { 
+            it.contains("mixdrop") || it.contains("voe") 
+        }
+
+        allLinks.forEach { cleanLink ->
+            println("CB_DEBUG: Analisi link -> $cleanLink")
+
             if (cleanLink.contains("uprot.net") || cleanLink.contains("msf") || cleanLink.contains("maxsa")) {
-                val embedUrl = if (cleanLink.contains("msf/")) {
-                    cleanLink.replace("msf/", "embed-") + ".html"
-                } else cleanLink
-
-                println("CB_DEBUG: [START] Proxy per: $embedUrl")
-
-                try {
-                    val encodedTarget = URLEncoder.encode(embedUrl, "UTF-8")
-                    val finalProxyRequest = "$myProxyUrl?url=$encodedTarget"
-                    
-                    println("CB_DEBUG: Chiamata a: $finalProxyRequest")
-
-                    val res = app.get(
-                        url = finalProxyRequest, 
-                        headers = mapOf(
-                            "Authorization" to proxyAuth,
-                            "X-Proxy-Key" to proxyAuth
-                        ),
-                        timeout = 30 // Render free può essere lento
-                    )
-
-                    println("CB_DEBUG: Risposta Codice: ${res.code}")
-
-                    if (res.code == 200) {
-                        val responseBody = res.text
-                        val directVideo = Regex("""file:\s*["'](http[^"']+)["']""").find(responseBody)?.groupValues?.get(1)
-                        
-                        if (directVideo != null) {
-                            println("CB_DEBUG: [SUCCESS] Video trovato: $directVideo")
-                            
-                            val isM3u8 = directVideo.contains(".m3u8") || directVideo.contains(".ts")
-
-                            callback.invoke(
-                                newExtractorLink(
-                                    name = "CB-Proxy-MaxStream",
-                                    source = this.name,
-                                    url = directVideo
-                                ) {
-                                    this.quality = Qualities.P720.value
-                                    this.referer = embedUrl // Fondamentale per il player MaxStream
-                                    this.type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                }
-                            )
-                        } else {
-                            println("CB_DEBUG: [FAIL] Proxy risponde 200 ma 'file:' non trovato nel body")
-                            loadExtractor(embedUrl, subtitleCallback, callback)
-                        }
-                    } else {
-                        println("CB_DEBUG: [FAIL] HTTP Error ${res.code}")
-                        loadExtractor(embedUrl, subtitleCallback, callback)
-                    }
-                } catch (e: Exception) {
-                    println("CB_DEBUG: [EXCEPTION] ${e.message}")
-                    loadExtractor(embedUrl, subtitleCallback, callback)
-                }
+                // Per Uprot usiamo l'estrattore diretto sperando nella WebView per il Captcha
+                println("CB_DEBUG: Tentativo WebView manuale per Uprot/MaxStream")
+                loadExtractor(cleanLink, subtitleCallback, callback)
             } else {
-                // Host Standard (Voe, Mixdrop, ecc.)
-                val finalUrl = if (cleanLink.contains("stayonline.pro")) bypassStayOnline(cleanLink) else cleanLink
-                finalUrl?.let { loadExtractor(it, subtitleCallback, callback) }
+                // Gestione Host Standard
+                val finalUrl = if (cleanLink.contains("stayonline.pro")) {
+                    bypassStayOnline(cleanLink)
+                } else cleanLink
+                
+                finalUrl?.let { 
+                    loadExtractor(it, subtitleCallback, callback)
+                }
             }
         }
         return true
