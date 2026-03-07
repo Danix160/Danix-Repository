@@ -2,9 +2,9 @@ package com.cb
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.mvvm.runSafe
 import org.json.JSONObject
 import org.jsoup.nodes.Element
-import java.net.URLEncoder
 
 class CbProvider : MainAPI() {
     override var mainUrl = "https://cb01uno.download"
@@ -121,26 +121,21 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Separiamo i link e diamo priorità a MixDrop e Voe (i più stabili)
+        // Separiamo i link e mettiamo MixDrop e Voe in cima (priorità alta)
         val allLinks = data.split("###").map { it.trim() }.sortedByDescending { 
             it.contains("mixdrop") || it.contains("voe") 
         }
 
         allLinks.forEach { cleanLink ->
-            println("CB_DEBUG: Analisi link -> $cleanLink")
-
-            if (cleanLink.contains("uprot.net") || cleanLink.contains("msf") || cleanLink.contains("maxsa")) {
-                // Per Uprot usiamo l'estrattore diretto sperando nella WebView per il Captcha
-                println("CB_DEBUG: Tentativo WebView manuale per Uprot/MaxStream")
-                loadExtractor(cleanLink, subtitleCallback, callback)
-            } else {
-                // Gestione Host Standard
-                val finalUrl = if (cleanLink.contains("stayonline.pro")) {
-                    bypassStayOnline(cleanLink)
-                } else cleanLink
-                
-                finalUrl?.let { 
-                    loadExtractor(it, subtitleCallback, callback)
+            runSafe {
+                if (cleanLink.contains("stayonline.pro")) {
+                    bypassStayOnline(cleanLink)?.let { 
+                        loadExtractor(it, subtitleCallback, callback) 
+                    }
+                } else {
+                    // Passa il link agli estrattori installati (CineStream, Universal, ecc.)
+                    // Questi gestiranno il deoffuscamento o la WebView per Uprot/MaxStream
+                    loadExtractor(cleanLink, subtitleCallback, callback)
                 }
             }
         }
