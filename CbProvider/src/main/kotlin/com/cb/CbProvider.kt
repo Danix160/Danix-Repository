@@ -7,7 +7,7 @@ import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
 class CbProvider : MainAPI() {
-    override var mainUrl = "https://cb01uno.one"
+    override var mainUrl = "https://cb01uno.download"
     override var name = "CB01"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Cartoon)
     override var lang = "it"
