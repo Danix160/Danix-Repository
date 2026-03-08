@@ -71,7 +71,6 @@ class OnlineSerietvProvider : MainAPI() {
             val episodes = doc.select("a.episodes_button").mapNotNull { el ->
                 val epHref = el.attr("href")
                 val epNum = el.text().trim().filter { it.isDigit() }.toIntOrNull()
-                // Uso di newEpisode invece del costruttore deprecato
                 newEpisode(epHref) {
                     this.episode = epNum
                 }
@@ -102,23 +101,22 @@ class OnlineSerietvProvider : MainAPI() {
                 val doc = app.get(bypassedUrl, referer = link).document
                 val scriptHtml = doc.select("script").html()
 
-                // Estrazione manuale per Flexy Player
                 val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(scriptHtml)?.groupValues?.get(1)
                 
                 if (videoUrl != null) {
-                    // Uso di newExtractorLink invece del costruttore deprecato
+                    // APPLICAZIONE SINTASSI CORRETTA
                     callback.invoke(
                         newExtractorLink(
-                            source = this.name,
-                            name = "Flexy Player",
-                            url = videoUrl,
-                            referer = bypassedUrl,
-                            quality = Qualities.P720.value,
-                            isM3u8 = videoUrl.contains(".m3u8")
-                        )
+                            this.name,
+                            "Flexy Player",
+                            videoUrl,
+                            if (videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ) {
+                            this.quality = Qualities.P720.value
+                            this.referer = bypassedUrl
+                        }
                     )
                 } else {
-                    // Fallback per MaxStream o altri estrattori comuni
                     loadExtractor(bypassedUrl, subtitleCallback, callback)
                 }
             }
