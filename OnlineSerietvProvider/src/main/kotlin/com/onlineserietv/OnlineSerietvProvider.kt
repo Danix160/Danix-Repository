@@ -1,39 +1,52 @@
 package com.onlineserietv
 
+import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.AppUtils.parseJson
+import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 class OnlineSerietvProvider : MainAPI() {
     override var mainUrl = "https://onlineserietv.live"
-    override var name = "OnlineSerieTv"
+    override var name = "OnlineSerieTV"
     override var lang = "it"
     override val hasMainPage = true
-    override val hasChromecastSupport = true
-    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
+    override val supportedTypes = setOf(
+        TvType.Movie, 
+        TvType.TvSeries, 
+        TvType.Cartoon, 
+        TvType.Anime
+    )
 
-    // --- HOME PAGE & SEARCH ---
-    override suspend fun getMainPage(page: Int, request: HomePageRequest): HomePageResponse {
-        val document = app.get(mainUrl).document
-        val home = mutableListOf<HomePageList>()
+    // Configurazione della Home Page basata sui tuoi file sorgente
+    override val mainPage = mainPageOf(
+        "$mainUrl/movies/" to "Film: Ultimi aggiunti",
+        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte",
+        "$mainUrl/film-generi/azione/" to "Film: Azione",
+        "$mainUrl/serie-tv-generi/animazione/" to "Serie TV: Animazione",
+        "$mainUrl/film-generi/horror/" to "Film: Horror"
+    )
 
-        // Sezione Film e Serie TV dai caroselli (visti in Home.txt)
-        document.select("div.items").forEach { block ->
-            val title = block.selectFirst("h2")?.text() ?: "Novità"
-            val items = block.select("article").mapNotNull { it.toSearchResult() }
-            if (items.isNotEmpty()) home.add(HomePageList(title, items))
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val document = app.get(request.data).document
+        // Selettore basato su Home.txt (uagb-post per le griglie moderne)
+        val items = document.select(".uagb-post__inner-wrap, .movie").mapNotNull {
+            it.toSearchResult()
         }
-        return HomePageResponse(home)
+        return newHomePageResponse(HomePageList(request.name, items), false)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h3")?.text() ?: return null
-        val href = this.selectFirst("a")?.attr("href") ?: return null
+        val titleTag = this.selectFirst(".uagb-post__title a, h2 a, h3 a") ?: return null
+        val title = titleTag.text().trim().replace(Regex("""\d{4}$"""), "")
+        val href = titleTag.attr("href")
         val posterUrl = this.selectFirst("img")?.attr("src")
-        val isMovie = href.contains("/film/")
 
-        return if (isMovie) {
+        return if (href.contains("/film/")) {
             newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
         } else {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
@@ -41,30 +54,36 @@ class OnlineSerietvProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/?s=$query"
-        val document = app.get(url).document
-        return document.select("article").mapNotNull { it.toSearchResult() }
+        val document = app.get("$mainUrl/?s=$query").document
+        return document.select(".movie, .uagb-post__inner-wrap").mapNotNull { it.toSearchResult() }
     }
 
-    // --- LOAD DETAILS ---
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url).document
-        val title = document.selectFirst("h1")?.text() ?: ""
-        val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-        val plot = document.selectFirst("meta[name=description]")?.attr("content")
-        
+        val doc = app.get(url).document
+        val title = doc.selectFirst("h1")?.text()?.trim() ?: ""
+        val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
+        val plot = doc.selectFirst("meta[name=description]")?.attr("content")
+        val year = doc.select(".stars i").firstOrNull()?.text()?.toIntOrNull()
+
         return if (url.contains("/film/")) {
-            newMovieLoadResponse(title, url, TvType.Movie, url) {
+            // Per i film cerchiamo l'iframe di streaming
+            val iframeUrl = doc.selectFirst("iframe[src*=/stream-film/]")?.attr("src") 
+                ?: doc.selectFirst("#hostlinks a")?.attr("href") ?: ""
+            
+            newMovieLoadResponse(title, url, TvType.Movie, iframeUrl) {
                 this.posterUrl = poster
                 this.plot = plot
+                this.year = year
             }
         } else {
+            // Per le serie estraiamo gli episodi dai pulsanti (IframeSerie.txt)
             val episodes = mutableListOf<Episode>()
-            // Parsing episodi come da IframeSerie.txt
-            document.select("a.episodes_button").forEach { ep ->
-                val epHref = ep.attr("href")
-                val epNum = ep.selectFirst("b")?.text()?.toIntOrNull()
-                episodes.add(Episode(epHref, episode = epNum))
+            doc.select("a.episodes_button, #hostlinks table tr").forEach { el ->
+                val epHref = el.selectFirst("a")?.attr("href") ?: el.attr("href")
+                if (epHref.isNotEmpty()) {
+                    val epNum = el.text().filter { it.isDigit() }.toIntOrNull()
+                    episodes.add(Episode(epHref, episode = epNum))
+                }
             }
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
@@ -73,46 +92,61 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // --- LINK EXTRACTION & CAPTCHA ---
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // 1. Carichiamo la pagina che contiene l'iframe del player
-        val response = app.get(data).document
-        val iframeUrl = response.selectFirst("iframe")?.attr("src") ?: return false
+        // 'data' può essere un singolo URL o una lista JSON
+        val urls = if (data.startsWith("[")) parseJson<List<String>>(data) else listOf(data)
 
-        // 2. Chiamata al player (Flexy o MaxStream)
-        // Se il sito richiede un captcha numerico "uprot", Cloudstream mostrerà un dialog all'utente
-        val playerPage = app.get(iframeUrl).document
-        
-        // Verifica presenza Captcha Uprot
-        if (playerPage.selectFirst("input[name=captcha]") != null) {
-            // Qui implementiamo la logica di risoluzione manuale se necessaria
-            // In un plugin reale, useremmo un'interfaccia di dialogo per l'input numerico
+        urls.amap { link ->
+            val bypassedUrl = if (link.contains("uprot")) bypassUprot(link) else link
+            
+            if (bypassedUrl != null) {
+                val doc = app.get(bypassedUrl, referer = link).document
+                val scriptHtml = doc.select("script").html()
+
+                // Logica per FLEXY: cerca il file video negli script
+                val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(scriptHtml)?.groupValues?.get(1)
+                
+                if (videoUrl != null) {
+                    callback.invoke(
+                        ExtractorLink(
+                            this.name,
+                            "Flexy Player",
+                            videoUrl,
+                            referer = bypassedUrl,
+                            quality = getQualityFromName("720p"),
+                            isM3u8 = videoUrl.contains(".m3u8")
+                        )
+                    )
+                } else {
+                    // Fallback su estrattori automatici (es. MaxStream)
+                    loadExtractor(bypassedUrl, subtitleCallback, callback)
+                }
+            }
         }
-
-        // 3. Estrazione finale del file video (M3U8 o MP4)
-        // Nota: Poiché Flexy e MaxStream sono player custom del sito, 
-        // spesso i link sono nascosti in script eval o variabili JS
-        val scriptData = playerPage.select("script").html()
-        val videoUrl = Regex("file:\"(.*?)\"").find(scriptData)?.groupValues?.get(1)
-
-        if (videoUrl != null) {
-            callback.invoke(
-                ExtractorLink(
-                    this.name,
-                    "Flexy Player",
-                    videoUrl,
-                    referer = iframeUrl,
-                    quality = getQualityFromName("720p"),
-                    isM3u8 = videoUrl.contains(".m3u8")
-                )
-            )
-        }
-
         return true
+    }
+
+    private suspend fun bypassUprot(link: String): String? {
+        // Sostituzione parametro per tentare il bypass diretto
+        val updatedLink = link.replace("msf", "mse")
+        
+        return try {
+            val response = app.get(
+                updatedLink, 
+                referer = mainUrl,
+                headers = mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            ).document
+            
+            // Cerca il link del player nel pulsante di redirect o nel Javascript
+            response.selectFirst("a[href*='flexy'], a[href*='maxstream']")?.attr("href")
+                ?: Regex("window\\.location\\.href\\s*=\\s*\"(.*?)\"").find(response.html())?.groupValues?.get(1)
+        } catch (e: Exception) {
+            null
+        }
     }
 }
