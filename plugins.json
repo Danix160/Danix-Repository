@@ -3,7 +3,7 @@
         "iconUrl": "https://cb01uno.one/wp-content/uploads/2026/01/logo-official-uno-2026.png",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
-        "fileSize": 20416,
+        "fileSize": 18456,
         "status": 1,
         "language": "it",
         "authors": [
@@ -14,7 +14,7 @@
             "TvSeries",
             "Cartoon"
         ],
-        "version": 22,
+        "version": 23,
         "internalName": "CbProvider",
         "description": "cb01uno.one",
         "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/CbProvider.cs3",
@@ -58,6 +58,26 @@
         "description": "GuardaPlay Contiene Solo Film",
         "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/GuardaPlayProvider.cs3",
         "name": "GuardaPlayProvider"
+    },
+    {
+        "iconUrl": "https://cineblog001.club/templates/CB01/img/logo.png",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 13173,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries, Cartoon, Anime"
+        ],
+        "version": 1,
+        "internalName": "OnlineSerietvProvider",
+        "description": "OnlineSerieTv",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/OnlineSerietvProvider.cs3",
+        "name": "OnlineSerietvProvider"
     },
     {
         "iconUrl": "https://toonitalia.xyz/wp-content/uploads/2023/08/cropped-Majintoon-192x192.jpg",
