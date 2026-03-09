@@ -12,12 +12,11 @@ class OnlineSerietvProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
-    private val pcUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    private val pcUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies/page/" to "Film Recenti",
         "$mainUrl/serie-tv/page/" to "Serie TV Aggiornate",
-        "$mainUrl/film-generi/azione/page/" to "Azione",
         "$mainUrl/film-generi/animazione/page/" to "Animazione"
     )
 
@@ -62,26 +61,27 @@ class OnlineSerietvProvider : MainAPI() {
             }
         } else {
             val episodes = mutableListOf<Episode>()
-            // Selettore specifico per le stagioni nascoste (Shortcodes Ultimate)
+            
+            // 1. Cerca link espliciti agli episodi (anche dentro gli spoiler/stagioni)
             val episodeElements = doc.select(".su-spoiler-content a[href*='/episodio/'], .entry-content a[href*='/episodio/'], .lista-episodi a")
             
             episodeElements.forEach { el ->
                 val epHref = el.attr("href")
                 val epName = el.text().trim()
-                if (epHref.isNotEmpty()) {
+                if (epHref.isNotEmpty() && (epName.contains(Regex("\\d")) || epHref.contains("episodio"))) {
                     episodes.add(newEpisode(epHref) {
-                        this.name = epName.ifBlank { "Episodio" }
+                        this.name = epName
                         this.posterUrl = poster
                     })
                 }
             }
 
-            // Fallback: se non ci sono episodi listati, usa i bottoni diretti (comune in Gumball)
+            // 2. Fallback: Se il menu è ancora vuoto, prendi i bottoni dei player diretti
             if (episodes.isEmpty()) {
                 doc.select("a.su-button, a[href*='uprot'], a[href*='msf']").forEach { el ->
                     val href = el.attr("href")
                     if (!href.contains("share") && !href.contains("facebook")) {
-                        episodes.add(newEpisode(href) { this.name = "Play / Streaming" })
+                        episodes.add(newEpisode(href) { this.name = "Play Streaming" })
                     }
                 }
             }
@@ -99,25 +99,29 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // WebViewResolver bypassa la protezione anti-bot del player
-        val res = app.get(data, interceptor = WebViewResolver(Regex(".*")), timeout = 20)
-        
-        // Estraiamo tutti i possibili link di player
+        // Usiamo un timeout più basso per evitare il blocco visto nei logcat
+        val res = app.get(data, headers = mapOf("User-Agent" to pcUserAgent), timeout = 25)
         val links = mutableListOf<String>()
-        res.document.select("iframe, a, [data-src], [data-l]").forEach { 
-            links.add(it.attr("src"))
-            links.add(it.attr("href"))
-            links.add(it.attr("data-src"))
-            links.add(it.attr("data-l"))
+
+        // Estrazione multipla: iframe, link e data-attributes
+        res.document.select("iframe, a, [data-src], [data-l], .su-button").forEach { 
+            val link = it.attr("src").ifEmpty { it.attr("href").ifEmpty { it.attr("data-src") } }
+            if (link.startsWith("http") && !link.contains("facebook")) {
+                links.add(fixUrl(link))
+            }
         }
 
-        links.filter { it.startsWith("http") }.distinct().forEach { link ->
-            val cleanLink = fixUrl(link)
-            if (cleanLink.contains("uprot") || cleanLink.contains("msf") || cleanLink.contains("fxf")) {
-                val finalPlayer = resolveBridge(cleanLink)
+        // Regex per catturare link nascosti nel testo (uprot/msf/mixdrop)
+        val regex = Regex("""https?://[\w\d]+\.[\w\d]+\.[a-zA-Z]{2,}/(?:msf|uprot|fxf|embed|e)/[\w\d]+""")
+        regex.findAll(res.text).forEach { links.add(it.value) }
+
+        links.distinct().forEach { link ->
+            if (link.contains("uprot") || link.contains("msf") || link.contains("fxf")) {
+                // Bridge resolver per saltare la pagina di attesa
+                val finalPlayer = resolveBridge(link)
                 if (finalPlayer != null) loadExtractor(finalPlayer, data, subtitleCallback, callback)
             } else {
-                loadExtractor(cleanLink, data, subtitleCallback, callback)
+                loadExtractor(link, data, subtitleCallback, callback)
             }
         }
         return true
@@ -125,6 +129,7 @@ class OnlineSerietvProvider : MainAPI() {
 
     private suspend fun resolveBridge(url: String): String? {
         return try {
+            // Tenta di risolvere il link "ponte" usando WebView solo se necessario
             val res = app.get(url, interceptor = WebViewResolver(Regex(".*")), timeout = 15)
             res.document.selectFirst("iframe[src], a.btn-primary, div#player a")?.run {
                 val found = attr("src").ifEmpty { attr("href") }
