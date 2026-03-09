@@ -47,7 +47,7 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // FIX: Cambiato il tipo di ritorno da List a SearchResponseList?
+    // Override per la ricerca singola (standard)
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("$mainUrl/?s=$query").document
         return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
@@ -55,15 +55,18 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // FIX: Corretto il tipo di ritorno per supportare la paginazione della ricerca
+    // Override per la ricerca con paginazione (corretto per evitare errori di compilazione)
     override suspend fun search(query: String, page: Int): SearchResponseList? {
         val url = if (page <= 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
         val document = app.get(url).document
         val results = document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
             it.toSearchResult() 
         }
+        
         if (results.isEmpty()) return null
-        return SearchResponseList(results)
+        
+        // FIX: Usiamo newSearchResponseList invece del costruttore diretto
+        return newSearchResponseList(results, hasNext = results.isNotEmpty())
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -82,11 +85,10 @@ class OnlineSerietvProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
-            // FIX EPISODI: Selettore basato sull'ultimo HTML ricevuto
-            val episodes = doc.select(".div_episodes a").mapNotNull { el ->
+            // Selettore episodi basato sulla struttura osservata
+            val episodes = doc.select(".div_episodes a, .episodes_button_container a").mapNotNull { el ->
                 val epHref = el.attr("href")
                 val epText = el.text().trim()
-                // Proviamo a prendere il numero dal testo, altrimenti dall'URL
                 val epNum = epText.filter { it.isDigit() }.toIntOrNull() 
                     ?: Regex("""/(\d+)/?$""").find(epHref)?.groupValues?.get(1)?.toIntOrNull()
                 
@@ -110,6 +112,7 @@ class OnlineSerietvProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val doc = app.get(data).document
+        // Controllo Captcha
         if (doc.select("input[name=capt]").isNotEmpty()) return false
 
         doc.select("iframe[src*=/uprot.], a[href*=/uprot.], iframe[src*=/fxe/], iframe[src*=/mse/], iframe[src*=/stream-]").forEach { el ->
