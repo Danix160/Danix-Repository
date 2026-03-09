@@ -47,15 +47,12 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // Override per la ricerca singola (standard)
+    // Ricerca standard (prima pagina)
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("$mainUrl/?s=$query").document
-        return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
-            it.toSearchResult() 
-        }
+        return search(query, 1)?.results ?: emptyList()
     }
 
-    // Override per la ricerca con paginazione (corretto per evitare errori di compilazione)
+    // Ricerca con paginazione (Fix per vedere più risultati)
     override suspend fun search(query: String, page: Int): SearchResponseList? {
         val url = if (page <= 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
         val document = app.get(url).document
@@ -64,9 +61,7 @@ class OnlineSerietvProvider : MainAPI() {
         }
         
         if (results.isEmpty()) return null
-        
-        // FIX: Usiamo newSearchResponseList invece del costruttore diretto
-        return newSearchResponseList(results, hasNext = results.isNotEmpty())
+        return newSearchResponseList(results, hasNext = results.size >= 10)
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -85,11 +80,23 @@ class OnlineSerietvProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
-            // Selettore episodi basato sulla struttura osservata
-            val episodes = doc.select(".div_episodes a, .episodes_button_container a").mapNotNull { el ->
+            // FIX EPISODI: Cerchiamo l'iframe che contiene i bottoni degli episodi
+            val iframeElement = doc.selectFirst("iframe[src*=/streaming-serie-tv/]")
+            val episodesUrl = iframeElement?.attr("src") ?: url
+            
+            // Carichiamo l'HTML dell'iframe per leggere i bottoni
+            val episodeDoc = if (episodesUrl != url) {
+                app.get(episodesUrl, referer = url).document
+            } else {
+                doc
+            }
+
+            val episodes = episodeDoc.select(".div_episodes a").mapNotNull { el ->
                 val epHref = el.attr("href")
                 val epText = el.text().trim()
-                val epNum = epText.filter { it.isDigit() }.toIntOrNull() 
+                
+                // Estrariamo il numero dell'episodio dall'URL se il testo non è solo numerico
+                val epNum = epText.toIntOrNull() 
                     ?: Regex("""/(\d+)/?$""").find(epHref)?.groupValues?.get(1)?.toIntOrNull()
                 
                 newEpisode(epHref) {
@@ -112,7 +119,7 @@ class OnlineSerietvProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val doc = app.get(data).document
-        // Controllo Captcha
+        // Se c'è un captcha numerico nel player, l'estrazione si ferma qui
         if (doc.select("input[name=capt]").isNotEmpty()) return false
 
         doc.select("iframe[src*=/uprot.], a[href*=/uprot.], iframe[src*=/fxe/], iframe[src*=/mse/], iframe[src*=/stream-]").forEach { el ->
@@ -121,6 +128,7 @@ class OnlineSerietvProvider : MainAPI() {
             
             if (bypassedUrl != null) {
                 val playerDoc = app.get(bypassedUrl, referer = data).document
+                // Cerchiamo il link video diretto nello script del player
                 val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(playerDoc.html())?.groupValues?.get(1)
                 
                 if (videoUrl != null) {
@@ -136,6 +144,7 @@ class OnlineSerietvProvider : MainAPI() {
                         }
                     )
                 } else {
+                    // Se non troviamo il file diretto, proviamo gli estrattori standard
                     loadExtractor(bypassedUrl, subtitleCallback, callback)
                 }
             }
