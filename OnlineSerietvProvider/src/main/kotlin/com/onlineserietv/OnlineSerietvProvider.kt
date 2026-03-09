@@ -12,25 +12,28 @@ class OnlineSerietvProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
+    // User agent moderno per evitare blocchi bot
     private val pcUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
 
-    override val mainPage = mainPageOf(
-        "$mainUrl/movies/page/" to "Film Recenti",
-        "$mainUrl/serie-tv/page/" to "Serie TV Aggiornate",
-        "$mainUrl/film-generi/animazione/page/" to "Animazione"
-    )
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = "${request.data}$page/"
-        val res = app.get(url, headers = mapOf("User-Agent" to pcUserAgent))
-        val items = res.document.select("article, .uagb-post__inner-wrap, .movie-item").mapNotNull {
-            it.toSearchResult()
+        val items = mutableListOf<HomePageList>()
+        val urls = listOf(
+            "$mainUrl/movies/page/" to "Film Recenti",
+            "$mainUrl/serie-tv/page/" to "Serie TV"
+        )
+        
+        for ((url, title) in urls) {
+            val res = app.get("$url$page/", headers = mapOf("User-Agent" to pcUserAgent))
+            val searchRes = res.document.select("article, .uagb-post__inner-wrap").mapNotNull {
+                it.toSearchResult()
+            }
+            if (searchRes.isNotEmpty()) items.add(HomePageList(title, searchRes))
         }
-        return newHomePageResponse(HomePageList(request.name, items), hasNext = items.isNotEmpty())
+        return newHomePageResponse(items, hasNext = true)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleTag = this.selectFirst("h2 a, .uagb-post__title a, .entry-title a") ?: return null
+        val titleTag = this.selectFirst("h2 a, .uagb-post__title a") ?: return null
         val href = titleTag.attr("href")
         val title = titleTag.text().replace(Regex("(?i)streaming|sub ita"), "").trim()
         val posterUrl = this.selectFirst("img")?.attr("src")
@@ -42,54 +45,23 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val res = app.get("$mainUrl/?s=$query", headers = mapOf("User-Agent" to pcUserAgent))
-        return res.document.select("article, .uagb-post__inner-wrap").mapNotNull { it.toSearchResult() }
-    }
-
     override suspend fun load(url: String): LoadResponse {
-        val response = app.get(url, headers = mapOf("User-Agent" to pcUserAgent))
-        val doc = response.document
-        val title = doc.selectFirst("h1, .entry-title")?.text()?.replace(Regex("(?i)streaming|serie tv"), "")?.trim() ?: "Senza Titolo"
-        val poster = doc.selectFirst("meta[property='og:image'], .wp-post-image")?.attr("content")
-        val plot = doc.selectFirst(".entry-content p, meta[name='description']")?.text()?.trim()
-
+        val doc = app.get(url, headers = mapOf("User-Agent" to pcUserAgent)).document
+        val title = doc.selectFirst("h1")?.text()?.trim() ?: "No Title"
+        val poster = doc.selectFirst("meta[property='og:image']")?.attr("content")
+        
         if (url.contains("/film/")) {
-            return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
+            return newMovieLoadResponse(title, url, TvType.Movie, url) { this.posterUrl = poster }
         } else {
-            val episodes = mutableListOf<Episode>()
-            
-            // 1. Cerca link espliciti agli episodi (anche dentro gli spoiler/stagioni)
-            val episodeElements = doc.select(".su-spoiler-content a[href*='/episodio/'], .entry-content a[href*='/episodio/'], .lista-episodi a")
-            
-            episodeElements.forEach { el ->
-                val epHref = el.attr("href")
-                val epName = el.text().trim()
-                if (epHref.isNotEmpty() && (epName.contains(Regex("\\d")) || epHref.contains("episodio"))) {
-                    episodes.add(newEpisode(epHref) {
-                        this.name = epName
-                        this.posterUrl = poster
-                    })
+            // Logica migliorata per trovare episodi anche nei menu a tendina/spoiler
+            val episodes = doc.select(".su-spoiler-content a, .entry-content a[href*='/episodio/']").mapNotNull {
+                val href = it.attr("href")
+                if (href.isEmpty() || href.contains("facebook")) null
+                else newEpisode(href) { 
+                    this.name = it.text().trim()
                 }
             }
-
-            // 2. Fallback: Se il menu è ancora vuoto, prendi i bottoni dei player diretti
-            if (episodes.isEmpty()) {
-                doc.select("a.su-button, a[href*='uprot'], a[href*='msf']").forEach { el ->
-                    val href = el.attr("href")
-                    if (!href.contains("share") && !href.contains("facebook")) {
-                        episodes.add(newEpisode(href) { this.name = "Play Streaming" })
-                    }
-                }
-            }
-
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes.distinctBy { it.data }) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) { this.posterUrl = poster }
         }
     }
 
@@ -99,42 +71,31 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Usiamo un timeout più basso per evitare il blocco visto nei logcat
-        val res = app.get(data, headers = mapOf("User-Agent" to pcUserAgent), timeout = 25)
-        val links = mutableListOf<String>()
+        // Carichiamo la pagina del player
+        val res = app.get(data, headers = mapOf("User-Agent" to pcUserAgent))
+        val document = res.document
 
-        // Estrazione multipla: iframe, link e data-attributes
-        res.document.select("iframe, a, [data-src], [data-l], .su-button").forEach { 
-            val link = it.attr("src").ifEmpty { it.attr("href").ifEmpty { it.attr("data-src") } }
-            if (link.startsWith("http") && !link.contains("facebook")) {
-                links.add(fixUrl(link))
+        // 1. Cerchiamo iframe diretti (YouTube, Mixdrop, etc)
+        document.select("iframe").forEach {
+            val src = it.attr("src")
+            loadExtractor(src, data, subtitleCallback, callback)
+        }
+
+        // 2. Gestione specifica per i link "ponte" come uprot.net/msf/
+        document.select("a[href*='uprot.net'], a[href*='msf']").forEach {
+            val link = it.attr("href")
+            // Usiamo un resolver con un timeout più basso per evitare il blocco visto nei log
+            val resolvedRes = app.get(link, interceptor = WebViewResolver(Regex(".*")), timeout = 20)
+            
+            // Cerchiamo il link finale dentro la pagina risolta
+            resolvedRes.document.select("iframe, a.btn").forEach { el ->
+                val finalUrl = el.attr("src").ifEmpty { el.attr("href") }
+                if (finalUrl.isNotEmpty()) {
+                    loadExtractor(finalUrl, link, subtitleCallback, callback)
+                }
             }
         }
 
-        // Regex per catturare link nascosti nel testo (uprot/msf/mixdrop)
-        val regex = Regex("""https?://[\w\d]+\.[\w\d]+\.[a-zA-Z]{2,}/(?:msf|uprot|fxf|embed|e)/[\w\d]+""")
-        regex.findAll(res.text).forEach { links.add(it.value) }
-
-        links.distinct().forEach { link ->
-            if (link.contains("uprot") || link.contains("msf") || link.contains("fxf")) {
-                // Bridge resolver per saltare la pagina di attesa
-                val finalPlayer = resolveBridge(link)
-                if (finalPlayer != null) loadExtractor(finalPlayer, data, subtitleCallback, callback)
-            } else {
-                loadExtractor(link, data, subtitleCallback, callback)
-            }
-        }
         return true
-    }
-
-    private suspend fun resolveBridge(url: String): String? {
-        return try {
-            // Tenta di risolvere il link "ponte" usando WebView solo se necessario
-            val res = app.get(url, interceptor = WebViewResolver(Regex(".*")), timeout = 15)
-            res.document.selectFirst("iframe[src], a.btn-primary, div#player a")?.run {
-                val found = attr("src").ifEmpty { attr("href") }
-                if (found.isNotEmpty()) fixUrl(found) else null
-            }
-        } catch (e: Exception) { null }
     }
 }
