@@ -24,7 +24,6 @@ class OnlineSerietvProvider : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        // Aggiunta gestione paginazione per la home e i generi
         val url = "${request.data}$page/"
         val document = app.get(url).document
         val items = document.select("#box_movies .movie, .uagb-post__inner-wrap, article").mapNotNull {
@@ -34,7 +33,7 @@ class OnlineSerietvProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleTag = this.selectFirst("h2 a, .uagb-post__title a, .imagen a") ?: return null
+        val titleTag = this.selectFirst("h2 a, .uagb-post__title a, .imagen a, .entry-title a") ?: return null
         val href = titleTag.attr("href")
         val title = (this.selectFirst("h2")?.text() ?: titleTag.text()).trim()
             .replace(Regex("(?i)guarda|in streaming|– SUB ITA"), "").trim()
@@ -49,8 +48,18 @@ class OnlineSerietvProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        // La ricerca di base mostra solo i primi risultati
+        // Implementazione ricerca multi-pagina (Cloudstream chiama search più volte se restituisci una lista)
+        // Per ora carichiamo la prima pagina, ma la struttura permette di aggiungere il supporto page
         val document = app.get("$mainUrl/?s=$query").document
+        return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
+            it.toSearchResult() 
+        }
+    }
+
+    // AGGIUNTA: Supporto per la ricerca multi-pagina in Cloudstream
+    override suspend fun search(query: String, page: Int): List<SearchResponse> {
+        val url = if (page <= 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
+        val document = app.get(url).document
         return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
             it.toSearchResult() 
         }
@@ -72,19 +81,21 @@ class OnlineSerietvProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
-            // FIX EPISODI: Usiamo un selettore più aggressivo che cerca tutti i link nel div episodi
-            val episodes = doc.select(".div_episodes a, a:has(button[class*='_btn'])").mapNotNull { el ->
+            // FIX EPISODI: Selettore potenziato basato sull'HTML inviato
+            val episodes = doc.select(".div_episodes a, a:has(button[class*='_btn']), .episodes_button_container a").mapNotNull { el ->
                 val epHref = el.attr("href")
-                // Estraiamo il numero dal testo del bottone o dal link stesso
+                // Se il testo è vuoto o non numerico, lo estraiamo dall'URL
                 val epText = el.text().trim()
                 val epNum = epText.filter { it.isDigit() }.toIntOrNull() 
                     ?: Regex("""/(\d+)/?$""").find(epHref)?.groupValues?.get(1)?.toIntOrNull()
                 
+                if (epHref.isEmpty()) null else
                 newEpisode(epHref) {
                     this.episode = epNum
-                    this.name = "Episodio $epText"
+                    this.name = if (epText.isNotEmpty()) "Episodio $epText" else "Episodio $epNum"
                 }
-            }
+            }.distinctBy { it.data } // Evita duplicati se i selettori si sovrappongono
+
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
@@ -98,15 +109,15 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val doc = app.get(data).document
+        val response = app.get(data)
+        val doc = response.document
         
-        // Se c'è un captcha numerico, Cloudstream non può proseguire da solo
+        // Se c'è un captcha numerico, il caricamento link fallirà finché l'utente non lo risolve in WebView
         if (doc.select("input[name=capt]").isNotEmpty()) return false
 
-        // Cerchiamo i link ai player
-        doc.select("iframe[src*=/uprot.], a[href*=/uprot.], iframe[src*=/fxe/], iframe[src*=/mse/]").forEach { el ->
+        doc.select("iframe[src*=/uprot.], a[href*=/uprot.], iframe[src*=/fxe/], iframe[src*=/mse/], iframe[src*=/stream-]").forEach { el ->
             val link = el.attr("src").ifEmpty { el.attr("href") }
-            val bypassedUrl = bypassUprot(link)
+            val bypassedUrl = if (link.contains("uprot")) bypassUprot(link) else link
             
             if (bypassedUrl != null) {
                 val playerDoc = app.get(bypassedUrl, referer = data).document
