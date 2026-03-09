@@ -47,7 +47,6 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // FIX: Ricerca standard che restituisce direttamente la lista
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("$mainUrl/?s=$query").document
         return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
@@ -55,7 +54,6 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // FIX: Ricerca con paginazione corretta usando newSearchResponseList
     override suspend fun search(query: String, page: Int): SearchResponseList? {
         val url = if (page <= 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
         val document = app.get(url).document
@@ -83,7 +81,6 @@ class OnlineSerietvProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
-            // Logica Iframe per Serie TV basata sull'HTML fornito
             val iframeElement = doc.selectFirst("iframe[src*=/streaming-serie-tv/]")
             val episodesUrl = iframeElement?.attr("src") ?: url
             
@@ -93,6 +90,7 @@ class OnlineSerietvProvider : MainAPI() {
                 doc
             }
 
+            // AGGIORNAMENTO: Passiamo il poster della serie a ogni episodio
             val episodes = episodeDoc.select(".div_episodes a").mapNotNull { el ->
                 val epHref = el.attr("href")
                 val epText = el.text().trim()
@@ -103,6 +101,7 @@ class OnlineSerietvProvider : MainAPI() {
                 newEpisode(epHref) {
                     this.episode = epNum
                     this.name = "Episodio $epText"
+                    this.posterUrl = poster // Imposta la copertina nell'anteprima episodio
                 }
             }.distinctBy { it.data }
 
@@ -122,15 +121,26 @@ class OnlineSerietvProvider : MainAPI() {
         val doc = app.get(data).document
         if (doc.select("input[name=capt]").isNotEmpty()) return false
 
-        doc.select("iframe[src*=/uprot.], a[href*=/uprot.], iframe[src*=/fxe/], iframe[src*=/mse/], iframe[src*=/stream-]").forEach { el ->
+        val potentialLinks = doc.select("iframe[src], a[href*='stream'], a[href*='player'], a[href*='embed']")
+
+        potentialLinks.forEach { el ->
             val link = el.attr("src").ifEmpty { el.attr("href") }
-            val bypassedUrl = if (link.contains("uprot")) bypassUprot(link) else link
-            
+            val absoluteLink = fixUrlNull(link) ?: return@forEach
+
+            val bypassedUrl = if (absoluteLink.contains("uprot")) {
+                bypassUprot(absoluteLink)
+            } else {
+                absoluteLink
+            }
+
             if (bypassedUrl != null) {
                 val playerDoc = app.get(bypassedUrl, referer = data).document
-                val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(playerDoc.html())?.groupValues?.get(1)
-                
-                if (videoUrl != null) {
+                val htmlContent = playerDoc.html()
+
+                val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(htmlContent)?.groupValues?.get(1)
+                    ?: Regex("""src(?:\s*):(?:\s*)"([^"]+)"""").find(htmlContent)?.groupValues?.get(1)
+
+                if (videoUrl != null && videoUrl.startsWith("http")) {
                     callback.invoke(
                         newExtractorLink(
                             this.name,
@@ -143,7 +153,7 @@ class OnlineSerietvProvider : MainAPI() {
                         }
                     )
                 } else {
-                    loadExtractor(bypassedUrl, subtitleCallback, callback)
+                    loadExtractor(bypassedUrl, data, subtitleCallback, callback)
                 }
             }
         }
