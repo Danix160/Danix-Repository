@@ -22,5 +22,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries, Cartoon, Anime")
     requiresResources = false
     language = "it"
-    iconUrl = "https://onlineserietv.live/images/logo.svg"
+    iconUrl = "https://onlineserietv.live/wp-content/uploads/2023/01/cropped-tv-1.png"
 }
