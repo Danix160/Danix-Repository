@@ -47,22 +47,23 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
+    // FIX: Cambiato il tipo di ritorno da List a SearchResponseList?
     override suspend fun search(query: String): List<SearchResponse> {
-        // Implementazione ricerca multi-pagina (Cloudstream chiama search più volte se restituisci una lista)
-        // Per ora carichiamo la prima pagina, ma la struttura permette di aggiungere il supporto page
         val document = app.get("$mainUrl/?s=$query").document
         return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
             it.toSearchResult() 
         }
     }
 
-    // AGGIUNTA: Supporto per la ricerca multi-pagina in Cloudstream
-    override suspend fun search(query: String, page: Int): List<SearchResponse> {
+    // FIX: Corretto il tipo di ritorno per supportare la paginazione della ricerca
+    override suspend fun search(query: String, page: Int): SearchResponseList? {
         val url = if (page <= 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
         val document = app.get(url).document
-        return document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
+        val results = document.select(".uagb-post__inner-wrap, article, .movie").mapNotNull { 
             it.toSearchResult() 
         }
+        if (results.isEmpty()) return null
+        return SearchResponseList(results)
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -81,20 +82,19 @@ class OnlineSerietvProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
-            // FIX EPISODI: Selettore potenziato basato sull'HTML inviato
-            val episodes = doc.select(".div_episodes a, a:has(button[class*='_btn']), .episodes_button_container a").mapNotNull { el ->
+            // FIX EPISODI: Selettore basato sull'ultimo HTML ricevuto
+            val episodes = doc.select(".div_episodes a").mapNotNull { el ->
                 val epHref = el.attr("href")
-                // Se il testo è vuoto o non numerico, lo estraiamo dall'URL
                 val epText = el.text().trim()
+                // Proviamo a prendere il numero dal testo, altrimenti dall'URL
                 val epNum = epText.filter { it.isDigit() }.toIntOrNull() 
                     ?: Regex("""/(\d+)/?$""").find(epHref)?.groupValues?.get(1)?.toIntOrNull()
                 
-                if (epHref.isEmpty()) null else
                 newEpisode(epHref) {
                     this.episode = epNum
-                    this.name = if (epText.isNotEmpty()) "Episodio $epText" else "Episodio $epNum"
+                    this.name = "Episodio $epText"
                 }
-            }.distinctBy { it.data } // Evita duplicati se i selettori si sovrappongono
+            }.distinctBy { it.data }
 
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
@@ -109,10 +109,7 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val response = app.get(data)
-        val doc = response.document
-        
-        // Se c'è un captcha numerico, il caricamento link fallirà finché l'utente non lo risolve in WebView
+        val doc = app.get(data).document
         if (doc.select("input[name=capt]").isNotEmpty()) return false
 
         doc.select("iframe[src*=/uprot.], a[href*=/uprot.], iframe[src*=/fxe/], iframe[src*=/mse/], iframe[src*=/stream-]").forEach { el ->
@@ -121,8 +118,7 @@ class OnlineSerietvProvider : MainAPI() {
             
             if (bypassedUrl != null) {
                 val playerDoc = app.get(bypassedUrl, referer = data).document
-                val scriptHtml = playerDoc.select("script").html()
-                val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(scriptHtml)?.groupValues?.get(1)
+                val videoUrl = Regex("""file(?:\s*):(?:\s*)"([^"]+)"""").find(playerDoc.html())?.groupValues?.get(1)
                 
                 if (videoUrl != null) {
                     callback.invoke(
