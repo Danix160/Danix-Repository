@@ -14,7 +14,7 @@ cloudstream {
     extra["prefix"] = "OnlineSerieTv"
     extra["displayName"] = "OnlineSerieTv"
     
-    version = 2
+    version = 3
     description = "OnlineSerieTv"
     authors = listOf("Danix")
     
@@ -22,5 +22,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries, Cartoon, Anime")
     requiresResources = false
     language = "it"
-    iconUrl = "https://cineblog001.club/templates/CB01/img/logo.png"
+    iconUrl = "https://onlineserietv.live/images/logo.svg"
 }
