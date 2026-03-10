@@ -16,7 +16,8 @@ class OnlineSerietvProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies/page/" to "Film Recenti",
-        "$mainUrl/serie-tv/page/" to "Serie TV"
+        "$mainUrl/serie-tv/page/" to "Serie TV",
+        "$mainUrl/film-generi/animazione/page/" to "Animazione"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -62,41 +63,38 @@ class OnlineSerietvProvider : MainAPI() {
         } else {
             val episodes = mutableListOf<Episode>()
             
-            // Nuova logica di estrazione episodi potenziata
-            val potentialLinks = doc.select("div[class*='episod'], div[class*='season'], .entry-content a, .div_seasons a, .div_episodes a, a[href*='/streaming-serie-tv/']")
-            
-            potentialLinks.forEach { el ->
-                val epHref = fixUrlNull(el.attr("href")) ?: return@forEach
-                val text = el.text().lowercase()
+            // Miriamo specificamente ai link degli episodi che abbiamo visto nell'HTML
+            // Cercano i link dentro .div_episodes e i bottoni associati
+            doc.select(".div_episodes a, .div_seasons a").forEach { el ->
+                val href = fixUrlNull(el.attr("href")) ?: return@forEach
                 
-                // Pattern per trovare Stagione ed Episodio (es: S1 E5, 1x05, Stagione 1 Episodio 5)
-                val regex = Regex("""(?i)(?:stagione|s|)\s?(\d+)[xe\s-]+(?:episodio|e|)\s?(\d+)""")
-                val match = regex.find(epHref) ?: regex.find(text)
-                
-                if (match != null) {
-                    val s = match.groupValues[1].toIntOrNull()
-                    val e = match.groupValues[2].toIntOrNull()
-                    if (s != null && e != null) {
-                        episodes.add(newEpisode(epHref) {
-                            this.name = "Stagione $s - Episodio $e"
-                            this.season = s
-                            this.episode = e
+                // Analizziamo l'URL tipo: .../144035/1/2/
+                // Il pattern cerca tre gruppi di numeri alla fine dell'URL
+                val pathSegments = href.trimEnd('/').split("/")
+                if (pathSegments.size >= 3) {
+                    val episodeNum = pathSegments.last().toIntOrNull()
+                    val seasonNum = pathSegments[pathSegments.size - 2].toIntOrNull()
+                    
+                    if (episodeNum != null && seasonNum != null) {
+                        episodes.add(newEpisode(href) {
+                            this.name = "Episodio $episodeNum"
+                            this.season = seasonNum
+                            this.episode = episodeNum
                         })
                     }
-                } else if (epHref.contains("stagione") || epHref.contains("episodio")) {
-                    episodes.add(newEpisode(epHref) {
-                        this.name = el.text().ifBlank { "Episodio" }
-                    })
                 }
             }
 
-            // Fallback: se non trova nulla, prova a cercare ogni link che contenga parole chiave
+            // Se la lista è ancora vuota, usiamo un selettore più generico basato sui bottoni
             if (episodes.isEmpty()) {
-                doc.select("a[href*='stagione'], a[href*='episodio']").forEach { el ->
-                    val href = fixUrl(el.attr("href"))
-                    episodes.add(newEpisode(href) {
-                        this.name = el.text()
-                    })
+                doc.select("button.episodes_button, button.selected_btn").forEach { btn ->
+                    val parentA = btn.parent()
+                    if (parentA?.tagName() == "a") {
+                        val href = fixUrl(parentA.attr("href"))
+                        episodes.add(newEpisode(href) {
+                            this.name = "Episodio " + btn.text().trim()
+                        })
+                    }
                 }
             }
 
@@ -137,7 +135,7 @@ class OnlineSerietvProvider : MainAPI() {
                     name = "Flexy Player",
                     url = webViewRes.url
                 ) {
-                    // Lasciamo vuoto per evitare errori di compilazione su proprietà val/inaccessibili
+                    // Costruttore vuoto per compatibilità SDK
                 }
             )
             return true
