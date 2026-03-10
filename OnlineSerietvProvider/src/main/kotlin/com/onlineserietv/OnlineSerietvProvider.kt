@@ -17,7 +17,7 @@ class OnlineSerietvProvider : MainAPI() {
     override val mainPage = mainPageOf(
         "$mainUrl/movies/page/" to "Film Recenti",
         "$mainUrl/serie-tv/page/" to "Serie TV",
-        "$mainUrl/film-generi/animazione/page/" to "Animazione"
+        "$mainUrl/film-generi/animazione/" to "Animazione"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
