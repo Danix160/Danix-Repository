@@ -16,8 +16,7 @@ class OnlineSerietvProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies/page/" to "Film Recenti",
-        "$mainUrl/serie-tv/page/" to "Serie TV",
-        "$mainUrl/film-generi/animazione/page/" to "Animazione"
+        "$mainUrl/serie-tv/page/" to "Serie TV"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -63,17 +62,22 @@ class OnlineSerietvProvider : MainAPI() {
         } else {
             val episodes = mutableListOf<Episode>()
             
-            // Miriamo specificamente ai link degli episodi che abbiamo visto nell'HTML
-            // Cercano i link dentro .div_episodes e i bottoni associati
-            doc.select(".div_episodes a, .div_seasons a").forEach { el ->
+            // 1. Cerchiamo i link dentro i div specifici che hai inviato (div_episodes)
+            val episodeElements = doc.select(".div_episodes a")
+            
+            episodeElements.forEach { el ->
                 val href = fixUrlNull(el.attr("href")) ?: return@forEach
                 
-                // Analizziamo l'URL tipo: .../144035/1/2/
-                // Il pattern cerca tre gruppi di numeri alla fine dell'URL
-                val pathSegments = href.trimEnd('/').split("/")
-                if (pathSegments.size >= 3) {
-                    val episodeNum = pathSegments.last().toIntOrNull()
-                    val seasonNum = pathSegments[pathSegments.size - 2].toIntOrNull()
+                // Analizziamo l'URL numerico: https://onlineserietv.live/streaming-serie-tv/144035/1/2/
+                // Dividiamo l'URL in segmenti usando "/"
+                val segments = href.trimEnd('/').split("/")
+                
+                // In questa struttura:
+                // l'ultimo numero è l'episodio
+                // il penultimo è la stagione
+                if (segments.size >= 3) {
+                    val episodeNum = segments.last().toIntOrNull()
+                    val seasonNum = segments[segments.size - 2].toIntOrNull()
                     
                     if (episodeNum != null && seasonNum != null) {
                         episodes.add(newEpisode(href) {
@@ -85,11 +89,11 @@ class OnlineSerietvProvider : MainAPI() {
                 }
             }
 
-            // Se la lista è ancora vuota, usiamo un selettore più generico basato sui bottoni
+            // 2. Se non ha trovato nulla (magari caricamento diverso), proviamo con i bottoni
             if (episodes.isEmpty()) {
                 doc.select("button.episodes_button, button.selected_btn").forEach { btn ->
                     val parentA = btn.parent()
-                    if (parentA?.tagName() == "a") {
+                    if (parentA != null && parentA.tagName() == "a") {
                         val href = fixUrl(parentA.attr("href"))
                         episodes.add(newEpisode(href) {
                             this.name = "Episodio " + btn.text().trim()
@@ -131,11 +135,11 @@ class OnlineSerietvProvider : MainAPI() {
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
                 newExtractorLink(
-                    source = this.name,
-                    name = "Flexy Player",
-                    url = webViewRes.url
+                    this.name,
+                    "Flexy Player",
+                    webViewRes.url
                 ) {
-                    // Costruttore vuoto per compatibilità SDK
+                    // Lasciamo vuoto per evitare errori di compilazione sulle proprietà val
                 }
             )
             return true
