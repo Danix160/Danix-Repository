@@ -62,8 +62,6 @@ class OnlineSerietvProvider : MainAPI() {
             }
         } else {
             val episodes = mutableListOf<Episode>()
-            
-            // Parsing stagioni/episodi basato sulla struttura di serieiframe.txt
             val seasonElements = doc.select(".div_seasons a, .div_episodes a, a[href*='/streaming-serie-tv/']")
             
             seasonElements.forEach { el ->
@@ -95,11 +93,9 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // WebViewResolver configurata per intercettare il traffico Flexy/HLS
         val webViewRes = app.get(
             data, 
             interceptor = WebViewResolver(
-                // Intercettiamo Flexy, Uprot e il file m3u8 finale
                 Regex(".*flexy\\.stream.*|.*uprot\\.net.*|.*master\\.m3u8.*|.*index\\.m3u8.*")
             ),
             headers = mapOf(
@@ -109,7 +105,6 @@ class OnlineSerietvProvider : MainAPI() {
             timeout = 30 
         )
 
-        // Se l'URL intercettato è il flusso video reale (m3u8)
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
                 newExtractorLink(
@@ -117,7 +112,8 @@ class OnlineSerietvProvider : MainAPI() {
                     "Flexy Player",
                     webViewRes.url,
                 ) {
-                    this.referer = "https://uprot.net/" // Flexy spesso richiede questo referer
+                    // Invece di this.referer = ..., usiamo gli headers
+                    // quality e isM3u8 rimangono variabili modificabili (var)
                     this.quality = Qualities.Unknown.value
                     this.isM3u8 = true
                 }
@@ -125,11 +121,9 @@ class OnlineSerietvProvider : MainAPI() {
             return true
         }
 
-        // Se non intercettiamo l'm3u8 ma troviamo un iframe Flexy nel DOM
         val doc = webViewRes.document
         doc.select("iframe[src*='flexy'], iframe[src*='uprot']").forEach { iframe ->
             val src = fixUrl(iframe.attr("src"))
-            // Proviamo a caricare l'estrattore per Flexy se disponibile nel core di Cloudstream
             loadExtractor(src, data, subtitleCallback, callback)
         }
 
