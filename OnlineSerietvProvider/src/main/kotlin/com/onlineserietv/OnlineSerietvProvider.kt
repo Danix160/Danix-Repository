@@ -74,7 +74,7 @@ class OnlineSerietvProvider : MainAPI() {
                     val e = match?.groupValues?.get(2)?.toIntOrNull()
                     
                     if (e != null) {
-                        // Accetta solo Flexy via Uprot (/uprots/ o /fxf/) o link diretti
+                        // Filtro: Solo Flexy (evita MaxStream /msf/)
                         val link = row.select("a").map { it.attr("href") }.firstOrNull { 
                             (it.contains("uprot.net") && (it.contains("/uprots/") || it.contains("/fxf/"))) 
                             || it.contains("flexy.stream")
@@ -107,25 +107,23 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // CORREZIONE DEFINITIVA: var permette la riassegnazione
-        var currentUrl = data
+        // SOLUZIONE: Usiamo una nuova variabile locale invece di riassegnare 'data'
+        var resolvedUrl = data
 
-        if (currentUrl.contains("uprot.net")) {
-            val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
+        if (resolvedUrl.contains("uprot.net")) {
+            val res = app.get(resolvedUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
-            // Bypass del redirect per trovare l'URL Flexy effettivo
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
             if (flexyLink != null) {
-                currentUrl = fixUrl(flexyLink)
+                resolvedUrl = fixUrl(flexyLink)
             }
         }
 
-        // Utilizziamo WebViewResolver per estrarre il file video finale
         val webViewRes = app.get(
-            currentUrl,
+            resolvedUrl,
             interceptor = WebViewResolver(
                 Regex(".*flexy\\.stream.*|.*master\\.m3u8.*|.*index\\.m3u8.*|.*playlist\\.m3u8.*|.*\\.mp4.*")
             ),
@@ -144,7 +142,7 @@ class OnlineSerietvProvider : MainAPI() {
                     webViewRes.url,
                     null
                 ) {
-                    this.referer = currentUrl
+                    this.referer = resolvedUrl
                     this.quality = Qualities.Unknown.value
                     this.isM3u8 = webViewRes.url.contains(".m3u8")
                 }
@@ -152,7 +150,7 @@ class OnlineSerietvProvider : MainAPI() {
             return true
         }
 
-        loadExtractor(currentUrl, "https://uprot.net/", subtitleCallback, callback)
+        loadExtractor(resolvedUrl, "https://uprot.net/", subtitleCallback, callback)
 
         return true
     }
