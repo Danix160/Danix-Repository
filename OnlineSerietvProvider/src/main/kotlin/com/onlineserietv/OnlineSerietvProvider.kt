@@ -107,17 +107,18 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
-                // Firma corretta: (source, name, url) { lambda }
                 newExtractorLink(
                     this.name,
                     "Flexy Player",
                     webViewRes.url
                 ) {
-                    // Usiamo il blocco di inizializzazione per i campi rimanenti
+                    // Risolviamo l'errore 'val cannot be reassigned' 
+                    // iniettando il referer direttamente negli headers
+                    this.headers["Referer"] = data
+                    
+                    // quality e isM3u8 dovrebbero essere var, 
+                    // ma li mettiamo per sicurezza
                     this.quality = Qualities.Unknown.value
-                    this.isM3u8 = true
-                    // Se referer è val, lo aggiungiamo agli headers per sicurezza
-                    this.referer = data
                 }
             )
             return true
