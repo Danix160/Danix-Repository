@@ -16,8 +16,7 @@ class OnlineSerietvProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies/page/" to "Film Recenti",
-        "$mainUrl/serie-tv/page/" to "Serie TV",
-        "$mainUrl/film-generi/animazione/page/" to "Animazione"
+        "$mainUrl/serie-tv/page/" to "Serie TV"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -62,25 +61,51 @@ class OnlineSerietvProvider : MainAPI() {
             }
         } else {
             val episodes = mutableListOf<Episode>()
-            val seasonElements = doc.select(".div_seasons a, .div_episodes a, a[href*='/streaming-serie-tv/']")
             
-            seasonElements.forEach { el ->
-                val epHref = el.attr("href")
-                val parts = epHref.split("/").filter { it.isNotEmpty() }
-                if (parts.size >= 3) {
-                    val s = parts[parts.size - 2].toIntOrNull()
-                    val e = parts.last().toIntOrNull()
+            // Nuova logica di estrazione episodi potenziata
+            val potentialLinks = doc.select("div[class*='episod'], div[class*='season'], .entry-content a, .div_seasons a, .div_episodes a, a[href*='/streaming-serie-tv/']")
+            
+            potentialLinks.forEach { el ->
+                val epHref = fixUrlNull(el.attr("href")) ?: return@forEach
+                val text = el.text().lowercase()
+                
+                // Pattern per trovare Stagione ed Episodio (es: S1 E5, 1x05, Stagione 1 Episodio 5)
+                val regex = Regex("""(?i)(?:stagione|s|)\s?(\d+)[xe\s-]+(?:episodio|e|)\s?(\d+)""")
+                val match = regex.find(epHref) ?: regex.find(text)
+                
+                if (match != null) {
+                    val s = match.groupValues[1].toIntOrNull()
+                    val e = match.groupValues[2].toIntOrNull()
                     if (s != null && e != null) {
                         episodes.add(newEpisode(epHref) {
-                            this.name = "Episodio $e"
+                            this.name = "Stagione $s - Episodio $e"
                             this.season = s
                             this.episode = e
                         })
                     }
+                } else if (epHref.contains("stagione") || epHref.contains("episodio")) {
+                    episodes.add(newEpisode(epHref) {
+                        this.name = el.text().ifBlank { "Episodio" }
+                    })
                 }
             }
 
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes.distinctBy { it.data }.sortedWith(compareBy({ it.season }, { it.episode }))) {
+            // Fallback: se non trova nulla, prova a cercare ogni link che contenga parole chiave
+            if (episodes.isEmpty()) {
+                doc.select("a[href*='stagione'], a[href*='episodio']").forEach { el ->
+                    val href = fixUrl(el.attr("href"))
+                    episodes.add(newEpisode(href) {
+                        this.name = el.text()
+                    })
+                }
+            }
+
+            return newTvSeriesLoadResponse(
+                title, 
+                url, 
+                TvType.TvSeries, 
+                episodes.distinctBy { it.data }.sortedWith(compareBy({ it.season }, { it.episode }))
+            ) {
                 this.posterUrl = poster
                 this.plot = plot
             }
@@ -106,15 +131,13 @@ class OnlineSerietvProvider : MainAPI() {
         )
 
         if (webViewRes.url.contains(".m3u8")) {
-            // Se le proprietà interne sono inaccessibili, usiamo il costruttore base
-            // e lasciamo la lambda vuota. Cloudstream gestirà la qualità automaticamente.
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
                     name = "Flexy Player",
                     url = webViewRes.url
                 ) {
-                    // Lambda vuota per evitare errori di compilazione su val/metodi mancanti
+                    // Lasciamo vuoto per evitare errori di compilazione su proprietà val/inaccessibili
                 }
             )
             return true
