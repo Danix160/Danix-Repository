@@ -151,8 +151,8 @@ class OnlineSerietvProvider : MainAPI() {
                             name,
                             link,
                         ) {
-                            this.referer = mainUrl
-                            this.quality = Qualities.P1080.value
+                            this.referer = finalUrl
+                            this.quality = Qualities.Unknow.value
                         }
                 )
             return true
