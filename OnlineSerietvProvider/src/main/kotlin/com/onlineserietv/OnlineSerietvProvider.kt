@@ -74,30 +74,18 @@ class OnlineSerietvProvider : MainAPI() {
                     val e = match?.groupValues?.get(2)?.toIntOrNull()
                     
                     if (e != null) {
-                        val link = row.selectFirst("a[href*='uprot'], a[href*='flexy']")?.attr("href")
+                        // FILTRO AGGIORNATO: Accetta /uprots/, /fxf/ o link diretti a flexy
+                        // Ignora esplicitamente /msf/ (MaxStream)
+                        val link = row.select("a").map { it.attr("href") }.firstOrNull { 
+                            (it.contains("uprot.net") && (it.contains("/uprots/") || it.contains("/fxf/"))) 
+                            || it.contains("flexy.stream")
+                        }
+                        
                         if (link != null) {
                             episodes.add(newEpisode(link) {
                                 this.name = infoText
                                 this.season = s
                                 this.episode = e
-                            })
-                        }
-                    }
-                }
-            }
-
-            if (episodes.isEmpty()) {
-                doc.select(".div_episodes a").forEach { el ->
-                    val href = fixUrlNull(el.attr("href")) ?: return@forEach
-                    val segments = href.trimEnd('/').split("/")
-                    if (segments.size >= 3) {
-                        val epNum = segments.last().toIntOrNull()
-                        val sNum = segments[segments.size - 2].toIntOrNull()
-                        if (epNum != null && sNum != null) {
-                            episodes.add(newEpisode(href) {
-                                this.name = "Episodio $epNum"
-                                this.season = sNum
-                                this.episode = epNum
                             })
                         }
                     }
@@ -120,15 +108,15 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // CORREZIONE: Usiamo 'var' invece di 'val' per permettere la riassegnazione
         var currentUrl = data
 
         if (currentUrl.contains("uprot.net")) {
             val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
+            // Cerchiamo il link Flexy. Accetta sia il link nel pulsante che script offuscati.
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
-                .firstOrNull { it.contains("/uprots/") && !it.contains("discovernative") }
+                .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
             if (flexyLink != null) {
                 currentUrl = fixUrl(flexyLink)
