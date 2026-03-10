@@ -16,7 +16,8 @@ class OnlineSerietvProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies/page/" to "Film Recenti",
-        "$mainUrl/serie-tv/page/" to "Serie TV"
+        "$mainUrl/serie-tv/page/" to "Serie TV",
+        "$mainUrl/film-generi/animazione/page/" to "Animazione"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -61,51 +62,53 @@ class OnlineSerietvProvider : MainAPI() {
             }
         } else {
             val episodes = mutableListOf<Episode>()
-            
-            // 1. Cerchiamo i link dentro i div specifici che hai inviato (div_episodes)
-            val episodeElements = doc.select(".div_episodes a")
-            
-            episodeElements.forEach { el ->
-                val href = fixUrlNull(el.attr("href")) ?: return@forEach
-                
-                // Analizziamo l'URL numerico: https://onlineserietv.live/streaming-serie-tv/144035/1/2/
-                // Dividiamo l'URL in segmenti usando "/"
-                val segments = href.trimEnd('/').split("/")
-                
-                // In questa struttura:
-                // l'ultimo numero è l'episodio
-                // il penultimo è la stagione
-                if (segments.size >= 3) {
-                    val episodeNum = segments.last().toIntOrNull()
-                    val seasonNum = segments[segments.size - 2].toIntOrNull()
+
+            // CASO 1: Tabella #hostlinks (come l'ultimo HTML inviato)
+            doc.select("#hostlinks tr").forEach { row ->
+                val cells = row.select("td")
+                if (cells.size >= 2) {
+                    val infoText = cells[0].text() // Es: "01x01"
+                    val regex = Regex("""(\d+)x(\d+)""")
+                    val match = regex.find(infoText)
                     
-                    if (episodeNum != null && seasonNum != null) {
-                        episodes.add(newEpisode(href) {
-                            this.name = "Episodio $episodeNum"
-                            this.season = seasonNum
-                            this.episode = episodeNum
-                        })
+                    val s = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    val e = match?.groupValues?.get(2)?.toIntOrNull()
+                    
+                    if (e != null) {
+                        // Prendiamo il primo link utile (MaxStream o Flexy)
+                        val link = row.selectFirst("a")?.attr("href")
+                        if (link != null) {
+                            episodes.add(newEpisode(link) {
+                                this.name = infoText
+                                this.season = s
+                                this.episode = e
+                            })
+                        }
                     }
                 }
             }
 
-            // 2. Se non ha trovato nulla (magari caricamento diverso), proviamo con i bottoni
+            // CASO 2: Bottoni .div_episodes (come l'HTML precedente)
             if (episodes.isEmpty()) {
-                doc.select("button.episodes_button, button.selected_btn").forEach { btn ->
-                    val parentA = btn.parent()
-                    if (parentA != null && parentA.tagName() == "a") {
-                        val href = fixUrl(parentA.attr("href"))
-                        episodes.add(newEpisode(href) {
-                            this.name = "Episodio " + btn.text().trim()
-                        })
+                doc.select(".div_episodes a").forEach { el ->
+                    val href = fixUrlNull(el.attr("href")) ?: return@forEach
+                    val segments = href.trimEnd('/').split("/")
+                    if (segments.size >= 3) {
+                        val epNum = segments.last().toIntOrNull()
+                        val sNum = segments[segments.size - 2].toIntOrNull()
+                        if (epNum != null && sNum != null) {
+                            episodes.add(newEpisode(href) {
+                                this.name = "Episodio $epNum"
+                                this.season = sNum
+                                this.episode = epNum
+                            })
+                        }
                     }
                 }
             }
 
             return newTvSeriesLoadResponse(
-                title, 
-                url, 
-                TvType.TvSeries, 
+                title, url, TvType.TvSeries,
                 episodes.distinctBy { it.data }.sortedWith(compareBy({ it.season }, { it.episode }))
             ) {
                 this.posterUrl = poster
@@ -120,35 +123,29 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val webViewRes = app.get(
-            data, 
-            interceptor = WebViewResolver(
-                Regex(".*flexy\\.stream.*|.*uprot\\.net.*|.*master\\.m3u8.*|.*index\\.m3u8.*")
-            ),
-            headers = mapOf(
-                "Referer" to mainUrl,
-                "User-Agent" to pcUserAgent
-            ),
-            timeout = 30 
-        )
-
-        if (webViewRes.url.contains(".m3u8")) {
-            callback.invoke(
-                newExtractorLink(
-                    this.name,
-                    "Flexy Player",
-                    webViewRes.url
-                ) {
-                    // Lasciamo vuoto per evitare errori di compilazione sulle proprietà val
-                }
-            )
+        // Se il link è già un link diretto a uprot/flexy (dalla tabella)
+        if (data.contains("uprot.net") || data.contains("flexy")) {
+            loadExtractor(data, data, subtitleCallback, callback)
             return true
         }
 
-        val doc = webViewRes.document
-        doc.select("iframe[src*='flexy'], iframe[src*='uprot']").forEach { iframe ->
-            val src = fixUrl(iframe.attr("src"))
-            loadExtractor(src, data, subtitleCallback, callback)
+        // Altrimenti usiamo il risolutore webview per i link interni
+        val webViewRes = app.get(
+            data,
+            interceptor = WebViewResolver(
+                Regex(".*flexy\\.stream.*|.*uprot\\.net.*|.*master\\.m3u8.*|.*index\\.m3u8.*")
+            ),
+            headers = mapOf("Referer" to mainUrl, "User-Agent" to pcUserAgent),
+            timeout = 30
+        )
+
+        if (webViewRes.url.contains(".m3u8")) {
+            callback.invoke(newExtractorLink(this.name, "Stream", webViewRes.url) {})
+            return true
+        }
+
+        webViewRes.document.select("iframe[src*='flexy'], iframe[src*='uprot']").forEach { iframe ->
+            loadExtractor(fixUrl(iframe.attr("src")), data, subtitleCallback, callback)
         }
 
         return true
