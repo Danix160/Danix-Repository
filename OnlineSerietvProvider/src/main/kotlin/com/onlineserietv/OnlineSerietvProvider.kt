@@ -63,7 +63,6 @@ class OnlineSerietvProvider : MainAPI() {
         } else {
             val episodes = mutableListOf<Episode>()
 
-            // Scraping Tabella (es. Gumball)
             doc.select("#hostlinks tr").forEach { row ->
                 val cells = row.select("td")
                 if (cells.size >= 2) {
@@ -87,7 +86,6 @@ class OnlineSerietvProvider : MainAPI() {
                 }
             }
 
-            // Scraping Bottoni (Fallback)
             if (episodes.isEmpty()) {
                 doc.select(".div_episodes a").forEach { el ->
                     val href = fixUrlNull(el.attr("href")) ?: return@forEach
@@ -122,14 +120,13 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // CORREZIONE: Usiamo 'var' invece di 'val' per permettere la riassegnazione
         var currentUrl = data
 
-        // STEP 1: Bypass Uprot analizzando l'HTML fornito
         if (currentUrl.contains("uprot.net")) {
             val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
-            // Filtriamo i link Flexy validi escludendo quelli di advertising/bot trap
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { it.contains("/uprots/") && !it.contains("discovernative") }
             
@@ -138,7 +135,6 @@ class OnlineSerietvProvider : MainAPI() {
             }
         }
 
-        // STEP 2: WebView Resolver con Regex migliorata e Timeout lungo
         val webViewRes = app.get(
             currentUrl,
             interceptor = WebViewResolver(
@@ -151,14 +147,13 @@ class OnlineSerietvProvider : MainAPI() {
             timeout = 60 
         )
 
-        // STEP 3: Invio del link (Sintassi con 'null' per compatibilità GitHub build)
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
                 newExtractorLink(
                     this.name,
                     this.name,
                     webViewRes.url,
-                    null 
+                    null
                 ) {
                     this.referer = currentUrl
                     this.quality = Qualities.Unknown.value
@@ -168,7 +163,6 @@ class OnlineSerietvProvider : MainAPI() {
             return true
         }
 
-        // STEP 4: Fallback se m3u8 non viene intercettato
         loadExtractor(currentUrl, "https://uprot.net/", subtitleCallback, callback)
 
         return true
