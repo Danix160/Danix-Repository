@@ -63,7 +63,7 @@
         "iconUrl": "https://onlineserietv.live/wp-content/uploads/2023/01/cropped-tv-1.png",
         "apiVersion": 1,
         "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
-        "fileSize": 12379,
+        "fileSize": 12920,
         "status": 1,
         "language": "it",
         "authors": [
@@ -73,7 +73,7 @@
             "Movie",
             "TvSeries, Cartoon, Anime"
         ],
-        "version": 13,
+        "version": 14,
         "internalName": "OnlineSerietvProvider",
         "description": "OnlineSerieTv",
         "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/OnlineSerietvProvider.cs3",
