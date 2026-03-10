@@ -146,7 +146,7 @@ class OnlineSerietvProvider : MainAPI() {
         // STEP 3: Creazione Link (Corretto per compilazione)
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     this.name,
                     webViewRes.url,
                     referer = finalUrl,
