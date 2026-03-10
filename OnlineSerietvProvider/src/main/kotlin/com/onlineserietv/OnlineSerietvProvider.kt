@@ -122,48 +122,54 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // STEP 1: Risoluzione del ponte UPROT
-        val finalUrl = if (data.contains("uprot.net")) {
-            val uprotRes = app.get(data, headers = mapOf("User-Agent" to pcUserAgent))
-            uprotRes.document.selectFirst("a[href*='flexy.stream']")?.attr("href") ?: data
-        } else {
-            data
+        var currentUrl = data
+
+        // STEP 1: Bypass Uprot analizzando l'HTML fornito
+        if (currentUrl.contains("uprot.net")) {
+            val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
+            val doc = res.document
+            
+            // Filtriamo i link Flexy validi escludendo quelli di advertising/bot trap
+            val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
+                .firstOrNull { it.contains("/uprots/") && !it.contains("discovernative") }
+            
+            if (flexyLink != null) {
+                currentUrl = fixUrl(flexyLink)
+            }
         }
 
-        // STEP 2: WebView per estrarre il video
+        // STEP 2: WebView Resolver con Regex migliorata e Timeout lungo
         val webViewRes = app.get(
-            finalUrl,
+            currentUrl,
             interceptor = WebViewResolver(
-                Regex(".*flexy\\.stream.*|.*uprot\\.net.*|.*master\\.m3u8.*|.*index\\.m3u8.*|.*maxstream.*")
+                Regex(".*flexy\\.stream.*|.*master\\.m3u8.*|.*index\\.m3u8.*|.*playlist\\.m3u8.*|.*\\.mp4.*")
             ),
             headers = mapOf(
-                "Referer" to mainUrl,
+                "Referer" to "https://uprot.net/",
                 "User-Agent" to pcUserAgent
             ),
-            timeout = 45 
+            timeout = 60 
         )
 
-        // STEP 3: Creazione Link (Corretto per compilazione)
-        if (webViewRes.url.contains(".m3u8")) {
+        // STEP 3: Invio del link (Sintassi con 'null' per compatibilità GitHub build)
+        if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
                 newExtractorLink(
                     this.name,
                     this.name,
                     webViewRes.url,
-                    null // Questo occupa il posto di 'type' e permette al blocco {} di essere riconosciuto
+                    null 
                 ) {
-                    this.referer = finalUrl
+                    this.referer = currentUrl
                     this.quality = Qualities.Unknown.value
+                    this.isM3u8 = webViewRes.url.contains(".m3u8")
                 }
             )
             return true
         }
 
-        // STEP 4: Fallback agli estrattori
-        webViewRes.document.select("iframe[src*='flexy'], iframe[src*='uprot'], iframe[src*='maxstream']").forEach { iframe ->
-            val src = fixUrl(iframe.attr("src"))
-            loadExtractor(src, finalUrl, subtitleCallback, callback)
-        }
+        // STEP 4: Fallback se m3u8 non viene intercettato
+        loadExtractor(currentUrl, "https://uprot.net/", subtitleCallback, callback)
 
         return true
     }
