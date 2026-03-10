@@ -12,28 +12,25 @@ class OnlineSerietvProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
-    // User agent moderno per evitare blocchi bot
-    private val pcUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+    private val pcUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+    override val mainPage = mainPageOf(
+        "$mainUrl/movies/page/" to "Film Recenti",
+        "$mainUrl/serie-tv/page/" to "Serie TV",
+        "$mainUrl/film-generi/animazione/page/" to "Animazione"
+    )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val items = mutableListOf<HomePageList>()
-        val urls = listOf(
-            "$mainUrl/movies/page/" to "Film Recenti",
-            "$mainUrl/serie-tv/page/" to "Serie TV"
-        )
-        
-        for ((url, title) in urls) {
-            val res = app.get("$url$page/", headers = mapOf("User-Agent" to pcUserAgent))
-            val searchRes = res.document.select("article, .uagb-post__inner-wrap").mapNotNull {
-                it.toSearchResult()
-            }
-            if (searchRes.isNotEmpty()) items.add(HomePageList(title, searchRes))
+        val url = "${request.data}$page/"
+        val res = app.get(url, headers = mapOf("User-Agent" to pcUserAgent))
+        val items = res.document.select("article, .uagb-post__inner-wrap, .movie-item").mapNotNull {
+            it.toSearchResult()
         }
-        return newHomePageResponse(items, hasNext = true)
+        return newHomePageResponse(HomePageList(request.name, items), hasNext = items.isNotEmpty())
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleTag = this.selectFirst("h2 a, .uagb-post__title a") ?: return null
+        val titleTag = this.selectFirst("h2 a, .uagb-post__title a, .entry-title a") ?: return null
         val href = titleTag.attr("href")
         val title = titleTag.text().replace(Regex("(?i)streaming|sub ita"), "").trim()
         val posterUrl = this.selectFirst("img")?.attr("src")
@@ -45,23 +42,51 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
+    override suspend fun search(query: String): List<SearchResponse> {
+        val res = app.get("$mainUrl/?s=$query", headers = mapOf("User-Agent" to pcUserAgent))
+        return res.document.select("article, .uagb-post__inner-wrap").mapNotNull { it.toSearchResult() }
+    }
+
     override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(url, headers = mapOf("User-Agent" to pcUserAgent)).document
-        val title = doc.selectFirst("h1")?.text()?.trim() ?: "No Title"
-        val poster = doc.selectFirst("meta[property='og:image']")?.attr("content")
-        
+        val response = app.get(url, headers = mapOf("User-Agent" to pcUserAgent))
+        val doc = response.document
+        val title = doc.selectFirst("h1, .entry-title")?.text()
+            ?.replace(Regex("(?i)streaming|serie tv"), "")?.trim() ?: "Senza Titolo"
+        val poster = doc.selectFirst("meta[property='og:image'], .wp-post-image")?.attr("content")
+        val plot = doc.selectFirst(".entry-content p, meta[name='description']")?.text()?.trim()
+
         if (url.contains("/film/")) {
-            return newMovieLoadResponse(title, url, TvType.Movie, url) { this.posterUrl = poster }
+            return newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
         } else {
-            // Logica migliorata per trovare episodi anche nei menu a tendina/spoiler
-            val episodes = doc.select(".su-spoiler-content a, .entry-content a[href*='/episodio/']").mapNotNull {
-                val href = it.attr("href")
-                if (href.isEmpty() || href.contains("facebook")) null
-                else newEpisode(href) { 
-                    this.name = it.text().trim()
+            val episodes = mutableListOf<Episode>()
+            
+            // Logica basata su serieiframe.txt per estrarre stagioni ed episodi dagli URL
+            // Esempio URL: https://onlineserietv.live/streaming-serie-tv/8569/1/1/
+            val seasonElements = doc.select(".div_seasons a, .div_episodes a, a[href*='/streaming-serie-tv/']")
+            
+            seasonElements.forEach { el ->
+                val epHref = el.attr("href")
+                val parts = epHref.split("/").filter { it.isNotEmpty() }
+                if (parts.size >= 3) {
+                    val s = parts[parts.size - 2].toIntOrNull()
+                    val e = parts.last().toIntOrNull()
+                    if (s != null && e != null) {
+                        episodes.add(newEpisode(epHref) {
+                            this.name = "Episodio $e"
+                            this.season = s
+                            this.episode = e
+                        })
+                    }
                 }
             }
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) { this.posterUrl = poster }
+
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes.distinctBy { it.data }.sortedWith(compareBy({ it.season }, { it.episode }))) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
         }
     }
 
@@ -71,28 +96,44 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Carichiamo la pagina del player
-        val res = app.get(data, headers = mapOf("User-Agent" to pcUserAgent))
-        val document = res.document
+        // WebViewResolver intercetta il traffico di rete per catturare il file .m3u8 
+        // che viene generato dopo l'eventuale risoluzione del CAPTCHA.
+        val webViewRes = app.get(
+            data, 
+            interceptor = WebViewResolver(
+                // Intercettiamo il file master m3u8 o i player comuni
+                Regex(".*master\\.m3u8.*|.*index\\.m3u8.*|.*playlist\\.m3u8.*|.*uprot\\.net.*|.*mixdrop.*")
+            ),
+            headers = mapOf(
+                "Referer" to mainUrl,
+                "User-Agent" to pcUserAgent
+            ),
+            timeout = 30 
+        )
 
-        // 1. Cerchiamo iframe diretti (YouTube, Mixdrop, etc)
-        document.select("iframe").forEach {
-            val src = it.attr("src")
-            loadExtractor(src, data, subtitleCallback, callback)
+        // Se l'URL intercettato è direttamente un flusso HLS
+        if (webViewRes.url.contains(".m3u8")) {
+            callback.invoke(
+                ExtractorLink(
+                    source = this.name,
+                    name = "HLS Player",
+                    url = webViewRes.url,
+                    referer = data,
+                    quality = Qualities.Unknown.value,
+                    isM3u8 = true
+                )
+            )
+            return true
         }
 
-        // 2. Gestione specifica per i link "ponte" come uprot.net/msf/
-        document.select("a[href*='uprot.net'], a[href*='msf']").forEach {
-            val link = it.attr("href")
-            // Usiamo un resolver con un timeout più basso per evitare il blocco visto nei log
-            val resolvedRes = app.get(link, interceptor = WebViewResolver(Regex(".*")), timeout = 20)
-            
-            // Cerchiamo il link finale dentro la pagina risolta
-            resolvedRes.document.select("iframe, a.btn").forEach { el ->
-                val finalUrl = el.attr("src").ifEmpty { el.attr("href") }
-                if (finalUrl.isNotEmpty()) {
-                    loadExtractor(finalUrl, link, subtitleCallback, callback)
-                }
+        // Fallback: ricerca nel DOM renderizzato dalla WebView
+        val doc = webViewRes.document
+        
+        // Cerca iframe di server esterni (MixDrop, Upstream, etc.)
+        doc.select("iframe").forEach { iframe ->
+            val src = iframe.attr("src")
+            if (src.contains("mixdrop") || src.contains("uprot") || src.contains("flexy")) {
+                loadExtractor(fixUrl(src), data, subtitleCallback, callback)
             }
         }
 
