@@ -112,12 +112,8 @@ class OnlineSerietvProvider : MainAPI() {
                     "Flexy Player",
                     webViewRes.url
                 ) {
-                    // Risolviamo l'errore 'val cannot be reassigned' 
-                    // iniettando il referer direttamente negli headers
-                    this.headers["Referer"] = data
-                    
-                    // quality e isM3u8 dovrebbero essere var, 
-                    // ma li mettiamo per sicurezza
+                    // Metodo sicuro per aggiungere il referer senza operatore set []
+                    this.addHeaders(mapOf("Referer" to data))
                     this.quality = Qualities.Unknown.value
                 }
             )
