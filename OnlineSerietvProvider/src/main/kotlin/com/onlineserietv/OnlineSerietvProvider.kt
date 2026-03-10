@@ -74,7 +74,7 @@ class OnlineSerietvProvider : MainAPI() {
                     val e = match?.groupValues?.get(2)?.toIntOrNull()
                     
                     if (e != null) {
-                        // Filtro: Accetta solo link Flexy (prefissi /uprots/ o /fxf/)
+                        // Accetta solo Flexy via Uprot (/uprots/ o /fxf/) o link diretti
                         val link = row.select("a").map { it.attr("href") }.firstOrNull { 
                             (it.contains("uprot.net") && (it.contains("/uprots/") || it.contains("/fxf/"))) 
                             || it.contains("flexy.stream")
@@ -107,14 +107,14 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // CORREZIONE: var invece di val per permettere la riassegnazione
+        // CORREZIONE DEFINITIVA: var permette la riassegnazione
         var currentUrl = data
 
         if (currentUrl.contains("uprot.net")) {
             val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
-            // Cerca il link Flexy nel DOM per bypassare il redirect
+            // Bypass del redirect per trovare l'URL Flexy effettivo
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
@@ -123,6 +123,7 @@ class OnlineSerietvProvider : MainAPI() {
             }
         }
 
+        // Utilizziamo WebViewResolver per estrarre il file video finale
         val webViewRes = app.get(
             currentUrl,
             interceptor = WebViewResolver(
