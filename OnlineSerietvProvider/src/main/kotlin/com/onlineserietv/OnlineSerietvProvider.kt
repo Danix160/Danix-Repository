@@ -74,8 +74,7 @@ class OnlineSerietvProvider : MainAPI() {
                     val e = match?.groupValues?.get(2)?.toIntOrNull()
                     
                     if (e != null) {
-                        // FILTRO AGGIORNATO: Accetta /uprots/, /fxf/ o link diretti a flexy
-                        // Ignora esplicitamente /msf/ (MaxStream)
+                        // Filtro: Accetta solo link Flexy (prefissi /uprots/ o /fxf/)
                         val link = row.select("a").map { it.attr("href") }.firstOrNull { 
                             (it.contains("uprot.net") && (it.contains("/uprots/") || it.contains("/fxf/"))) 
                             || it.contains("flexy.stream")
@@ -108,13 +107,14 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // CORREZIONE: var invece di val per permettere la riassegnazione
         var currentUrl = data
 
         if (currentUrl.contains("uprot.net")) {
             val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
-            // Cerchiamo il link Flexy. Accetta sia il link nel pulsante che script offuscati.
+            // Cerca il link Flexy nel DOM per bypassare il redirect
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
