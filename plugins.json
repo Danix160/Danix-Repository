@@ -34,7 +34,7 @@
             "Movie",
             "TvSeries"
         ],
-        "version": 78,
+        "version": 79,
         "internalName": "CineblogProvider",
         "description": "Cineblog001",
         "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/CineblogProvider.cs3",
