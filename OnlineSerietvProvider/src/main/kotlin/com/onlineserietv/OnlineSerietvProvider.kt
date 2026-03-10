@@ -74,7 +74,6 @@ class OnlineSerietvProvider : MainAPI() {
                     val e = match?.groupValues?.get(2)?.toIntOrNull()
                     
                     if (e != null) {
-                        // Accetta solo Flexy (uprots/fxf) o link diretti
                         val link = row.select("a").map { it.attr("href") }.firstOrNull { 
                             (it.contains("uprot.net") && (it.contains("/uprots/") || it.contains("/fxf/"))) 
                             || it.contains("flexy.stream")
@@ -107,14 +106,13 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Usiamo una variabile locale mutabile separata dal parametro 'data'
+        // SOLUZIONE: Creiamo urlToLoad come var partendo dal valore di data
         var urlToLoad = data
 
         if (urlToLoad.contains("uprot.net")) {
             val res = app.get(urlToLoad, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
-            // Bypass del redirect per trovare l'URL Flexy
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
@@ -123,7 +121,6 @@ class OnlineSerietvProvider : MainAPI() {
             }
         }
 
-        // Estrazione tramite WebViewResolver
         val webViewRes = app.get(
             urlToLoad,
             interceptor = WebViewResolver(
