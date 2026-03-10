@@ -149,10 +149,9 @@ class OnlineSerietvProvider : MainAPI() {
                     newExtractorLink(
                             name,
                             name,
-                            link,
                         ) {
                             this.referer = finalUrl
-                            this.quality = Qualities.Unknow.value
+                            this.quality = Qualities.UNKNOWN.value
                         }
                 )
             return true
