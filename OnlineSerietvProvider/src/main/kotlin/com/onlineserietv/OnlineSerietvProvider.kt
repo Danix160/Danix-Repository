@@ -152,7 +152,7 @@ class OnlineSerietvProvider : MainAPI() {
                             webViewRes.url,
                         ) {
                             this.referer = finalUrl
-                            this.quality = Qualities.UNKNOWN.value
+                            this.quality = Qualities.Unknown.value
                         }
                 )
             return true
