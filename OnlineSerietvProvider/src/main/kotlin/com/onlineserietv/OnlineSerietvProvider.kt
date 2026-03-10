@@ -107,16 +107,17 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
+                // Utilizzo dei parametri nominativi invece del blocco lambda {}
                 newExtractorLink(
                     this.name,
-                    "Flexy Player",
-                    webViewRes.url,
-                ) {
-                    // Invece di this.referer = ..., usiamo gli headers
-                    // quality e isM3u8 rimangono variabili modificabili (var)
-                    this.quality = Qualities.Unknown.value
-                    this.isM3u8 = true
-                }
+                    this.name,
+                    url = webViewRes.url
+                    {
+                    referer = data,
+                    quality = Qualities.Unknown.value,
+                    isM3u8 = true
+                    }
+                )
             )
             return true
         }
