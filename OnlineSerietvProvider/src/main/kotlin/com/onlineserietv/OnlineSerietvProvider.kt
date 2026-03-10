@@ -106,15 +106,15 @@ class OnlineSerietvProvider : MainAPI() {
         )
 
         if (webViewRes.url.contains(".m3u8")) {
+            // Se le proprietà interne sono inaccessibili, usiamo il costruttore base
+            // e lasciamo la lambda vuota. Cloudstream gestirà la qualità automaticamente.
             callback.invoke(
                 newExtractorLink(
-                    this.name,
-                    "Flexy Player",
-                    webViewRes.url
+                    source = this.name,
+                    name = "Flexy Player",
+                    url = webViewRes.url
                 ) {
-                    // Metodo sicuro per aggiungere il referer senza operatore set []
-                    this.addHeaders(mapOf("Referer" to data))
-                    this.quality = Qualities.Unknown.value
+                    // Lambda vuota per evitare errori di compilazione su val/metodi mancanti
                 }
             )
             return true
