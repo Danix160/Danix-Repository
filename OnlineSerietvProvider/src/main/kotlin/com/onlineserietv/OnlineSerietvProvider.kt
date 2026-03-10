@@ -107,6 +107,7 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
+                // Parametri passati nelle tonde per rispettare l'immutabilità (val)
                 newExtractorLink(
                     source = this.name,
                     name = "Flexy Player",
@@ -114,7 +115,9 @@ class OnlineSerietvProvider : MainAPI() {
                     referer = data,
                     quality = Qualities.Unknown.value,
                     isM3u8 = true
-                )
+                ) {
+                    // Lambda vuota per soddisfare la sintassi richiesta
+                }
             )
             return true
         }
