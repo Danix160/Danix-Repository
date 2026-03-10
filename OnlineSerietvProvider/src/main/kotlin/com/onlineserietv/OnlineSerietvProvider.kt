@@ -63,7 +63,7 @@ class OnlineSerietvProvider : MainAPI() {
         } else {
             val episodes = mutableListOf<Episode>()
 
-            // 1. TENTA ESTRAZIONE DALLA TABELLA #hostlinks (Serie come Gumball)
+            // Scraping Tabella (es. Gumball)
             doc.select("#hostlinks tr").forEach { row ->
                 val cells = row.select("td")
                 if (cells.size >= 2) {
@@ -75,7 +75,6 @@ class OnlineSerietvProvider : MainAPI() {
                     val e = match?.groupValues?.get(2)?.toIntOrNull()
                     
                     if (e != null) {
-                        // Cerca il link Flexy o MaxStream nella riga
                         val link = row.selectFirst("a[href*='uprot'], a[href*='flexy']")?.attr("href")
                         if (link != null) {
                             episodes.add(newEpisode(link) {
@@ -88,7 +87,7 @@ class OnlineSerietvProvider : MainAPI() {
                 }
             }
 
-            // 2. TENTA ESTRAZIONE DAI BOTTONI NUMERICI (Se la tabella è vuota)
+            // Scraping Bottoni (Fallback)
             if (episodes.isEmpty()) {
                 doc.select(".div_episodes a").forEach { el ->
                     val href = fixUrlNull(el.attr("href")) ?: return@forEach
@@ -123,16 +122,15 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // STEP 1: Gestione del ponte UPROT
+        // STEP 1: Risoluzione del ponte UPROT
         val finalUrl = if (data.contains("uprot.net")) {
             val uprotRes = app.get(data, headers = mapOf("User-Agent" to pcUserAgent))
-            // Estrae l'URL dal bottone "Continue" che punta a flexy
             uprotRes.document.selectFirst("a[href*='flexy.stream']")?.attr("href") ?: data
         } else {
             data
         }
 
-        // STEP 2: Risoluzione del video tramite WebView
+        // STEP 2: WebView per estrarre il video
         val webViewRes = app.get(
             finalUrl,
             interceptor = WebViewResolver(
@@ -145,22 +143,22 @@ class OnlineSerietvProvider : MainAPI() {
             timeout = 45 
         )
 
-        // STEP 3: Se troviamo il link m3u8 direttamente
+        // STEP 3: Creazione Link (Corretto per compilazione)
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
-                newExtractorLink(
+                ExtractorLink(
                     this.name,
-                    "Streaming",
                     webViewRes.url,
-                    finalUrl,
-                    Qualities.Unknown.value,
-                    true
+                    referer = finalUrl,
+                    {
+                    Qualities.Unknown.value
+                    }
                 )
             )
             return true
         }
 
-        // STEP 4: Fallback agli estrattori di sistema (per caricare gli iframe)
+        // STEP 4: Fallback agli estrattori
         webViewRes.document.select("iframe[src*='flexy'], iframe[src*='uprot'], iframe[src*='maxstream']").forEach { iframe ->
             val src = fixUrl(iframe.attr("src"))
             loadExtractor(src, finalUrl, subtitleCallback, callback)
