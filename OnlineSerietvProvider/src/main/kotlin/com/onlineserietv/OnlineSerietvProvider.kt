@@ -62,9 +62,6 @@ class OnlineSerietvProvider : MainAPI() {
             }
         } else {
             val episodes = mutableListOf<Episode>()
-            
-            // Logica basata su serieiframe.txt per estrarre stagioni ed episodi dagli URL
-            // Esempio URL: https://onlineserietv.live/streaming-serie-tv/8569/1/1/
             val seasonElements = doc.select(".div_seasons a, .div_episodes a, a[href*='/streaming-serie-tv/']")
             
             seasonElements.forEach { el ->
@@ -96,12 +93,9 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // WebViewResolver intercetta il traffico di rete per catturare il file .m3u8 
-        // che viene generato dopo l'eventuale risoluzione del CAPTCHA.
         val webViewRes = app.get(
             data, 
             interceptor = WebViewResolver(
-                // Intercettiamo il file master m3u8 o i player comuni
                 Regex(".*master\\.m3u8.*|.*index\\.m3u8.*|.*playlist\\.m3u8.*|.*uprot\\.net.*|.*mixdrop.*")
             ),
             headers = mapOf(
@@ -111,25 +105,24 @@ class OnlineSerietvProvider : MainAPI() {
             timeout = 30 
         )
 
-        // Se l'URL intercettato è direttamente un flusso HLS
+        // Sintassi corretta con blocco lambda { ... }
         if (webViewRes.url.contains(".m3u8")) {
             callback.invoke(
-                ExtractorLink(
-                    source = this.name,
-                    name = "HLS Player",
-                    url = webViewRes.url,
-                    referer = data,
-                    quality = Qualities.Unknown.value,
-                    isM3u8 = true
-                )
+                newExtractorLink(
+                    this.name,
+                    "HLS Player",
+                    webViewRes.url,
+                    data, // referer
+                    Qualities.Unknown.value,
+                    true // isM3u8
+                ) {
+                    // Qui puoi aggiungere headers extra o altri parametri opzionali se necessario
+                }
             )
             return true
         }
 
-        // Fallback: ricerca nel DOM renderizzato dalla WebView
         val doc = webViewRes.document
-        
-        // Cerca iframe di server esterni (MixDrop, Upstream, etc.)
         doc.select("iframe").forEach { iframe ->
             val src = iframe.attr("src")
             if (src.contains("mixdrop") || src.contains("uprot") || src.contains("flexy")) {
