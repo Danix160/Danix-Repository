@@ -1,4 +1,4 @@
-package com.onlineserietv.extractor
+package com.onlineserietv.extractors
 
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
