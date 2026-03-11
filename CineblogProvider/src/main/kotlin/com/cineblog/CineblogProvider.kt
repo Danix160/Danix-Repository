@@ -18,7 +18,6 @@ class DroploadExtractor : ExtractorApi() {
         try {
             val body = app.get(url).body.string()
             val unpacked = getAndUnpack(body)
-            // Regex migliorata per catturare il file m3u8 o mp4
             val videoUrl = Regex("""(?:file|src)\s*:\s*"([^"]+(?:\.m3u8|\.mp4)[^"]*)"""").find(unpacked)?.groupValues?.get(1)
 
             videoUrl?.let {
@@ -101,9 +100,11 @@ class CineblogProvider : MainAPI() {
         val href = fixUrl(a.attr("href"))
         if (href.contains("/tags/") || href.contains("/category/")) return null
 
-        val title = a.text().trim().ifEmpty { 
+        // 2. PULIZIA TITOLO: Rimuove "Episodio X", "Stagione X" o diciture simili dal titolo nella ricerca
+        var title = a.text().trim().ifEmpty { 
             this.selectFirst("h2, h3, .m-title, .block-th-haeding")?.text() ?: a.attr("title") 
         }
+        title = title.split(" – ").get(0).split(" - ").get(0).split(" [").get(0).trim()
         
         val img = this.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("src"))
@@ -117,7 +118,11 @@ class CineblogProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
-        val title = doc.selectFirst("h1")?.text()?.trim() ?: return null
+        
+        // Pulizia titolo anche nella pagina di caricamento
+        var title = doc.selectFirst("h1")?.text()?.trim() ?: return null
+        title = title.split(" – ").get(0).split(" - ").get(0).trim()
+        
         val poster = fixUrlNull(doc.selectFirst("img._player-cover, .story-poster img, img[itemprop='image']")?.attr("src"))
         
         val plotElement = doc.selectFirst(".story")
@@ -126,7 +131,6 @@ class CineblogProvider : MainAPI() {
 
         val seasonContainer = doc.selectFirst(".tt_season")
         return if (seasonContainer != null) {
-            // LOGICA ORIGINALE SERIE TV RIPRISTINATA
             val episodesList = mutableListOf<Episode>()
             doc.select(".tt_series .tab-content .tab-pane").forEachIndexed { index, pane ->
                 val seasonNum = index + 1
@@ -141,12 +145,16 @@ class CineblogProvider : MainAPI() {
                         this.name = "Episodio $epNum"
                         this.season = seasonNum
                         this.episode = epNum
+                        // 1. COPERTINA EPISODI: Usiamo il poster della serie
+                        this.posterUrl = poster 
                     })
                 }
             }
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) { this.posterUrl = poster; this.plot = plot }
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) { 
+                this.posterUrl = poster
+                this.plot = plot 
+            }
         } else {
-            // LOGICA FILM (Cattura l'iframe mostraguarda/guardahd)
             val iframe = doc.selectFirst("iframe[src*='guardahd'], iframe#_player, a[href*='mostraguarda']")?.let {
                 it.attr("src").ifEmpty { it.attr("href") }
             }
@@ -170,24 +178,20 @@ class CineblogProvider : MainAPI() {
         data.split("|").forEach { rawLink ->
             val fixed = fixUrl(rawLink)
             
-            // Se è un link che porta alla tabella interattiva (mostraguarda/guardahd)
             if (fixed.contains("guardahd") || fixed.contains("mostraguarda") || fixed.contains("cineblog")) {
                 try {
                     val doc = app.get(fixed).document
-                    // Estrazione tramite click virtuale (onclick sulla tabella)
                     doc.select("tr[onclick]").forEach { tr ->
                         val code = tr.attr("onclick")
                         val match = Regex("href='([^']+)'").find(code)
                         match?.groupValues?.get(1)?.let { finalLinks.add(fixUrl(it)) }
                     }
-                    // Backup: se ci sono iframe o data-link diretti nell'iframe
                     doc.select("li[data-link], a[data-link], iframe").forEach { el ->
                         val found = el.attr("data-link").ifEmpty { el.attr("src") }
                         if (found.isNotBlank() && !found.contains("guardahd")) finalLinks.add(fixUrl(found))
                     }
                 } catch (e: Exception) { }
             } else {
-                // Link diretto (comune nelle Serie TV)
                 finalLinks.add(fixed)
             }
         }
