@@ -198,58 +198,60 @@ class CineblogProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
+   override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // 1. Dividiamo i link passati (che possono essere URL diretti o l'URL della pagina stessa)
         val rawLinks = data.split("|").filter { it.isNotBlank() }
         val finalLinksToProcess = mutableListOf<String>()
 
         rawLinks.forEach { rawLink ->
             val fixed = fixUrl(rawLink)
             
-            // 2. Se il link è un "falso player" (mostraguarda/cineblog), dobbiamo entrarci
-            if (fixed.contains("mostraguarda") || fixed.contains("cineblog") || fixed.contains("m0straguarda")) {
+            // Se entriamo nel sistema guardahd/mostraguarda
+            if (fixed.contains("guardahd") || fixed.contains("mostraguarda") || fixed.contains("cineblog")) {
                 try {
-                    val doc = app.get(fixed).document
-                    // Cerchiamo i server reali nei data-link o negli iframe del mostraguarda
-                    doc.select("li[data-link], a[data-link], iframe[src*='embed']").forEach { el ->
-                        val found = el.attr("data-link").ifEmpty { el.attr("src") }
-                        if (found.isNotBlank() && !found.contains("mostraguarda")) {
+                    val response = app.get(fixed).document
+                    
+                    // 1. Cerchiamo nelle righe della tabella (come nel tuo HTML)
+                    response.select("tr[onclick]").forEach { row ->
+                        val clickAction = row.attr("onclick")
+                        // Estraiamo l'URL tra gli apici singoli: window.parent.location.href='URL'
+                        val extractedUrl = Regex("href='([^']+)'").find(clickAction)?.groupValues?.get(1)
+                        if (extractedUrl != null && !extractedUrl.contains("scarica-free")) {
+                            finalLinksToProcess.add(fixUrl(extractedUrl))
+                        }
+                    }
+
+                    // 2. Fallback: cerchiamo iframe o i classici data-link
+                    response.select("iframe#_player, li[data-link], a[data-link]").forEach { el ->
+                        val found = el.attr("src").ifEmpty { el.attr("data-link") }
+                        if (found.isNotBlank() && !found.contains("guardahd") && !found.contains("mostraguarda")) {
                             finalLinksToProcess.add(fixUrl(found))
                         }
                     }
-                } catch (e: Exception) { 
-                    Log.e("Cineblog", "Errore bypass mostraguarda: ${e.message}")
-                }
+                } catch (e: Exception) { }
             } else {
-                // Altrimenti è già un link diretto (es. mixdrop/supervideo)
                 finalLinksToProcess.add(fixed)
             }
         }
 
-        // 3. Esecuzione degli estrattori sui link puliti
+        // Processo finale con supporto Mixdrop e gli altri
         finalLinksToProcess.distinct().forEach { link ->
+            val cleanLink = link.replace("?download", "") // Pulizia per Mixdrop
             when {
-                // SUPPORTO MIXDROP (Mantenuto e prioritario)
-                link.contains("mixdrop") || link.contains("m1xdrop") -> {
-                    loadExtractor(link, link, subtitleCallback, callback)
-                }
+                cleanLink.contains("mixdrop") || cleanLink.contains("m1xdrop") -> 
+                    loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 
-                // Altri estrattori custom
-                link.contains("dropload") || link.contains("dr0pstream") -> {
-                    DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
-                }
+                cleanLink.contains("dropload") || cleanLink.contains("dr0pstream") -> 
+                    DroploadExtractor().getUrl(cleanLink, cleanLink, subtitleCallback, callback)
                 
-                link.contains("supervideo") -> {
-                    SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
-                }
+                cleanLink.contains("supervideo") -> 
+                    SupervideoExtractor().getUrl(cleanLink, cleanLink, subtitleCallback, callback)
                 
-                // Fallback per altri estrattori di sistema (Voe, StreamTape, ecc.)
-                else -> loadExtractor(link, link, subtitleCallback, callback)
+                else -> loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
             }
         }
         return true
