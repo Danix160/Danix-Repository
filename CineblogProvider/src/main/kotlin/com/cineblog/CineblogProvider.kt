@@ -140,14 +140,13 @@ class CineblogProvider : MainAPI() {
         val title = doc.selectFirst("h1")?.text()?.trim() ?: return null
         val poster = fixUrlNull(doc.selectFirst("img._player-cover, .story-poster img, img[itemprop='image']")?.attr("src"))
         
-        // MODIFICA TRAMA: Rimuove titolo, Info, e pulisce la virgola iniziale
         val plotElement = doc.selectFirst(".story")
         val strongText = plotElement?.selectFirst("strong")?.text() ?: ""
         val plot = plotElement?.text()
             ?.replace(strongText, "")
             ?.replace("+Info»", "")
             ?.trim()
-            ?.removePrefix(",") // Rimuove la virgola brutta all'inizio
+            ?.removePrefix(",") 
             ?.trim()
 
         val seasonContainer = doc.selectFirst(".tt_season")
@@ -175,7 +174,14 @@ class CineblogProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
-            newMovieLoadResponse(title, url, TvType.Movie, url) {
+            // Estrazione mirata per i FILM basata sul sorgente fornito
+            val movieLinks = doc.select("ul._player-mirrors li[data-link], ._hidden-mirrors li[data-link], iframe#_player")
+                .map { it.attr("data-link").ifEmpty { it.attr("src") } }
+                .filter { it.isNotBlank() && !it.contains("mostraguarda.stream") }
+                .distinct()
+                .joinToString("|")
+
+            newMovieLoadResponse(title, url, TvType.Movie, movieLinks) {
                 this.posterUrl = poster
                 this.plot = plot
             }
@@ -193,37 +199,42 @@ class CineblogProvider : MainAPI() {
         links.forEach { link ->
             val fixedLink = fixUrl(link)
 
-            if (fixedLink.contains("dropload")) {
-                DroploadExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
-                return@forEach
-            }
-            if (fixedLink.contains("supervideo")) {
-                SupervideoExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
-                return@forEach
-            }
+            // Gestione diretta per server comuni
+            when {
+                fixedLink.contains("mixdrop") || fixedLink.contains("m1xdrop") -> {
+                    loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
+                }
+                fixedLink.contains("dropload") || fixedLink.contains("dr0pstream") -> {
+                    DroploadExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
+                }
+                fixedLink.contains("supervideo") -> {
+                    SupervideoExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
+                }
+                fixedLink.startsWith("http") && !fixedLink.contains("cineblog001") && !fixedLink.contains("mostraguarda") -> {
+                    loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
+                }
+                else -> {
+                    try {
+                        val doc = app.get(fixedLink).document
+                        val realUrl = doc.selectFirst(".open-fake-url")?.attr("data-url")
+                            ?: doc.selectFirst("iframe[src*='mostraguarda']")?.attr("src")
+                            
+                        val targetDoc = if (!realUrl.isNullOrBlank()) app.get(fixUrl(realUrl)).document else doc
 
-            if (fixedLink.startsWith("http") && !fixedLink.contains("cineblog001") && !fixedLink.contains("mostraguarda")) {
-                loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
-            } else {
-                try {
-                    val doc = app.get(fixedLink).document
-                    val realUrl = doc.selectFirst(".open-fake-url")?.attr("data-url")
-                        ?: doc.selectFirst("iframe[src*='mostraguarda']")?.attr("src")
-                        
-                    val targetDoc = if (!realUrl.isNullOrBlank()) app.get(fixUrl(realUrl)).document else doc
-
-                    targetDoc.select("li[data-link], a[data-link], a.mr, iframe#_player, iframe[src*='embed']").forEach { el ->
-                        val mirror = el.attr("data-link").ifEmpty { el.attr("src") }
-                        if (mirror.isNotBlank() && !mirror.contains("mostraguarda.stream") && !mirror.contains("facebook") && !mirror.contains("google")) {
-                            val finalMirror = fixUrl(mirror)
-                            when {
-                                finalMirror.contains("dropload") -> DroploadExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-                                finalMirror.contains("supervideo") -> SupervideoExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-                                else -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
+                        targetDoc.select("li[data-link], a[data-link], a.mr, iframe#_player, iframe[src*='embed']").forEach { el ->
+                            val mirror = el.attr("data-link").ifEmpty { el.attr("src") }
+                            if (mirror.isNotBlank() && !mirror.contains("mostraguarda.stream") && !mirror.contains("facebook") && !mirror.contains("google")) {
+                                val finalMirror = fixUrl(mirror)
+                                when {
+                                    finalMirror.contains("mixdrop") || finalMirror.contains("m1xdrop") -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
+                                    finalMirror.contains("dropload") || finalMirror.contains("dr0pstream") -> DroploadExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
+                                    finalMirror.contains("supervideo") -> SupervideoExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
+                                    else -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
+                                }
                             }
                         }
-                    }
-                } catch (e: Exception) { Log.e("LoadLinks", "Error parsing mirror: ${e.message}") }
+                    } catch (e: Exception) { Log.e("LoadLinks", "Error: ${e.message}") }
+                }
             }
         }
         return true
