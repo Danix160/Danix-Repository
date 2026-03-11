@@ -108,40 +108,50 @@ class OnlineSerietvProvider : MainAPI() {
     callback: (ExtractorLink) -> Unit
 ): Boolean {
     var currentUrl = data
-    Log.d("OnlineSerieTV", "Inizio loadLinks per: $currentUrl")
+    Log.d("OnlineSerieTV", "Inizio bypass Cloudflare per: $currentUrl")
 
     if (currentUrl.contains("uprot.net")) {
-        val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
-        val doc = res.document
+        // 1. Usiamo CloudflareKiller per ottenere l'HTML superando la protezione
+        val cfInterceptor = CloudflareKiller()
+        val response = app.get(
+            currentUrl, 
+            interceptor = cfInterceptor,
+            headers = mapOf("User-Agent" to pcUserAgent)
+        )
         
-        // Log per vedere se Jsoup legge la pagina correttamente
-        Log.d("OnlineSerieTV", "Pagina uprot caricata. Cerco il link flexy...")
+        val html = response.text
+        
+        // 2. Cerchiamo il link flexy.stream (Regex diretta)
+        val flexyRegex = Regex("""https?://flexy\.stream/uprots/[a-zA-Z0-9+=/]+""")
+        var foundLink = flexyRegex.find(html)?.value
 
-        val realLink = doc.select("#ad_space a[href*='flexy.stream']").attr("href")
-            .ifEmpty { 
-                doc.select("a[href*='flexy.stream']").firstOrNull { 
-                    val style = it.parent()?.attr("style") ?: ""
-                    !style.contains("display: none") 
-                }?.attr("href") ?: ""
+        // 3. Se non lo trova, proviamo a decodificare la stringa Base64 che abbiamo visto nell'HTML
+        if (foundLink.isNullOrEmpty()) {
+            Log.d("OnlineSerieTV", "Link diretto non trovato, provo decodifica Base64...")
+            // Cerchiamo stringhe Base64 lunghe almeno 40 caratteri che finiscono con ==
+            val base64Regex = Regex("""[a-zA-Z0-9+/]{40,}=?=?""")
+            base64Regex.findAll(html).forEach { match ->
+                try {
+                    val decoded = base64Decode(match.value)
+                    if (decoded.contains("flexy.stream")) {
+                        foundLink = decoded.trim()
+                        Log.d("OnlineSerieTV", "Link trovato in Base64: $foundLink")
+                    }
+                } catch (e: Exception) { }
             }
+        }
 
-        if (realLink.isNotEmpty()) {
-            currentUrl = fixUrl(realLink)
-            Log.d("OnlineSerieTV", "Link flexy trovato con Jsoup: $currentUrl")
+        if (!foundLink.isNullOrEmpty()) {
+            currentUrl = fixUrl(foundLink!!)
         } else {
-            Log.d("OnlineSerieTV", "Jsoup fallito. Provo WebView per uprot...")
-            val webViewRes = app.get(
-                currentUrl,
-                interceptor = WebViewResolver(Regex(".*flexy\\.stream.*")),
-                timeout = 25
-            )
-            currentUrl = webViewRes.url
-            Log.d("OnlineSerieTV", "Link da WebView uprot: $currentUrl")
+            Log.e("OnlineSerieTV", "Impossibile trovare il link di reindirizzamento nell'HTML")
+            return false
         }
     }
 
-    Log.d("OnlineSerieTV", "Risoluzione video finale su: $currentUrl")
-
+    // 4. Ora risolviamo il video finale con la WebView standard sul link flexy
+    Log.d("OnlineSerieTV", "Apertura WebView finale su: $currentUrl")
+    
     val videoPage = app.get(
         currentUrl,
         interceptor = WebViewResolver(
@@ -151,20 +161,18 @@ class OnlineSerietvProvider : MainAPI() {
             "Referer" to "https://uprot.net/",
             "User-Agent" to pcUserAgent
         ),
-        timeout = 45 
+        timeout = 30 // Ridotto a 30s per evitare blocchi infiniti
     )
 
     if (videoPage.url.contains(".m3u8") || videoPage.url.contains(".mp4")) {
-        Log.d("OnlineSerieTV", "Video intercettato! URL: ${videoPage.url}")
-        
-        val isM3u8 = videoPage.url.contains(".m3u8")
+        Log.d("OnlineSerieTV", "Successo! Video: ${videoPage.url}")
         
         callback.invoke(
             newExtractorLink(
                 source = this.name,
                 name = this.name,
                 url = videoPage.url,
-                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                type = if (videoPage.url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             ) {
                 this.referer = currentUrl
                 this.quality = Qualities.Unknown.value
@@ -173,7 +181,6 @@ class OnlineSerietvProvider : MainAPI() {
         return true
     }
 
-    Log.d("OnlineSerieTV", "Nessun video trovato con WebView. Provo gli estrattori...")
     return loadExtractor(currentUrl, "https://uprot.net/", subtitleCallback, callback)
 }
 }
