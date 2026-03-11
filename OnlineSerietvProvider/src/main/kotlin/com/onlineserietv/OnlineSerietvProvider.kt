@@ -1,26 +1,8 @@
 package com.onlineserietv
 
 import android.util.Log
-import com.lagradost.cloudstream3.Score
-import com.lagradost.cloudstream3.Episode
-import com.lagradost.cloudstream3.HomePageList
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.addPoster
-import com.lagradost.cloudstream3.amap
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.newTvSeriesSearchResponse
-import com.lagradost.cloudstream3.newEpisode
-import com.lagradost.cloudstream3.toScore
+// Rimosso import specifico toScore che dava errore
+import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -174,8 +156,8 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(16)").text().trim()
             newMovieLoadResponse(title, url, TvType.Movie, streamUrl) {
                 addPoster(poster)
-                // FIX: Usato .toScore() invece del costruttore privato Score()
-                this.score = rating.toDoubleOrNull()?.toScore()
+                // SOLUZIONE: Usiamo la funzione globale Score(punteggio, massimo)
+                this.score = rating.toDoubleOrNull()?.let { Score(it, 10.0) }
                 this.duration = duration.toIntOrNull()
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
@@ -186,8 +168,8 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(17)").text().trim()
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 addPoster(poster)
-                // FIX: Usato .toScore() invece del costruttore privato Score()
-                this.score = rating.toDoubleOrNull()?.toScore()
+                // SOLUZIONE: Usiamo la funzione globale Score(punteggio, massimo)
+                this.score = rating.toDoubleOrNull()?.let { Score(it, 10.0) }
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
                 this.plot = plot
