@@ -5,7 +5,6 @@ import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.LoadResponse.Companion.addRating
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
@@ -19,6 +18,7 @@ import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.newEpisode
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -39,43 +39,31 @@ class OnlineSerietvProvider : MainAPI() {
     override val hasMainPage = true
 
     override val mainPage = mainPageOf(
-//        mainUrl to "Top 10 Film",
-//        mainUrl to "Top 10 Serie TV",
         "$mainUrl/movies/" to "Film: Ultimi aggiunti",
         "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte",
-
         "$mainUrl/serie-tv-generi/animazione/" to "Serie TV: Animazione",
         "$mainUrl/film-generi/animazione/" to "Film: Animazione",
-
         "$mainUrl/serie-tv-generi/documentario/" to "Serie TV: Documentario",
         "$mainUrl/film-generi/documentario/" to "Film: Documentario",
-
         "$mainUrl/serie-tv-generi/action-adventure/" to "Serie TV: Azione e Avventura",
         "$mainUrl/film-generi/avventura/" to "Film: Avventura",
         "$mainUrl/film-generi/azione/" to "Film: Azione",
         "$mainUrl/film-generi/supereroi/" to "Film: Supereroi",
-
         "$mainUrl/serie-tv-generi/sci-fi-fantasy/" to "Serie TV: Fantascienza e Fantasy",
         "$mainUrl/film-generi/fantascienza/" to "Film: Fantascienza",
         "$mainUrl/film-generi/fantasy/" to "Film: Fantasy",
-
         "$mainUrl/serie-tv-generi/dramma/" to "Serie TV: Dramma",
         "$mainUrl/film-generi/drammatico/" to "Film: Dramma",
         "$mainUrl/film-generi/sentimentale/" to "Film: Sentimentale",
-
         "$mainUrl/serie-tv-generi/commedia/" to "Serie TV: Commedia",
         "$mainUrl/film-generi/commedia/" to "Film: Commedia",
-
         "$mainUrl/serie-tv-generi/crime/" to "Serie TV: Crime",
         "$mainUrl/serie-tv-generi/mistero/" to "Serie TV: Mistero",
-
         "$mainUrl/serie-tv-generi/war-politics/" to "Serie TV: Guerra e Politica",
         "$mainUrl/film-generi/horror/" to "Film: Horror",
         "$mainUrl/film-generi/thriller/" to "Film: Thriller",
-
         "$mainUrl/serie-tv-generi/reality/" to "Serie TV: Reality",
-
-        )
+    )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val response = try {
@@ -129,28 +117,11 @@ class OnlineSerietvProvider : MainAPI() {
                 } ?: emptyList()
             }
 
-            "Film: Avventura",
-            "Film: Azione",
-            "Film: Animazione",
-            "Film: Commedia",
-            "Film: Documentario",
-            "Film: Dramma",
-            "Film: Horror",
-            "Film: Thriller",
-            "Film: Fantascienza",
-            "Film: Fantasy",
-            "Film: Supereroi",
-            "Film: Sentimentale",
-            "Serie TV: Azione e Avventura",
-            "Serie TV: Fantascienza e Fantasy",
-            "Serie TV: Dramma",
-            "Serie TV: Crime",
-            "Serie TV: Mistero",
-            "Serie TV: Commedia",
-            "Serie TV: Reality",
-            "Serie TV: Guerra e Politica",
-            "Serie TV: Documentario",
-            "Serie TV: Animazione" -> {
+            "Film: Avventura", "Film: Azione", "Film: Animazione", "Film: Commedia", "Film: Documentario",
+            "Film: Dramma", "Film: Horror", "Film: Thriller", "Film: Fantascienza", "Film: Fantasy",
+            "Film: Supereroi", "Film: Sentimentale", "Serie TV: Azione e Avventura", "Serie TV: Fantascienza e Fantasy",
+            "Serie TV: Dramma", "Serie TV: Crime", "Serie TV: Mistero", "Serie TV: Commedia", "Serie TV: Reality",
+            "Serie TV: Guerra e Politica", "Serie TV: Documentario", "Serie TV: Animazione" -> {
                 val itemGrid = page.selectFirst("#box_movies")!!
                 val items = itemGrid.select(".movie")
                 items.map {
@@ -166,7 +137,6 @@ class OnlineSerietvProvider : MainAPI() {
         return searchResponses
     }
 
-
     private fun Element.toSearchResponse(): SearchResponse {
         val title = this.select("h2").text().trim().replace(Regex("""\d{4}$"""), "")
         val url = this.select("a").attr("href")
@@ -176,16 +146,14 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    // this function gets called when you search for something
     override suspend fun search(query: String): List<SearchResponse> {
         val response = app.get("$mainUrl/?s=$query")
         val page = response.document
         val itemGrid = page.selectFirst("#box_movies")!!
         val items = itemGrid.select(".movie")
-        val searchResponses = items.map {
+        return items.map {
             it.toSearchResponse()
         }
-        return searchResponses
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -206,7 +174,7 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(16)").text().trim()
             newMovieLoadResponse(title, url, TvType.Movie, streamUrl) {
                 addPoster(poster)
-                addRating(rating)
+                this.score = rating.toDoubleOrNull()
                 this.duration = duration.toIntOrNull()
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
@@ -217,7 +185,7 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(17)").text().trim()
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 addPoster(poster)
-                addRating(rating)
+                this.score = rating.toDoubleOrNull()
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
                 this.plot = plot
@@ -229,7 +197,7 @@ class OnlineSerietvProvider : MainAPI() {
         val table = page.selectFirst("#hostlinks > table:nth-child(1)")!!
         var season: Int? = 1
         val rows = table.select("tr")
-        val episodes: List<Episode> = rows.mapNotNull {
+        return rows.mapNotNull {
             if (it.childrenSize() == 0) {
                 null
             } else if (it.childrenSize() == 1) {
@@ -240,14 +208,13 @@ class OnlineSerietvProvider : MainAPI() {
             } else {
                 val title = it.select("td:nth-child(1)").text()
                 val links = it.select("a").map { a -> "\"${a.attr("href")}\"" }
-                Episode("$links").apply {
-//                    name = title
+                newEpisode(links.toString()) {
                     this.season = season
                     this.episode = title.substringAfter("x").substringBefore(" ").toIntOrNull()
+                    this.name = title
                 }
             }
         }
-        return episodes
     }
 
     override suspend fun loadLinks(
@@ -277,20 +244,11 @@ class OnlineSerietvProvider : MainAPI() {
 
     private suspend fun bypassUprot(link: String): String? {
         val updatedLink = if ("msf" in link) link.replace("msf", "mse") else link
-
-        // Generate headers (replace with your own method to generate fake headers)
         val headers = mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         )
-
-        // Make the HTTP request
         val response = app.get(updatedLink, headers = headers, timeout = 10_000)
-
-        // Parse the HTML using Jsoup
         val document = response.document
-        Log.d("Uprot", document.toString())//.select("a").toString())
-        val maxstreamUrl = document.selectFirst("a")?.attr("href")
-
-        return maxstreamUrl
+        return document.selectFirst("a")?.attr("href")
     }
 }
