@@ -100,7 +100,6 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-    @Suppress("DEPRECATION")
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -135,14 +134,14 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
-                // Usiamo il costruttore diretto per evitare i limiti della funzione helper
-                ExtractorLink(
-                    source = this.name,
-                    name = this.name,
-                    url = webViewRes.url,
-                    referer = currentUrl,
-                    quality = Qualities.Unknown.value,
-                    isM3u8 = webViewRes.url.contains(".m3u8")
+                // Soluzione definitiva: parametri posizionali per evitare bug di metadati Kotlin
+                newExtractorLink(
+                    this.name,                       // source
+                    this.name,                       // name
+                    webViewRes.url,                  // url
+                    currentUrl,                      // referer
+                    Qualities.Unknown.value,         // quality
+                    webViewRes.url.contains(".m3u8") // isM3u8
                 )
             )
             return true
