@@ -1,7 +1,6 @@
 package com.onlineserietv
 
 import android.util.Log
-// AGGIUNTO: Import per l'oggetto Score
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageList
@@ -21,12 +20,10 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.newEpisode
+import com.lagradost.cloudstream3.toScore
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-// Commentati per evitare errori di compilazione se i file mancano
-// import com.onlineserietv.extractors.MaxStreamExtractor
-// import com.onlineserietv.extractors.FlexyExtractor
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.SocketTimeoutException
@@ -177,8 +174,8 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(16)").text().trim()
             newMovieLoadResponse(title, url, TvType.Movie, streamUrl) {
                 addPoster(poster)
-                // CORRETTO: Adesso usa Score()
-                this.score = rating.toDoubleOrNull()?.let { Score(it) }
+                // FIX: Usato .toScore() invece del costruttore privato Score()
+                this.score = rating.toDoubleOrNull()?.toScore()
                 this.duration = duration.toIntOrNull()
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
@@ -189,8 +186,8 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(17)").text().trim()
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 addPoster(poster)
-                // CORRETTO: Adesso usa Score()
-                this.score = rating.toDoubleOrNull()?.let { Score(it) }
+                // FIX: Usato .toScore() invece del costruttore privato Score()
+                this.score = rating.toDoubleOrNull()?.toScore()
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
                 this.plot = plot
@@ -199,7 +196,7 @@ class OnlineSerietvProvider : MainAPI() {
     }
 
     private fun getEpisodes(page: Document): List<Episode> {
-        val table = page.selectFirst("#hostlinks > table:nth-child(1)")!!
+        val table = page.selectFirst("#hostlinks > table:nth-child(1)") ?: return emptyList()
         var season: Int? = 1
         val rows = table.select("tr")
         return rows.mapNotNull {
@@ -235,8 +232,6 @@ class OnlineSerietvProvider : MainAPI() {
                 val url = bypassUprot(it)
                 Log.d("OnlineSerieTV:Links", "Bypassed Url: $url")
                 if (url != null) {
-                    // Nota: Ho rimosso temporaneamente le chiamate dirette agli estrattori custom 
-                    // per farti compilare, finché non risolviamo l'errore degli import mancanti.
                     loadExtractor(url, subtitleCallback, callback)
                 }
             }
