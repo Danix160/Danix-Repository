@@ -53,8 +53,6 @@ class OnlineSerietvProvider : MainAPI() {
         val title = doc.selectFirst("h1, .entry-title")?.text()
             ?.replace(Regex("(?i)streaming|serie tv"), "")?.trim() ?: "Senza Titolo"
         val poster = doc.selectFirst("meta[property='og:image'], .wp-post-image")?.attr("content")
-        
-        // Corretto il selettore del plot (rimosso "cavity")
         val plot = doc.selectFirst(".entry-content p, meta[name='description']")?.text()?.trim()
 
         if (url.contains("/film/")) {
@@ -135,18 +133,20 @@ class OnlineSerietvProvider : MainAPI() {
         )
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
-            // Usiamo il costruttore classico sopprimendo l'avviso di deprecazione.
-            // Questo garantisce che i parametri 'val' siano impostati correttamente.
-            @Suppress("DEPRECATION")
+            // Usiamo newExtractorLink che è la versione "consigliata"
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = this.name,
                     name = this.name,
-                    url = webViewRes.url,
-                    referer = currentUrl,
-                    quality = Qualities.Unknown.value,
-                    isM3u8 = webViewRes.url.contains(".m3u8")
-                )
+                    url = webViewRes.url
+                ) {
+                    // Invece di riassegnare referer (che è val), aggiungiamo i dati agli headers
+                    // che è il modo corretto per passare informazioni al player
+                    this.headers.putAll(mapOf(
+                        "Referer" to currentUrl,
+                        "User-Agent" to pcUserAgent
+                    ))
+                }
             )
             return true
         }
