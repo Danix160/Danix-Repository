@@ -66,13 +66,31 @@ class CineblogProvider : MainAPI() {
         
         val featured = mainDoc.select(".promo-item, .m-item").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
         if (featured.isNotEmpty()) homePageList.add(HomePageList("In Evidenza", featured))
-
+        
         val latest = mainDoc.select(".block-th").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
         if (latest.isNotEmpty()) homePageList.add(HomePageList("Ultimi Aggiunti", latest))
-
+        
+        val genres = listOf(
+            "Serie TV" to "$mainUrl/serie-tv/",
+            "Azione" to "$mainUrl/film/?genere=1",
+            "Animazione" to "$mainUrl/film/?genere=2",
+            "Avventura" to "$mainUrl/film/?genere=3",
+            "Famiglia" to "$mainUrl/film/?genere=26",
+            "Fantascienza" to "$mainUrl/film/?genere=9",
+            "Fantasy" to "$mainUrl/film/?genere=10",
+            "Horror" to "$mainUrl/film/?genere=13",
+            "Thriller" to "$mainUrl/film/?genere=19"
+        )
+        
+        genres.forEach { (name, url) ->
+            try {
+                val items = app.get(url).document.select(".block-th").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
+                if (items.isNotEmpty()) homePageList.add(HomePageList(name, items))
+            } catch (e: Exception) { }
+        }
         return newHomePageResponse(homePageList, false)
     }
-
+    
     override suspend fun search(query: String): List<SearchResponse> {
         val allResults = mutableListOf<SearchResponse>()
         for (page in 1..5) {
@@ -100,11 +118,17 @@ class CineblogProvider : MainAPI() {
         val href = fixUrl(a.attr("href"))
         if (href.contains("/tags/") || href.contains("/category/")) return null
 
-        // 2. PULIZIA TITOLO: Rimuove "Episodio X", "Stagione X" o diciture simili dal titolo nella ricerca
         var title = a.text().trim().ifEmpty { 
             this.selectFirst("h2, h3, .m-title, .block-th-haeding")?.text() ?: a.attr("title") 
         }
-        title = title.split(" – ").get(0).split(" - ").get(0).split(" [").get(0).trim()
+        
+        // PULIZIA TITOLO: Rimosso Trattini, Parentesi Quadre e la scritta "streaming"
+        title = title.split(" – ").get(0)
+            .split(" - ").get(0)
+            .split(" [").get(0)
+            .replace(" streaming", "", ignoreCase = true)
+            .replace(" Streaming", "", ignoreCase = true)
+            .trim()
         
         val img = this.selectFirst("img")
         val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("src"))
@@ -119,9 +143,14 @@ class CineblogProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
         
-        // Pulizia titolo anche nella pagina di caricamento
         var title = doc.selectFirst("h1")?.text()?.trim() ?: return null
-        title = title.split(" – ").get(0).split(" - ").get(0).trim()
+        
+        // PULIZIA TITOLO NELLA LOAD
+        title = title.split(" – ").get(0)
+            .split(" - ").get(0)
+            .replace(" streaming", "", ignoreCase = true)
+            .replace(" Streaming", "", ignoreCase = true)
+            .trim()
         
         val poster = fixUrlNull(doc.selectFirst("img._player-cover, .story-poster img, img[itemprop='image']")?.attr("src"))
         
@@ -145,7 +174,6 @@ class CineblogProvider : MainAPI() {
                         this.name = "Episodio $epNum"
                         this.season = seasonNum
                         this.episode = epNum
-                        // 1. COPERTINA EPISODI: Usiamo il poster della serie
                         this.posterUrl = poster 
                     })
                 }
