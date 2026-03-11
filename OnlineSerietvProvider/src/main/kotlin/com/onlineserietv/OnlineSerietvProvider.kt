@@ -1,161 +1,296 @@
 package com.onlineserietv
 
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.network.WebViewResolver
-import org.jsoup.nodes.Element
 import android.util.Log
+import com.lagradost.cloudstream3.Episode
+import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.addRating
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.addPoster
+import com.lagradost.cloudstream3.amap
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.mainPageOf
+import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newMovieLoadResponse
+import com.lagradost.cloudstream3.newTvSeriesLoadResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.utils.AppUtils.parseJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
+import com.onlineserietv.extractors.MaxStreamExtractor
+import com.onlineserietv.extractors.FlexyExtractor
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
+import java.net.SocketTimeoutException
 
-class OnlineSerietvProvider : MainAPI() {
+class OnlineSerieTV : MainAPI() {
     override var mainUrl = "https://onlineserietv.live"
     override var name = "OnlineSerieTV"
+    override val supportedTypes = setOf(
+        TvType.Movie, TvType.TvSeries,
+        TvType.Cartoon, TvType.Anime, TvType.AnimeMovie, TvType.Documentary
+    )
     override var lang = "it"
     override val hasMainPage = true
-    override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
-
-    private val pcUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
     override val mainPage = mainPageOf(
-        "$mainUrl/movies/page/" to "Film Recenti",
-        "$mainUrl/serie-tv/page/" to "Serie TV",
-        "$mainUrl/film-generi/animazione/page/" to "Animazione"
-    )
+//        mainUrl to "Top 10 Film",
+//        mainUrl to "Top 10 Serie TV",
+        "$mainUrl/movies/" to "Film: Ultimi aggiunti",
+        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte",
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = "${request.data}$page/"
-        val res = app.get(url, headers = mapOf("User-Agent" to pcUserAgent))
-        val items = res.document.select("article, .uagb-post__inner-wrap, .movie-item").mapNotNull {
-            it.toSearchResult()
+        "$mainUrl/serie-tv-generi/animazione/" to "Serie TV: Animazione",
+        "$mainUrl/film-generi/animazione/" to "Film: Animazione",
+
+        "$mainUrl/serie-tv-generi/documentario/" to "Serie TV: Documentario",
+        "$mainUrl/film-generi/documentario/" to "Film: Documentario",
+
+        "$mainUrl/serie-tv-generi/action-adventure/" to "Serie TV: Azione e Avventura",
+        "$mainUrl/film-generi/avventura/" to "Film: Avventura",
+        "$mainUrl/film-generi/azione/" to "Film: Azione",
+        "$mainUrl/film-generi/supereroi/" to "Film: Supereroi",
+
+        "$mainUrl/serie-tv-generi/sci-fi-fantasy/" to "Serie TV: Fantascienza e Fantasy",
+        "$mainUrl/film-generi/fantascienza/" to "Film: Fantascienza",
+        "$mainUrl/film-generi/fantasy/" to "Film: Fantasy",
+
+        "$mainUrl/serie-tv-generi/dramma/" to "Serie TV: Dramma",
+        "$mainUrl/film-generi/drammatico/" to "Film: Dramma",
+        "$mainUrl/film-generi/sentimentale/" to "Film: Sentimentale",
+
+        "$mainUrl/serie-tv-generi/commedia/" to "Serie TV: Commedia",
+        "$mainUrl/film-generi/commedia/" to "Film: Commedia",
+
+        "$mainUrl/serie-tv-generi/crime/" to "Serie TV: Crime",
+        "$mainUrl/serie-tv-generi/mistero/" to "Serie TV: Mistero",
+
+        "$mainUrl/serie-tv-generi/war-politics/" to "Serie TV: Guerra e Politica",
+        "$mainUrl/film-generi/horror/" to "Film: Horror",
+        "$mainUrl/film-generi/thriller/" to "Film: Thriller",
+
+        "$mainUrl/serie-tv-generi/reality/" to "Serie TV: Reality",
+
+        )
+
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        val response = try {
+            app.get(request.data).document
+        } catch (e: SocketTimeoutException) {
+            return null
         }
-        return newHomePageResponse(HomePageList(request.name, items), hasNext = items.isNotEmpty())
+        val searchResponses = getItems(request.name, response)
+        return newHomePageResponse(HomePageList(request.name, searchResponses), false)
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val titleTag = this.selectFirst("h2 a, .uagb-post__title a, .entry-title a") ?: return null
-        val href = titleTag.attr("href")
-        val title = titleTag.text().replace(Regex("(?i)streaming|sub ita"), "").trim()
-        val posterUrl = this.selectFirst("img")?.attr("src")
+    private suspend fun getItems(section: String, page: Document): List<SearchResponse> {
+        val searchResponses = when (section) {
+            "Film: Ultimi aggiunti", "Serie TV: Ultime aggiunte" -> {
+                val itemGrid = page.selectFirst(".wp-block-uagb-post-grid")!!
+                val items = itemGrid.select(".uagb-post__inner-wrap")
+                items.map {
+                    val itemTag = it.select(".uagb-post__title > a")
+                    val title = itemTag.text().trim().replace(Regex("""\d{4}$"""), "")
+                    val url = itemTag.attr("href")
+                    val poster = it.select(".uagb-post__image > a > img").attr("src")
 
-        return if (href.contains("/film/")) {
-            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
-        } else {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
-        }
-    }
-
-    override suspend fun search(query: String): List<SearchResponse> {
-        val res = app.get("$mainUrl/?s=$query", headers = mapOf("User-Agent" to pcUserAgent))
-        return res.document.select("article, .uagb-post__inner-wrap").mapNotNull { it.toSearchResult() }
-    }
-
-    override suspend fun load(url: String): LoadResponse {
-        val response = app.get(url, headers = mapOf("User-Agent" to pcUserAgent))
-        val doc = response.document
-        val title = doc.selectFirst("h1, .entry-title")?.text()
-            ?.replace(Regex("(?i)streaming|serie tv"), "")?.trim() ?: "Senza Titolo"
-        val poster = doc.selectFirst("meta[property='og:image'], .wp-post-image")?.attr("content")
-        val plot = doc.selectFirst(".entry-content p, meta[name='description']")?.text()?.trim()
-
-        if (url.contains("/film/")) {
-            return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
-        } else {
-            val episodes = mutableListOf<Episode>()
-
-            doc.select("#hostlinks tr").forEach { row ->
-                val cells = row.select("td")
-                if (cells.size >= 2) {
-                    val infoText = cells[0].text()
-                    val regex = Regex("""(\d+)[xX](\d+)""")
-                    val match = regex.find(infoText)
-                    
-                    val s = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    val e = match?.groupValues?.get(2)?.toIntOrNull()
-                    
-                    if (e != null) {
-                        val link = row.select("a").map { it.attr("href") }.firstOrNull { 
-                            (it.contains("uprot.net") && (it.contains("/uprots/") || it.contains("/fxf/"))) 
-                            || it.contains("flexy.stream")
-                        }
-                        
-                        if (link != null) {
-                            episodes.add(newEpisode(link) {
-                                this.name = infoText
-                                this.season = s
-                                this.episode = e
-                            })
-                        }
+                    newTvSeriesSearchResponse(title, url) {
+                        this.posterUrl = poster
                     }
                 }
             }
 
-            return newTvSeriesLoadResponse(
-                title, url, TvType.TvSeries,
-                episodes.distinctBy { it.data }.sortedWith(compareBy({ it.season }, { it.episode }))
-            ) {
-                this.posterUrl = poster
+            "Top 10 Film", "Top 10 Serie TV" -> {
+                val sidebar = page.selectFirst(".sidebar_right")!!
+                val bothTop10 = sidebar.select(".links")
+                val currentTop10 = if (section == "Top 10 Film") {
+                    bothTop10.last()
+                } else {
+                    bothTop10.first()
+                }
+                val items = currentTop10?.select(".scrolling > li")
+                items?.amap {
+                    val title = it.select("a").text().trim().replace(Regex("""\d{4}$"""), "")
+                    val url = it.select("a").attr("href")
+
+                    val showPage = try {
+                        app.get(url).document
+                    } catch (e: SocketTimeoutException) {
+                        null
+                    }
+                    val poster = showPage?.select(".imgs > img:nth-child(1)")?.attr("src")
+                    newTvSeriesSearchResponse(title, url) {
+                        this.posterUrl = poster
+                    }
+                } ?: emptyList()
+            }
+
+            "Film: Avventura",
+            "Film: Azione",
+            "Film: Animazione",
+            "Film: Commedia",
+            "Film: Documentario",
+            "Film: Dramma",
+            "Film: Horror",
+            "Film: Thriller",
+            "Film: Fantascienza",
+            "Film: Fantasy",
+            "Film: Supereroi",
+            "Film: Sentimentale",
+            "Serie TV: Azione e Avventura",
+            "Serie TV: Fantascienza e Fantasy",
+            "Serie TV: Dramma",
+            "Serie TV: Crime",
+            "Serie TV: Mistero",
+            "Serie TV: Commedia",
+            "Serie TV: Reality",
+            "Serie TV: Guerra e Politica",
+            "Serie TV: Documentario",
+            "Serie TV: Animazione" -> {
+                val itemGrid = page.selectFirst("#box_movies")!!
+                val items = itemGrid.select(".movie")
+                items.map {
+                    it.toSearchResponse()
+                }
+            }
+
+            else -> {
+                Log.d("OnlineSerieTV", "Unknown section: $section")
+                emptyList()
+            }
+        }
+        return searchResponses
+    }
+
+
+    private fun Element.toSearchResponse(): SearchResponse {
+        val title = this.select("h2").text().trim().replace(Regex("""\d{4}$"""), "")
+        val url = this.select("a").attr("href")
+        val poster = this.select("img").attr("src")
+        return newTvSeriesSearchResponse(title, url) {
+            this.posterUrl = poster
+        }
+    }
+
+    // this function gets called when you search for something
+    override suspend fun search(query: String): List<SearchResponse> {
+        val response = app.get("$mainUrl/?s=$query")
+        val page = response.document
+        val itemGrid = page.selectFirst("#box_movies")!!
+        val items = itemGrid.select(".movie")
+        val searchResponses = items.map {
+            it.toSearchResponse()
+        }
+        return searchResponses
+    }
+
+    override suspend fun load(url: String): LoadResponse {
+        val response = app.get(url).document
+        val dati = response.selectFirst(".headingder")!!
+        val poster = dati.select(".imgs > img").attr("src").replace(Regex("""-\d+x\d+"""), "")
+        val title = dati.select(".dataplus > div:nth-child(1) > h1").text().trim()
+            .replace(Regex("""\d{4}$"""), "")
+        val rating = dati.select(".stars > span:nth-child(3)").text().trim().removeSuffix("/10")
+        val genres = dati.select(".stars > span:nth-child(6) > i:nth-child(1)").text().trim()
+        val year = dati.select(".stars > span:nth-child(8) > i:nth-child(1)").text().trim()
+        val duration = dati.select(".stars > span:nth-child(10) > i:nth-child(1)").text()
+            .removeSuffix(" minuti")
+        val isMovie = url.contains("/film/")
+
+        return if (isMovie) {
+            val streamUrl = response.select("#hostlinks").select("a").map { it.attr("href") }
+            val plot = response.select(".post > p:nth-child(16)").text().trim()
+            newMovieLoadResponse(title, url, TvType.Movie, streamUrl) {
+                addPoster(poster)
+                addRating(rating)
+                this.duration = duration.toIntOrNull()
+                this.year = year.toIntOrNull()
+                this.tags = genres.split(",")
+                this.plot = plot
+            }
+        } else {
+            val episodes = getEpisodes(response)
+            val plot = response.select(".post > p:nth-child(17)").text().trim()
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                addPoster(poster)
+                addRating(rating)
+                this.year = year.toIntOrNull()
+                this.tags = genres.split(",")
                 this.plot = plot
             }
         }
     }
 
- override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-): Boolean {
-    var currentUrl = data
-    Log.d("OnlineSerieTV", "Inizio loadLinks per: $currentUrl")
-
-    if (currentUrl.contains("uprot.net")) {
-        // Usiamo WebViewResolver per superare Cloudflare e trovare il link flexy.stream
-        // Questo sostituisce CloudflareKiller ed evita l'errore di riferimento non risolto
-        val bypassRes = app.get(
-            currentUrl,
-            interceptor = WebViewResolver(Regex(".*flexy\\.stream.*")),
-            headers = mapOf("User-Agent" to pcUserAgent),
-            timeout = 30
-        )
-        
-        if (bypassRes.url.contains("flexy.stream")) {
-            currentUrl = bypassRes.url
-            Log.d("OnlineSerieTV", "Bypass riuscito! Nuovo URL: $currentUrl")
+    private fun getEpisodes(page: Document): List<Episode> {
+        val table = page.selectFirst("#hostlinks > table:nth-child(1)")!!
+        var season: Int? = 1
+        val rows = table.select("tr")
+        val episodes: List<Episode> = rows.mapNotNull {
+            if (it.childrenSize() == 0) {
+                null
+            } else if (it.childrenSize() == 1) {
+                val seasonText =
+                    it.select("td:nth-child(1)").text().substringBefore("- Episodi disponibi")
+                season = Regex("""\d+""").find(seasonText)?.value?.toInt()
+                null
+            } else {
+                val title = it.select("td:nth-child(1)").text()
+                val links = it.select("a").map { a -> "\"${a.attr("href")}\"" }
+                Episode("$links").apply {
+//                    name = title
+                    this.season = season
+                    this.episode = title.substringAfter("x").substringBefore(" ").toIntOrNull()
+                }
+            }
         }
+        return episodes
     }
 
-    // Ora risolviamo il video finale
-    val videoPage = app.get(
-        currentUrl,
-        interceptor = WebViewResolver(
-            Regex(".*master\\.m3u8.*|.*index\\.m3u8.*|.*playlist\\.m3u8.*|.*\\.mp4.*")
-        ),
-        headers = mapOf(
-            "Referer" to "https://uprot.net/",
-            "User-Agent" to pcUserAgent
-        ),
-        timeout = 45 
-    )
-
-    if (videoPage.url.contains(".m3u8") || videoPage.url.contains(".mp4")) {
-        val isM3u8 = videoPage.url.contains(".m3u8")
-        
-        callback.invoke(
-            newExtractorLink(
-                source = this.name,
-                name = this.name,
-                url = videoPage.url,
-                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-            ) {
-                this.referer = currentUrl
-                this.quality = Qualities.Unknown.value
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit,
+    ): Boolean {
+        Log.d("OnlineSerieTV:Links", "Data: $data")
+        val links = parseJson<List<String>>(data)
+        links.forEach {
+            if (it.contains("uprot")) {
+                val url = bypassUprot(it)
+                Log.d("OnlineSerieTV:Links", "Bypassed Url: $url")
+                if (url != null) {
+                    if (url.contains("flexy")) {
+                        FlexyExtractor().getUrl(url, null, subtitleCallback, callback)
+                    } else {
+                        MaxStreamExtractor().getUrl(url, null, subtitleCallback, callback)
+                    }
+                    loadExtractor(url, subtitleCallback, callback)
+                }
             }
-        )
+        }
         return true
     }
 
-    return loadExtractor(currentUrl, "https://uprot.net/", subtitleCallback, callback)
-}
+    private suspend fun bypassUprot(link: String): String? {
+        val updatedLink = if ("msf" in link) link.replace("msf", "mse") else link
+
+        // Generate headers (replace with your own method to generate fake headers)
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        )
+
+        // Make the HTTP request
+        val response = app.get(updatedLink, headers = headers, timeout = 10_000)
+
+        // Parse the HTML using Jsoup
+        val document = response.document
+        Log.d("Uprot", document.toString())//.select("a").toString())
+        val maxstreamUrl = document.selectFirst("a")?.attr("href")
+
+        return maxstreamUrl
+    }
 }
