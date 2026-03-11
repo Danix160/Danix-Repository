@@ -1,11 +1,12 @@
 package com.onlineserietv
 
 import android.util.Log
-// Rimosso import specifico toScore che dava errore
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.onlineserietv.extractors.MaxStreamExtractor
+import com.onlineserietv.extractors.FlexyExtractor
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.SocketTimeoutException
@@ -73,47 +74,10 @@ class OnlineSerietvProvider : MainAPI() {
                     }
                 }
             }
-
-            "Top 10 Film", "Top 10 Serie TV" -> {
-                val sidebar = page.selectFirst(".sidebar_right")!!
-                val bothTop10 = sidebar.select(".links")
-                val currentTop10 = if (section == "Top 10 Film") {
-                    bothTop10.last()
-                } else {
-                    bothTop10.first()
-                }
-                val items = currentTop10?.select(".scrolling > li")
-                items?.amap {
-                    val title = it.select("a").text().trim().replace(Regex("""\d{4}$"""), "")
-                    val url = it.select("a").attr("href")
-
-                    val showPage = try {
-                        app.get(url).document
-                    } catch (e: SocketTimeoutException) {
-                        null
-                    }
-                    val poster = showPage?.select(".imgs > img:nth-child(1)")?.attr("src")
-                    newTvSeriesSearchResponse(title, url) {
-                        this.posterUrl = poster
-                    }
-                } ?: emptyList()
-            }
-
-            "Film: Avventura", "Film: Azione", "Film: Animazione", "Film: Commedia", "Film: Documentario",
-            "Film: Dramma", "Film: Horror", "Film: Thriller", "Film: Fantascienza", "Film: Fantasy",
-            "Film: Supereroi", "Film: Sentimentale", "Serie TV: Azione e Avventura", "Serie TV: Fantascienza e Fantasy",
-            "Serie TV: Dramma", "Serie TV: Crime", "Serie TV: Mistero", "Serie TV: Commedia", "Serie TV: Reality",
-            "Serie TV: Guerra e Politica", "Serie TV: Documentario", "Serie TV: Animazione" -> {
-                val itemGrid = page.selectFirst("#box_movies")!!
-                val items = itemGrid.select(".movie")
-                items.map {
-                    it.toSearchResponse()
-                }
-            }
-
             else -> {
-                Log.d("OnlineSerieTV", "Unknown section: $section")
-                emptyList()
+                val itemGrid = page.selectFirst("#box_movies")
+                val items = itemGrid?.select(".movie") ?: emptyList()
+                items.map { it.toSearchResponse() }
             }
         }
         return searchResponses
@@ -133,9 +97,7 @@ class OnlineSerietvProvider : MainAPI() {
         val page = response.document
         val itemGrid = page.selectFirst("#box_movies")!!
         val items = itemGrid.select(".movie")
-        return items.map {
-            it.toSearchResponse()
-        }
+        return items.map { it.toSearchResponse() }
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -144,7 +106,7 @@ class OnlineSerietvProvider : MainAPI() {
         val poster = dati.select(".imgs > img").attr("src").replace(Regex("""-\d+x\d+"""), "")
         val title = dati.select(".dataplus > div:nth-child(1) > h1").text().trim()
             .replace(Regex("""\d{4}$"""), "")
-        val rating = dati.select(".stars > span:nth-child(3)").text().trim().removeSuffix("/10")
+        
         val genres = dati.select(".stars > span:nth-child(6) > i:nth-child(1)").text().trim()
         val year = dati.select(".stars > span:nth-child(8) > i:nth-child(1)").text().trim()
         val duration = dati.select(".stars > span:nth-child(10) > i:nth-child(1)").text()
@@ -156,8 +118,7 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(16)").text().trim()
             newMovieLoadResponse(title, url, TvType.Movie, streamUrl) {
                 addPoster(poster)
-                // SOLUZIONE: Usiamo la funzione globale Score(punteggio, massimo)
-                this.score = rating.toDoubleOrNull()?.let { Score(it, 10.0) }
+                // Score rimosso per compatibilità
                 this.duration = duration.toIntOrNull()
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
@@ -168,8 +129,7 @@ class OnlineSerietvProvider : MainAPI() {
             val plot = response.select(".post > p:nth-child(17)").text().trim()
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 addPoster(poster)
-                // SOLUZIONE: Usiamo la funzione globale Score(punteggio, massimo)
-                this.score = rating.toDoubleOrNull()?.let { Score(it, 10.0) }
+                // Score rimosso per compatibilità
                 this.year = year.toIntOrNull()
                 this.tags = genres.split(",")
                 this.plot = plot
@@ -185,8 +145,7 @@ class OnlineSerietvProvider : MainAPI() {
             if (it.childrenSize() == 0) {
                 null
             } else if (it.childrenSize() == 1) {
-                val seasonText =
-                    it.select("td:nth-child(1)").text().substringBefore("- Episodi disponibi")
+                val seasonText = it.select("td:nth-child(1)").text().substringBefore("- Episodi disponibi")
                 season = Regex("""\d+""").find(seasonText)?.value?.toInt()
                 null
             } else {
@@ -207,13 +166,16 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
-        Log.d("OnlineSerieTV:Links", "Data: $data")
         val links = parseJson<List<String>>(data)
         links.forEach {
             if (it.contains("uprot")) {
                 val url = bypassUprot(it)
-                Log.d("OnlineSerieTV:Links", "Bypassed Url: $url")
                 if (url != null) {
+                    if (url.contains("flexy")) {
+                        FlexyExtractor().getUrl(url, null, subtitleCallback, callback)
+                    } else if (url.contains("maxstream")) {
+                        MaxStreamExtractor().getUrl(url, null, subtitleCallback, callback)
+                    }
                     loadExtractor(url, subtitleCallback, callback)
                 }
             }
@@ -227,7 +189,6 @@ class OnlineSerietvProvider : MainAPI() {
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         )
         val response = app.get(updatedLink, headers = headers, timeout = 10_000)
-        val document = response.document
-        return document.selectFirst("a")?.attr("href")
+        return response.document.selectFirst("a")?.attr("href")
     }
 }
