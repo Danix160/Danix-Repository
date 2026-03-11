@@ -70,46 +70,18 @@ class CineblogProvider : MainAPI() {
         val latest = mainDoc.select(".block-th").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
         if (latest.isNotEmpty()) homePageList.add(HomePageList("Ultimi Aggiunti", latest))
         
-        val genres = listOf(
-            "Serie TV" to "$mainUrl/serie-tv/",
-            "Azione" to "$mainUrl/film/?genere=1",
-            "Animazione" to "$mainUrl/film/?genere=2",
-            "Avventura" to "$mainUrl/film/?genere=3",
-            "Famiglia" to "$mainUrl/film/?genere=26",
-            "Fantascienza" to "$mainUrl/film/?genere=9",
-            "Fantasy" to "$mainUrl/film/?genere=10",
-            "Horror" to "$mainUrl/film/?genere=13",
-            "Thriller" to "$mainUrl/film/?genere=19"
-        )
-        
-        genres.forEach { (name, url) ->
-            try {
-                val items = app.get(url).document.select(".block-th").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
-                if (items.isNotEmpty()) homePageList.add(HomePageList(name, items))
-            } catch (e: Exception) { }
-        }
         return newHomePageResponse(homePageList, false)
     }
     
     override suspend fun search(query: String): List<SearchResponse> {
         val allResults = mutableListOf<SearchResponse>()
-        for (page in 1..5) {
-            try {
-                val pagedResults = app.post(
-                    "$mainUrl/index.php?do=search",
-                    data = mapOf(
-                        "do" to "search",
-                        "subaction" to "search",
-                        "search_start" to "$page",
-                        "full_search" to "0",
-                        "result_from" to "${(page - 1) * 20 + 1}",
-                        "story" to query
-                    )
-                ).document.select(".m-item, .movie-item, article, .block-th").mapNotNull { it.toSearchResult() }
-                if (pagedResults.isEmpty()) break
-                allResults.addAll(pagedResults)
-            } catch (e: Exception) { break }
-        }
+        try {
+            val pagedResults = app.post(
+                "$mainUrl/index.php?do=search",
+                data = mapOf("do" to "search", "subaction" to "search", "story" to query)
+            ).document.select(".m-item, .movie-item, .block-th").mapNotNull { it.toSearchResult() }
+            allResults.addAll(pagedResults)
+        } catch (e: Exception) { }
         return allResults.distinctBy { it.url }
     }
 
@@ -119,15 +91,14 @@ class CineblogProvider : MainAPI() {
         if (href.contains("/tags/") || href.contains("/category/")) return null
 
         var title = a.text().trim().ifEmpty { 
-            this.selectFirst("h2, h3, .m-title, .block-th-haeding")?.text() ?: a.attr("title") 
+            this.selectFirst("h2, h3, .m-title")?.text() ?: a.attr("title") 
         }
         
-        // PULIZIA TITOLO: Rimosso Trattini, Parentesi Quadre e la scritta "streaming"
+        // Pulizia Titolo: No trattini lunghi, no parentesi, NO "streaming"
         title = title.split(" – ").get(0)
             .split(" - ").get(0)
             .split(" [").get(0)
-            .replace(" streaming", "", ignoreCase = true)
-            .replace(" Streaming", "", ignoreCase = true)
+            .replace(Regex("(?i) streaming"), "")
             .trim()
         
         val img = this.selectFirst("img")
@@ -142,21 +113,15 @@ class CineblogProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
-        
         var title = doc.selectFirst("h1")?.text()?.trim() ?: return null
         
-        // PULIZIA TITOLO NELLA LOAD
         title = title.split(" – ").get(0)
             .split(" - ").get(0)
-            .replace(" streaming", "", ignoreCase = true)
-            .replace(" Streaming", "", ignoreCase = true)
+            .replace(Regex("(?i) streaming"), "")
             .trim()
         
         val poster = fixUrlNull(doc.selectFirst("img._player-cover, .story-poster img, img[itemprop='image']")?.attr("src"))
-        
-        val plotElement = doc.selectFirst(".story")
-        val strongText = plotElement?.selectFirst("strong")?.text() ?: ""
-        val plot = plotElement?.text()?.replace(strongText, "")?.replace("+Info»", "")?.trim()?.removePrefix(",")?.trim()
+        val plot = doc.selectFirst(".story")?.text()?.split("+Info")?.get(0)?.trim()
 
         val seasonContainer = doc.selectFirst(".tt_season")
         return if (seasonContainer != null) {
@@ -194,7 +159,7 @@ class CineblogProvider : MainAPI() {
             }
         }
     }
-    
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -209,14 +174,13 @@ class CineblogProvider : MainAPI() {
             if (fixed.contains("guardahd") || fixed.contains("mostraguarda") || fixed.contains("cineblog")) {
                 try {
                     val doc = app.get(fixed).document
-                    doc.select("tr[onclick]").forEach { tr ->
-                        val code = tr.attr("onclick")
-                        val match = Regex("href='([^']+)'").find(code)
-                        match?.groupValues?.get(1)?.let { finalLinks.add(fixUrl(it)) }
-                    }
-                    doc.select("li[data-link], a[data-link], iframe").forEach { el ->
-                        val found = el.attr("data-link").ifEmpty { el.attr("src") }
-                        if (found.isNotBlank() && !found.contains("guardahd")) finalLinks.add(fixUrl(found))
+                    doc.select("tr[onclick], li[data-link], a[data-link], iframe").forEach { el ->
+                        val link = if (el.hasAttr("onclick")) {
+                            Regex("href='([^']+)'").find(el.attr("onclick"))?.groupValues?.get(1)
+                        } else {
+                            el.attr("data-link").ifEmpty { el.attr("src") }
+                        }
+                        if (!link.isNullOrBlank() && !link.contains("guardahd")) finalLinks.add(fixUrl(link))
                     }
                 } catch (e: Exception) { }
             } else {
@@ -225,7 +189,7 @@ class CineblogProvider : MainAPI() {
         }
 
         // PRIORITÀ: Supervideo per primo
-        val prioritizedLinks = foundLinks.distinct().sortedByDescending { it.contains("supervideo") }
+        val prioritizedLinks = finalLinks.distinct().sortedByDescending { it.contains("supervideo") }
 
         prioritizedLinks.forEach { link ->
             val clean = link.replace("?download", "")
