@@ -28,7 +28,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.SocketTimeoutException
 
-class OnlineSerieTV : MainAPI() {
+class OnlineSerietvProvider : MainAPI() {
     override var mainUrl = "https://onlineserietv.live"
     override var name = "OnlineSerieTV"
     override val supportedTypes = setOf(
