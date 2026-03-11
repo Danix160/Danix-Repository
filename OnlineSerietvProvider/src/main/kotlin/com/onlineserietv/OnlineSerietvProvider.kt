@@ -106,23 +106,25 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // SOLUZIONE: Creiamo urlToLoad come var partendo dal valore di data
-        var urlToLoad = data
+        // Creiamo una variabile mutabile 'currentUrl' inizializzata con il valore di 'data'
+        var currentUrl = data
 
-        if (urlToLoad.contains("uprot.net")) {
-            val res = app.get(urlToLoad, headers = mapOf("User-Agent" to pcUserAgent))
+        if (currentUrl.contains("uprot.net")) {
+            val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
+            // Cerchiamo il link Flexy effettivo
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
             if (flexyLink != null) {
-                urlToLoad = fixUrl(flexyLink)
+                currentUrl = fixUrl(flexyLink)
             }
         }
 
+        // Ora usiamo currentUrl (che è var) per le operazioni successive
         val webViewRes = app.get(
-            urlToLoad,
+            currentUrl,
             interceptor = WebViewResolver(
                 Regex(".*flexy\\.stream.*|.*master\\.m3u8.*|.*index\\.m3u8.*|.*playlist\\.m3u8.*|.*\\.mp4.*")
             ),
@@ -141,7 +143,7 @@ class OnlineSerietvProvider : MainAPI() {
                     webViewRes.url,
                     null
                 ) {
-                    this.referer = urlToLoad
+                    this.referer = currentUrl
                     this.quality = Qualities.Unknown.value
                     this.isM3u8 = webViewRes.url.contains(".m3u8")
                 }
@@ -149,7 +151,7 @@ class OnlineSerietvProvider : MainAPI() {
             return true
         }
 
-        loadExtractor(urlToLoad, "https://uprot.net/", subtitleCallback, callback)
+        loadExtractor(currentUrl, "https://uprot.net/", subtitleCallback, callback)
 
         return true
     }
