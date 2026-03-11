@@ -133,20 +133,21 @@ class OnlineSerietvProvider : MainAPI() {
         )
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
-            // Usiamo newExtractorLink che è la versione "consigliata"
+            // Usiamo il costruttore DSL passando tutto come argomenti nominali.
+            // Questo evita errori di "reassignment" e "unresolved putAll".
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
                     name = this.name,
-                    url = webViewRes.url
-                ) {
-                    // Invece di riassegnare referer (che è val), aggiungiamo i dati agli headers
-                    // che è il modo corretto per passare informazioni al player
-                    this.headers.putAll(mapOf(
+                    url = webViewRes.url,
+                    referer = currentUrl,
+                    quality = Qualities.Unknown.value,
+                    type = if (webViewRes.url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                    headers = mapOf(
                         "Referer" to currentUrl,
                         "User-Agent" to pcUserAgent
-                    ))
-                }
+                    )
+                )
             )
             return true
         }
