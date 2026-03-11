@@ -18,12 +18,12 @@ class DroploadExtractor : ExtractorApi() {
         try {
             val body = app.get(url).body.string()
             val unpacked = getAndUnpack(body)
-            val videoUrl = Regex("""file\s*:\s*"([^"]+\.m3u8[^"]*)"""").find(unpacked)?.groupValues?.get(1)
+            // Regex migliorata per catturare il file m3u8 o mp4
+            val videoUrl = Regex("""(?:file|src)\s*:\s*"([^"]+(?:\.m3u8|\.mp4)[^"]*)"""").find(unpacked)?.groupValues?.get(1)
 
             videoUrl?.let {
-                callback.invoke(newExtractorLink(name, name, it, ExtractorLinkType.M3U8) {
+                callback.invoke(newExtractorLink(name, name, it, if(it.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO) {
                     this.referer = url
-                    quality = Qualities.Unknown.value
                 })
             }
         } catch (e: Exception) { Log.e("Dropload", "Error: ${e.message}") }
@@ -44,48 +44,9 @@ class SupervideoExtractor : ExtractorApi() {
             videoUrl?.let {
                 callback.invoke(newExtractorLink(name, name, it, if(it.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO) {
                     this.referer = url
-                    quality = Qualities.Unknown.value
                 })
             }
         } catch (e: Exception) { Log.e("Supervideo", "Error: ${e.message}") }
-    }
-}
-
-// ==================== MIXDROP ====================
-
-class MixdropExtractor : ExtractorApi() {
-    override var name = "Mixdrop"
-    override var mainUrl = "https://mixdrop.co"
-    override val requiresReferer = false
-
-    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        try {
-            val response = app.get(url).text
-            val unpacked = getAndUnpack(response)
-
-            val videoUrl = Regex("""MDCore\.wurl\s*=\s*"([^"]+)"""")
-                .find(unpacked)
-                ?.groupValues?.get(1)
-
-            videoUrl?.let {
-                val finalUrl = if (it.startsWith("//")) "https:$it" else it
-
-                callback.invoke(
-                    newExtractorLink(
-                        name,
-                        name,
-                        finalUrl,
-                        ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = url
-                        quality = Qualities.Unknown.value
-                    }
-                )
-            }
-
-        } catch (e: Exception) {
-            Log.e("Mixdrop", "Error: ${e.message}")
-        }
     }
 }
 
@@ -161,18 +122,12 @@ class CineblogProvider : MainAPI() {
         
         val plotElement = doc.selectFirst(".story")
         val strongText = plotElement?.selectFirst("strong")?.text() ?: ""
-        val plot = plotElement?.text()
-            ?.replace(strongText, "")
-            ?.replace("+Info»", "")
-            ?.trim()
-            ?.removePrefix(",")
-            ?.trim()
+        val plot = plotElement?.text()?.replace(strongText, "")?.replace("+Info»", "")?.trim()?.removePrefix(",")?.trim()
 
         val seasonContainer = doc.selectFirst(".tt_season")
         return if (seasonContainer != null) {
-
+            // LOGICA ORIGINALE SERIE TV RIPRISTINATA
             val episodesList = mutableListOf<Episode>()
-
             doc.select(".tt_series .tab-content .tab-pane").forEachIndexed { index, pane ->
                 val seasonNum = index + 1
                 pane.select("li").forEach { li ->
@@ -186,23 +141,16 @@ class CineblogProvider : MainAPI() {
                         this.name = "Episodio $epNum"
                         this.season = seasonNum
                         this.episode = epNum
-                        this.posterUrl = poster
                     })
                 }
             }
-
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
-
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) { this.posterUrl = poster; this.plot = plot }
         } else {
-
-            // FIX FILM
-            val movieLinks = doc.select("a[href*='mostraguarda'], iframe")
-                .mapNotNull { it.attr("href").ifEmpty { it.attr("src") } }
-                .filter { it.isNotBlank() }
-                .joinToString("|")
+            // LOGICA FILM (Cattura l'iframe mostraguarda/guardahd)
+            val iframe = doc.selectFirst("iframe[src*='guardahd'], iframe#_player, a[href*='mostraguarda']")?.let {
+                it.attr("src").ifEmpty { it.attr("href") }
+            }
+            val movieLinks = if (!iframe.isNullOrBlank()) fixUrl(iframe) else url
 
             newMovieLoadResponse(title, url, TvType.Movie, movieLinks) {
                 this.posterUrl = poster
@@ -217,49 +165,48 @@ class CineblogProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val finalLinks = mutableListOf<String>()
 
-        val links = data.split("|")
-
-        links.forEach { link ->
-            val fixedLink = fixUrl(link)
-
-            try {
-
-                val doc = app.get(fixedLink).document
-
-                doc.select("li[data-link], a[data-link], a.mr, iframe, a[href]")
-                    .forEach { el ->
-
-                        val mirror = el.attr("data-link")
-                            .ifEmpty { el.attr("href") }
-                            .ifEmpty { el.attr("src") }
-
-                        if (mirror.isNotBlank()) {
-
-                            val finalMirror = fixUrl(mirror)
-
-                            when {
-
-                                finalMirror.contains("dropload") ->
-                                    DroploadExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-
-                                finalMirror.contains("supervideo") ->
-                                    SupervideoExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-
-                                finalMirror.contains("mixdrop") ->
-                                    MixdropExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-
-                                else ->
-                                    loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
-                            }
-                        }
+        data.split("|").forEach { rawLink ->
+            val fixed = fixUrl(rawLink)
+            
+            // Se è un link che porta alla tabella interattiva (mostraguarda/guardahd)
+            if (fixed.contains("guardahd") || fixed.contains("mostraguarda") || fixed.contains("cineblog")) {
+                try {
+                    val doc = app.get(fixed).document
+                    // Estrazione tramite click virtuale (onclick sulla tabella)
+                    doc.select("tr[onclick]").forEach { tr ->
+                        val code = tr.attr("onclick")
+                        val match = Regex("href='([^']+)'").find(code)
+                        match?.groupValues?.get(1)?.let { finalLinks.add(fixUrl(it)) }
                     }
-
-            } catch (e: Exception) {
-                Log.e("LoadLinks", "Error parsing mirror: ${e.message}")
+                    // Backup: se ci sono iframe o data-link diretti nell'iframe
+                    doc.select("li[data-link], a[data-link], iframe").forEach { el ->
+                        val found = el.attr("data-link").ifEmpty { el.attr("src") }
+                        if (found.isNotBlank() && !found.contains("guardahd")) finalLinks.add(fixUrl(found))
+                    }
+                } catch (e: Exception) { }
+            } else {
+                // Link diretto (comune nelle Serie TV)
+                finalLinks.add(fixed)
             }
         }
 
+        finalLinks.distinct().forEach { link ->
+            val clean = link.replace("?download", "")
+            when {
+                clean.contains("mixdrop") || clean.contains("m1xdrop") -> 
+                    loadExtractor(clean, clean, subtitleCallback, callback)
+                
+                clean.contains("supervideo") -> 
+                    SupervideoExtractor().getUrl(clean, clean, subtitleCallback, callback)
+                
+                clean.contains("dropload") || clean.contains("dr0pstream") -> 
+                    DroploadExtractor().getUrl(clean, clean, subtitleCallback, callback)
+                
+                else -> loadExtractor(clean, clean, subtitleCallback, callback)
+            }
+        }
         return true
     }
 }
