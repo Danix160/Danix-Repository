@@ -100,6 +100,7 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
+    @Suppress("DEPRECATION")
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -134,10 +135,10 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
-                // Usiamo newExtractorLink con argomenti nominati per evitare deprecazione e errori di 'val'
-                newExtractorLink(
-                    name = this.name,
+                // Usiamo il costruttore diretto per evitare i limiti della funzione helper
+                ExtractorLink(
                     source = this.name,
+                    name = this.name,
                     url = webViewRes.url,
                     referer = currentUrl,
                     quality = Qualities.Unknown.value,
