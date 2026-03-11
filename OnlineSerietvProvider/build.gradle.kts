@@ -19,7 +19,7 @@ cloudstream {
     authors = listOf("Danix")
     
     status = 1
-    tvTypes = listOf("Movie", "TvSeries, Cartoon, Anime, AnimeMovie, Documentary")
+    tvTypes = listOf("Movie", "TvSeries", "Cartoon", "Anime", "AnimeMovie", "Documentary")
     requiresResources = false
     language = "it"
     iconUrl = "https://onlineserietv.live/wp-content/uploads/2023/01/cropped-tv-1.png"
