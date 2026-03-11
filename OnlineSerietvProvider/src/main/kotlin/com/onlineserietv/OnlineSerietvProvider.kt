@@ -134,9 +134,10 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
-                ExtractorLink(
-                    source = this.name,
+                // Usiamo newExtractorLink con argomenti nominati per evitare deprecazione e errori di 'val'
+                newExtractorLink(
                     name = this.name,
+                    source = this.name,
                     url = webViewRes.url,
                     referer = currentUrl,
                     quality = Qualities.Unknown.value,
