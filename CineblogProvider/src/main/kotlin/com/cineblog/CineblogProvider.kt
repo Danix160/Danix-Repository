@@ -204,43 +204,52 @@ class CineblogProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val links = data.split("|")
+        // 1. Dividiamo i link passati (che possono essere URL diretti o l'URL della pagina stessa)
+        val rawLinks = data.split("|").filter { it.isNotBlank() }
+        val finalLinksToProcess = mutableListOf<String>()
 
-        links.forEach { link ->
-            val fixedLink = fixUrl(link)
-
-            when {
-                fixedLink.contains("mixdrop") || fixedLink.contains("m1xdrop") -> {
-                    loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                fixedLink.contains("dropload") || fixedLink.contains("dr0pstream") -> {
-                    DroploadExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                fixedLink.contains("supervideo") -> {
-                    SupervideoExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                // Se il link è un mirror esterno valido, usiamo l'estrattore di sistema
-                fixedLink.startsWith("http") && !fixedLink.contains("cineblog001") && !fixedLink.contains("mostraguarda") -> {
-                    loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                // Se non è un link diretto, scansioniamo la pagina (fallback)
-                else -> {
-                    try {
-                        val doc = app.get(fixedLink).document
-                        doc.select("li[data-link], a[data-link], a.mr, iframe#_player, iframe[src*='embed']").forEach { el ->
-                            val mirror = el.attr("data-link").ifEmpty { el.attr("src") }
-                            if (mirror.isNotBlank() && !mirror.contains("mostraguarda.stream")) {
-                                val finalMirror = fixUrl(mirror)
-                                when {
-                                    finalMirror.contains("mixdrop") || finalMirror.contains("m1xdrop") -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
-                                    finalMirror.contains("dropload") || finalMirror.contains("dr0pstream") -> DroploadExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-                                    finalMirror.contains("supervideo") -> SupervideoExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-                                    else -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
-                                }
-                            }
+        rawLinks.forEach { rawLink ->
+            val fixed = fixUrl(rawLink)
+            
+            // 2. Se il link è un "falso player" (mostraguarda/cineblog), dobbiamo entrarci
+            if (fixed.contains("mostraguarda") || fixed.contains("cineblog") || fixed.contains("m0straguarda")) {
+                try {
+                    val doc = app.get(fixed).document
+                    // Cerchiamo i server reali nei data-link o negli iframe del mostraguarda
+                    doc.select("li[data-link], a[data-link], iframe[src*='embed']").forEach { el ->
+                        val found = el.attr("data-link").ifEmpty { el.attr("src") }
+                        if (found.isNotBlank() && !found.contains("mostraguarda")) {
+                            finalLinksToProcess.add(fixUrl(found))
                         }
-                    } catch (e: Exception) { }
+                    }
+                } catch (e: Exception) { 
+                    Log.e("Cineblog", "Errore bypass mostraguarda: ${e.message}")
                 }
+            } else {
+                // Altrimenti è già un link diretto (es. mixdrop/supervideo)
+                finalLinksToProcess.add(fixed)
+            }
+        }
+
+        // 3. Esecuzione degli estrattori sui link puliti
+        finalLinksToProcess.distinct().forEach { link ->
+            when {
+                // SUPPORTO MIXDROP (Mantenuto e prioritario)
+                link.contains("mixdrop") || link.contains("m1xdrop") -> {
+                    loadExtractor(link, link, subtitleCallback, callback)
+                }
+                
+                // Altri estrattori custom
+                link.contains("dropload") || link.contains("dr0pstream") -> {
+                    DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
+                }
+                
+                link.contains("supervideo") -> {
+                    SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
+                }
+                
+                // Fallback per altri estrattori di sistema (Voe, StreamTape, ecc.)
+                else -> loadExtractor(link, link, subtitleCallback, callback)
             }
         }
         return true
