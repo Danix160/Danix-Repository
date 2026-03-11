@@ -53,7 +53,9 @@ class OnlineSerietvProvider : MainAPI() {
         val title = doc.selectFirst("h1, .entry-title")?.text()
             ?.replace(Regex("(?i)streaming|serie tv"), "")?.trim() ?: "Senza Titolo"
         val poster = doc.selectFirst("meta[property='og:image'], .wp-post-image")?.attr("content")
-        val plot = doc.selectFirst(".entry-content p, meta[name='description'] cavity")?.text()?.trim()
+        
+        // Corretto il selettore del plot (rimosso "cavity")
+        val plot = doc.selectFirst(".entry-content p, meta[name='description']")?.text()?.trim()
 
         if (url.contains("/film/")) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -133,18 +135,18 @@ class OnlineSerietvProvider : MainAPI() {
         )
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
+            // Usiamo il costruttore classico sopprimendo l'avviso di deprecazione.
+            // Questo garantisce che i parametri 'val' siano impostati correttamente.
+            @Suppress("DEPRECATION")
             callback.invoke(
-                // Ora usiamo la sintassi corretta richiesta dal tuo compilatore
-                newExtractorLink(
-                    this.name,      // source
-                    this.name,      // name
-                    webViewRes.url  // url
-                ) {
-                    // Tutto il resto va configurato qui dentro
-                    this.referer = currentUrl
-                    this.quality = Qualities.Unknown.value
-                    this.isM3u8 = webViewRes.url.contains(".m3u8")
-                }
+                ExtractorLink(
+                    source = this.name,
+                    name = this.name,
+                    url = webViewRes.url,
+                    referer = currentUrl,
+                    quality = Qualities.Unknown.value,
+                    isM3u8 = webViewRes.url.contains(".m3u8")
+                )
             )
             return true
         }
