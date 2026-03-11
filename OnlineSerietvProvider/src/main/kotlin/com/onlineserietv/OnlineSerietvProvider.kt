@@ -101,57 +101,32 @@ class OnlineSerietvProvider : MainAPI() {
         }
     }
 
-   override suspend fun loadLinks(
+ override suspend fun loadLinks(
     data: String,
     isCasting: Boolean,
     subtitleCallback: (SubtitleFile) -> Unit,
     callback: (ExtractorLink) -> Unit
 ): Boolean {
     var currentUrl = data
-    Log.d("OnlineSerieTV", "Inizio bypass Cloudflare per: $currentUrl")
+    Log.d("OnlineSerieTV", "Inizio loadLinks per: $currentUrl")
 
     if (currentUrl.contains("uprot.net")) {
-        // 1. Usiamo CloudflareKiller per ottenere l'HTML superando la protezione
-        val cfInterceptor = CloudflareKiller()
-        val response = app.get(
-            currentUrl, 
-            interceptor = cfInterceptor,
-            headers = mapOf("User-Agent" to pcUserAgent)
+        // Usiamo WebViewResolver per superare Cloudflare e trovare il link flexy.stream
+        // Questo sostituisce CloudflareKiller ed evita l'errore di riferimento non risolto
+        val bypassRes = app.get(
+            currentUrl,
+            interceptor = WebViewResolver(Regex(".*flexy\\.stream.*")),
+            headers = mapOf("User-Agent" to pcUserAgent),
+            timeout = 30
         )
         
-        val html = response.text
-        
-        // 2. Cerchiamo il link flexy.stream (Regex diretta)
-        val flexyRegex = Regex("""https?://flexy\.stream/uprots/[a-zA-Z0-9+=/]+""")
-        var foundLink = flexyRegex.find(html)?.value
-
-        // 3. Se non lo trova, proviamo a decodificare la stringa Base64 che abbiamo visto nell'HTML
-        if (foundLink.isNullOrEmpty()) {
-            Log.d("OnlineSerieTV", "Link diretto non trovato, provo decodifica Base64...")
-            // Cerchiamo stringhe Base64 lunghe almeno 40 caratteri che finiscono con ==
-            val base64Regex = Regex("""[a-zA-Z0-9+/]{40,}=?=?""")
-            base64Regex.findAll(html).forEach { match ->
-                try {
-                    val decoded = base64Decode(match.value)
-                    if (decoded.contains("flexy.stream")) {
-                        foundLink = decoded.trim()
-                        Log.d("OnlineSerieTV", "Link trovato in Base64: $foundLink")
-                    }
-                } catch (e: Exception) { }
-            }
-        }
-
-        if (!foundLink.isNullOrEmpty()) {
-            currentUrl = fixUrl(foundLink!!)
-        } else {
-            Log.e("OnlineSerieTV", "Impossibile trovare il link di reindirizzamento nell'HTML")
-            return false
+        if (bypassRes.url.contains("flexy.stream")) {
+            currentUrl = bypassRes.url
+            Log.d("OnlineSerieTV", "Bypass riuscito! Nuovo URL: $currentUrl")
         }
     }
 
-    // 4. Ora risolviamo il video finale con la WebView standard sul link flexy
-    Log.d("OnlineSerieTV", "Apertura WebView finale su: $currentUrl")
-    
+    // Ora risolviamo il video finale
     val videoPage = app.get(
         currentUrl,
         interceptor = WebViewResolver(
@@ -161,18 +136,18 @@ class OnlineSerietvProvider : MainAPI() {
             "Referer" to "https://uprot.net/",
             "User-Agent" to pcUserAgent
         ),
-        timeout = 30 // Ridotto a 30s per evitare blocchi infiniti
+        timeout = 45 
     )
 
     if (videoPage.url.contains(".m3u8") || videoPage.url.contains(".mp4")) {
-        Log.d("OnlineSerieTV", "Successo! Video: ${videoPage.url}")
+        val isM3u8 = videoPage.url.contains(".m3u8")
         
         callback.invoke(
             newExtractorLink(
                 source = this.name,
                 name = this.name,
                 url = videoPage.url,
-                type = if (videoPage.url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             ) {
                 this.referer = currentUrl
                 this.quality = Qualities.Unknown.value
