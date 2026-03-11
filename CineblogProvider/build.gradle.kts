@@ -14,7 +14,7 @@ cloudstream {
     extra["prefix"] = "Cineblog"
     extra["displayName"] = "Cineblog"
     
-    version = 79
+    version = 80
     description = "Cineblog001"
     authors = listOf("Danix")
     
