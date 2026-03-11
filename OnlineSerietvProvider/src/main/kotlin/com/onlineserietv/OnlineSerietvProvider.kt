@@ -53,7 +53,7 @@ class OnlineSerietvProvider : MainAPI() {
         val title = doc.selectFirst("h1, .entry-title")?.text()
             ?.replace(Regex("(?i)streaming|serie tv"), "")?.trim() ?: "Senza Titolo"
         val poster = doc.selectFirst("meta[property='og:image'], .wp-post-image")?.attr("content")
-        val plot = doc.selectFirst(".entry-content p, meta[name='description']")?.text()?.trim()
+        val plot = doc.selectFirst(".entry-content p, meta[name='description'] cavity")?.text()?.trim()
 
         if (url.contains("/film/")) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -134,15 +134,17 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
-                // Soluzione definitiva: parametri posizionali per evitare bug di metadati Kotlin
+                // Ora usiamo la sintassi corretta richiesta dal tuo compilatore
                 newExtractorLink(
-                    this.name,                       // source
-                    this.name,                       // name
-                    webViewRes.url,                  // url
-                    currentUrl,                      // referer
-                    Qualities.Unknown.value,         // quality
-                    webViewRes.url.contains(".m3u8") // isM3u8
-                )
+                    this.name,      // source
+                    this.name,      // name
+                    webViewRes.url  // url
+                ) {
+                    // Tutto il resto va configurato qui dentro
+                    this.referer = currentUrl
+                    this.quality = Qualities.Unknown.value
+                    this.isM3u8 = webViewRes.url.contains(".m3u8")
+                }
             )
             return true
         }
