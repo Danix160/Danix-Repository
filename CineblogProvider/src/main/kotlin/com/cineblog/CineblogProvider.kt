@@ -1,242 +1,352 @@
-package com.cineblog
+package it.dogior.hadEnough
 
+import android.util.Log
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.api.Log
-import org.jsoup.nodes.Element
+import it.dogior.hadEnough.extractors.MaxStreamExtractor
+import it.dogior.hadEnough.extractors.StreamTapeExtractor
 
-// =============================================================================
-// ESTRATTORI DEDICATI
-// =============================================================================
-
-class DroploadExtractor : ExtractorApi() {
-    override var name = "Dropload"
-    override var mainUrl = "https://dropload.tv"
-    override val requiresReferer = false
-
-    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        try {
-            val body = app.get(url).body.string()
-            val unpacked = getAndUnpack(body)
-            val videoUrl = Regex("""file\s*:\s*"([^"]+\.m3u8[^"]*)"""").find(unpacked)?.groupValues?.get(1)
-
-            videoUrl?.let {
-                callback.invoke(newExtractorLink(name, name, it, ExtractorLinkType.M3U8) {
-                    this.referer = url
-                    quality = Qualities.Unknown.value
-                })
-            }
-        } catch (e: Exception) { Log.e("Dropload", "Error: ${e.message}") }
-    }
-}
-
-class SupervideoExtractor : ExtractorApi() {
-    override var name = "Supervideo"
-    override var mainUrl = "https://supervideo.cc"
-    override val requiresReferer = false
-
-    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        try {
-            val response = app.get(url).body.string()
-            val unpacked = getAndUnpack(response)
-            val videoUrl = Regex("""file\s*:\s*"([^"]+.(?:m3u8|mp4)[^"]*)"""").find(unpacked)?.groupValues?.get(1)
-
-            videoUrl?.let {
-                callback.invoke(newExtractorLink(name, name, it, if(it.contains("m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO) {
-                    this.referer = url
-                    quality = Qualities.Unknown.value
-                })
-            }
-        } catch (e: Exception) { Log.e("Supervideo", "Error: ${e.message}") }
-    }
-}
-
-// =============================================================================
-// PROVIDER PRINCIPALE
-// =============================================================================
-
-class CineblogProvider : MainAPI() {
-    override var mainUrl = "https://cineblog001.makeup"
-    override var name = "Cineblog01"
+class OnlineSerieTV : MainAPI() {
+    override var mainUrl = "https://api.themoviedb.org/3"
+    override var name = "OnlineSerieTV"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "it"
     override val hasMainPage = true
+    override val hasQuickSearch = true
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val homePageList = mutableListOf<HomePageList>()
-        val mainDoc = app.get(mainUrl).document
-        
-        val featured = mainDoc.select(".promo-item, .m-item").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
-        if (featured.isNotEmpty()) homePageList.add(HomePageList("In Evidenza", featured))
+    private val tmdbApiKey = BuildConfig.TMDB_API
+    private val streamingBaseUrl = "https://onlineserietv.online"
 
-        val latest = mainDoc.select(".block-th").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
-        if (latest.isNotEmpty()) homePageList.add(HomePageList("Ultimi Aggiunti", latest))
+    override val mainPage = mainPageOf(
+        "$mainUrl/trending/movie/day?api_key=$tmdbApiKey&language=it&region=IT" to "Film in Tendenza",
+        "$mainUrl/trending/tv/day?api_key=$tmdbApiKey&language=it&region=IT" to "Serie TV in Tendenza",
+        "$mainUrl/movie/popular?api_key=$tmdbApiKey&language=it&region=IT" to "Film Popolari",
+        "$mainUrl/tv/popular?api_key=$tmdbApiKey&language=it&region=IT" to "Serie TV Popolari",
+        "$mainUrl/movie/top_rated?api_key=$tmdbApiKey&language=it&region=IT" to "Film Top",
+        "$mainUrl/tv/top_rated?api_key=$tmdbApiKey&language=it&region=IT" to "Serie TV Top"
+    )
 
-        val genres = listOf(
-            "Serie TV" to "$mainUrl/serie-tv/",
-            "Azione" to "$mainUrl/film/?genere=1",
-            "Animazione" to "$mainUrl/film/?genere=2",
-            "Avventura" to "$mainUrl/film/?genere=3",
-            "Famiglia" to "$mainUrl/film/?genere=26",
-            "Fantascienza" to "$mainUrl/film/?genere=9",
-            "Fantasy" to "$mainUrl/film/?genere=10",
-            "Horror" to "$mainUrl/film/?genere=13",
-            "Thriller" to "$mainUrl/film/?genere=19"
-        )
-
-        genres.forEach { (name, url) ->
-            try {
-                val items = app.get(url).document.select(".block-th").mapNotNull { it.toSearchResult() }.distinctBy { it.url }
-                if (items.isNotEmpty()) homePageList.add(HomePageList(name, items))
-            } catch (e: Exception) { }
-        }
-
-        return newHomePageResponse(homePageList, false)
-    }
-
+    // 🔍 Cerca su TMDB
     override suspend fun search(query: String): List<SearchResponse> {
-        val allResults = mutableListOf<SearchResponse>()
-        for (page in 1..5) {
-            try {
-                val pagedResults = app.post(
-                    "$mainUrl/index.php?do=search",
-                    data = mapOf(
-                        "do" to "search",
-                        "subaction" to "search",
-                        "search_start" to "$page",
-                        "full_search" to "0",
-                        "result_from" to "${(page - 1) * 20 + 1}",
-                        "story" to query
-                    )
-                ).document.select(".m-item, .movie-item, article, .block-th").mapNotNull { it.toSearchResult() }
-                if (pagedResults.isEmpty()) break
-                allResults.addAll(pagedResults)
-            } catch (e: Exception) { break }
-        }
-        return allResults.distinctBy { it.url }
+        val url = "$mainUrl/search/multi?api_key=$tmdbApiKey&language=it&query=${query.urlEncoded()}"
+        val response = app.get(url).parsedSafe<TMDBMultiSearch>()
+        
+        return response?.results?.mapNotNull { item ->
+            when (item.media_type) {
+                "movie" -> newMovieSearchResponse(
+                    item.title ?: return@mapNotNull null,
+                    TMDBData(id = item.id, type = "movie").toJson()
+                ) {
+                    posterUrl = if (item.poster_path != null) 
+                        "https://image.tmdb.org/t/p/w500${item.poster_path}" 
+                    else null
+                }
+                "tv" -> newTvSeriesSearchResponse(
+                    item.name ?: return@mapNotNull null,
+                    TMDBData(id = item.id, type = "tv").toJson()
+                ) {
+                    posterUrl = if (item.poster_path != null)
+                        "https://image.tmdb.org/t/p/w500${item.poster_path}"
+                    else null
+                }
+                else -> null
+            }
+        } ?: emptyList()
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val a = this.selectFirst(".block-th-haeding a, a") ?: return null
-        val href = fixUrl(a.attr("href"))
-        if (href.contains("/tags/") || href.contains("/category/")) return null
-
-        val title = a.text().trim().ifEmpty { 
-            this.selectFirst("h2, h3, .m-title, .block-th-haeding")?.text() ?: a.attr("title") 
-        }
+    // 📺 Carica dettagli da TMDB
+    override suspend fun load(url: String): LoadResponse {
+        val data = parseJson<TMDBData>(url) ?: throw ErrorLoadingException("Dati non validi")
         
-        val img = this.selectFirst("img")
-        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("src"))
-        
-        return if (href.contains("/serie-tv/")) {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        return if (data.type == "movie") {
+            loadMovie(data.id)
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+            loadTvSeries(data.id)
         }
     }
 
-    override suspend fun load(url: String): LoadResponse? {
-        val doc = app.get(url).document
-        val title = doc.selectFirst("h1")?.text()?.trim() ?: return null
-        val poster = fixUrlNull(doc.selectFirst("img._player-cover, .story-poster img, img[itemprop='image']")?.attr("src"))
+    private suspend fun loadMovie(movieId: Int): LoadResponse {
+        val url = "$mainUrl/movie/$movieId?api_key=$tmdbApiKey&language=it&append_to_response=credits,videos,external_ids"
+        val movie = app.get(url).parsedSafe<TMDBMovie>() ?: throw ErrorLoadingException("Film non trovato")
         
-        val plotElement = doc.selectFirst(".story")
-        val strongText = plotElement?.selectFirst("strong")?.text() ?: ""
-        val plot = plotElement?.text()
-            ?.replace(strongText, "")
-            ?.replace("+Info»", "")
-            ?.trim()
-            ?.removePrefix(",") 
-            ?.trim()
+        // Cerca link streaming
+        val streamingLinks = searchStreamingLinks("${movie.title} ${movie.release_date?.substring(0, 4)}", true)
+        
+        return newMovieLoadResponse(
+            movie.title ?: "", 
+            StreamingSearchData(
+                title = movie.title ?: "",
+                year = movie.release_date?.substring(0, 4),
+                type = "movie",
+                imdbId = movie.external_ids?.imdb_id
+            ).toJson(), 
+            TvType.Movie
+        ) {
+            posterUrl = if (movie.poster_path != null)
+                "https://image.tmdb.org/t/p/w500${movie.poster_path}"
+            else null
+            backgroundPosterUrl = if (movie.backdrop_path != null)
+                "https://image.tmdb.org/t/p/original${movie.backdrop_path}"
+            else null
+            plot = movie.overview
+            year = movie.release_date?.substring(0, 4)?.toIntOrNull()
+            duration = movie.runtime
+            tags = movie.genres?.map { it.name }
+            addScore(movie.vote_average?.toString())
+            
+            movie.credits?.cast?.take(10)?.mapNotNull { cast ->
+                val actorName = cast.name ?: return@mapNotNull null
+                val actorPhoto = if (cast.profile_path != null)
+                    "https://image.tmdb.org/t/p/w200${cast.profile_path}"
+                else null
+                ActorData(Actor(actorName, actorPhoto), cast.character)
+            }?.let { actors = it }
+        }
+    }
 
-        val seasonContainer = doc.selectFirst(".tt_season")
-        return if (seasonContainer != null) {
-            val episodesList = mutableListOf<Episode>()
-            doc.select(".tt_series .tab-content .tab-pane").forEachIndexed { index, pane ->
-                val seasonNum = index + 1
-                pane.select("li").forEach { li ->
-                    val a = li.selectFirst("a[id^=serie-]") ?: return@forEach
-                    val mainLink = a.attr("data-link").ifEmpty { a.attr("href") }
-                    val mirrors = li.select(".mirrors a.mr").map { it.attr("data-link") }
-                    val allLinks = (listOf(mainLink) + mirrors).filter { it.isNotBlank() }.joinToString("|")
-                    val epNum = a.text().toIntOrNull() ?: 1
-
-                    episodesList.add(newEpisode(allLinks) {
-                        this.name = "Episodio $epNum"
-                        this.season = seasonNum
-                        this.episode = epNum
-                        this.posterUrl = poster
-                    })
+    private suspend fun loadTvSeries(tvId: Int): LoadResponse {
+        val url = "$mainUrl/tv/$tvId?api_key=$tmdbApiKey&language=it&append_to_response=credits,videos,external_ids"
+        val series = app.get(url).parsedSafe<TMDBTvSeries>() ?: throw ErrorLoadingException("Serie non trovata")
+        
+        // Prendi tutte le stagioni
+        val allEpisodes = mutableListOf<Episode>()
+        series.seasons?.forEach { season ->
+            if (season.season_number ?: 0 > 0) { // Salta stagione 0 (specials)
+                val seasonUrl = "$mainUrl/tv/$tvId/season/${season.season_number}?api_key=$tmdbApiKey&language=it"
+                val seasonData = app.get(seasonUrl).parsedSafe<TMDBSeason>() ?: return@forEach
+                
+                seasonData.episodes?.forEach { episode ->
+                    allEpisodes.add(
+                        newEpisode(StreamingSearchData(
+                            title = "${series.name}",
+                            year = series.first_air_date?.substring(0, 4),
+                            type = "tv",
+                            imdbId = series.external_ids?.imdb_id,
+                            season = episode.season_number,
+                            episode = episode.episode_number
+                        ).toJson()) {
+                            name = episode.name
+                            this.season = episode.season_number
+                            this.episode = episode.episode_number
+                            posterUrl = if (episode.still_path != null)
+                                "https://image.tmdb.org/t/p/w500${episode.still_path}"
+                            else null
+                            description = episode.overview
+                            addDate(episode.air_date)
+                        }
+                    )
                 }
             }
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
-        } else {
-            // Estrazione mirata per i FILM basata sul sorgente fornito
-            val movieLinks = doc.select("ul._player-mirrors li[data-link], ._hidden-mirrors li[data-link], iframe#_player")
-                .map { it.attr("data-link").ifEmpty { it.attr("src") } }
-                .filter { it.isNotBlank() && !it.contains("mostraguarda.stream") }
-                .distinct()
-                .joinToString("|")
+        }
 
-            newMovieLoadResponse(title, url, TvType.Movie, movieLinks) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
+        return newTvSeriesLoadResponse(
+            series.name ?: "", 
+            StreamingSearchData(
+                title = series.name ?: "",
+                year = series.first_air_date?.substring(0, 4),
+                type = "tv",
+                imdbId = series.external_ids?.imdb_id
+            ).toJson(), 
+            TvType.TvSeries, 
+            allEpisodes
+        ) {
+            posterUrl = if (series.poster_path != null)
+                "https://image.tmdb.org/t/p/w500${series.poster_path}"
+            else null
+            backgroundPosterUrl = if (series.backdrop_path != null)
+                "https://image.tmdb.org/t/p/original${series.backdrop_path}"
+            else null
+            plot = series.overview
+            year = series.first_air_date?.substring(0, 4)?.toIntOrNull()
+            tags = series.genres?.map { it.name }
+            addScore(series.vote_average?.toString())
+            
+            series.credits?.cast?.take(10)?.mapNotNull { cast ->
+                val actorName = cast.name ?: return@mapNotNull null
+                val actorPhoto = if (cast.profile_path != null)
+                    "https://image.tmdb.org/t/p/w200${cast.profile_path}"
+                else null
+                ActorData(Actor(actorName, actorPhoto), cast.character)
+            }?.let { actors = it }
         }
     }
 
+    // 🔗 Cerca link su OnlineSerieTV con fallback
+    private suspend fun searchStreamingLinks(query: String, isMovie: Boolean): List<String> {
+        return try {
+            // Pulizia query per ricerca
+            val cleanQuery = cleanSearchQuery(query)
+            
+            // 1. Cerca sul sito
+            val searchUrl = "$streamingBaseUrl/?s=${cleanQuery.urlEncoded()}"
+            val searchPage = app.get(searchUrl, timeout = 15000).document
+            
+            // 2. Estrai primo risultato
+            val firstResult = searchPage.selectFirst(".movie a, .post a")?.attr("href")
+            if (firstResult == null) {
+                Log.w("OnlineSerieTVHybrid", "Nessun risultato per: $cleanQuery")
+                return emptyList()
+            }
+            
+            // 3. Vai alla pagina del contenuto
+            val contentPage = app.get(firstResult, timeout = 15000).document
+            
+            // 4. Estrai tutti i link
+            contentPage.select("#hostlinks a, .links a, a[href*='uprot'], a[href*='stream']")
+                .mapNotNull { it.attr("href").takeIf { href -> href.isNotEmpty() } }
+            
+        } catch (e: Exception) {
+            Log.e("OnlineSerieTVHybrid", "Errore ricerca streaming: ${e.message}")
+            emptyList()
+        }
+    }
+
+    // 🎬 ESTRAZIONE LINK
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val links = data.split("|")
-
-        links.forEach { link ->
-            val fixedLink = fixUrl(link)
-
-            // Gestione diretta per server comuni
+        val query = parseJson<StreamingSearchData>(data) ?: return false
+        
+        // Crea query di ricerca
+        val searchQuery = if (query.type == "tv" && query.season != null && query.episode != null) {
+            "${query.title} stagione ${query.season} episodio ${query.episode}"
+        } else {
+            "${query.title} ${query.year ?: ""}"
+        }.trim()
+        
+        // Cerca link
+        val streamingLinks = searchStreamingLinks(searchQuery, query.type == "movie")
+        
+        // Processa link
+        var foundLinks = false
+        streamingLinks.forEach { link ->
+            foundLinks = true
             when {
-                fixedLink.contains("mixdrop") || fixedLink.contains("m1xdrop") -> {
-                    loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
+                link.contains("uprot") -> {
+                    val bypassed = bypassUprot(link)
+                    bypassed?.let { processLink(it, subtitleCallback, callback) }
                 }
-                fixedLink.contains("dropload") || fixedLink.contains("dr0pstream") -> {
-                    DroploadExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                fixedLink.contains("supervideo") -> {
-                    SupervideoExtractor().getUrl(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                fixedLink.startsWith("http") && !fixedLink.contains("cineblog001") && !fixedLink.contains("mostraguarda") -> {
-                    loadExtractor(fixedLink, fixedLink, subtitleCallback, callback)
-                }
-                else -> {
-                    try {
-                        val doc = app.get(fixedLink).document
-                        val realUrl = doc.selectFirst(".open-fake-url")?.attr("data-url")
-                            ?: doc.selectFirst("iframe[src*='mostraguarda']")?.attr("src")
-                            
-                        val targetDoc = if (!realUrl.isNullOrBlank()) app.get(fixUrl(realUrl)).document else doc
-
-                        targetDoc.select("li[data-link], a[data-link], a.mr, iframe#_player, iframe[src*='embed']").forEach { el ->
-                            val mirror = el.attr("data-link").ifEmpty { el.attr("src") }
-                            if (mirror.isNotBlank() && !mirror.contains("mostraguarda.stream") && !mirror.contains("facebook") && !mirror.contains("google")) {
-                                val finalMirror = fixUrl(mirror)
-                                when {
-                                    finalMirror.contains("mixdrop") || finalMirror.contains("m1xdrop") -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
-                                    finalMirror.contains("dropload") || finalMirror.contains("dr0pstream") -> DroploadExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-                                    finalMirror.contains("supervideo") -> SupervideoExtractor().getUrl(finalMirror, finalMirror, subtitleCallback, callback)
-                                    else -> loadExtractor(finalMirror, fixedLink, subtitleCallback, callback)
-                                }
-                            }
-                        }
-                    } catch (e: Exception) { Log.e("LoadLinks", "Error: ${e.message}") }
-                }
+                else -> processLink(link, subtitleCallback, callback)
             }
         }
-        return true
+        
+        return foundLinks
     }
+
+    private suspend fun processLink(
+        link: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        when {
+            link.contains("streamtape") -> {
+                StreamTapeExtractor().getUrl(link, null, subtitleCallback, callback)
+            }
+            link.contains("maxstream") || link.contains("msf") || link.contains("mse") -> {
+                MaxStreamExtractor().getUrl(link, null, subtitleCallback, callback)
+            }
+            else -> {
+                loadExtractor(link, subtitleCallback, callback)
+            }
+        }
+    }
+
+    // ⚙️ BYPASS UPROT
+    private suspend fun bypassUprot(link: String): String? {
+        val updatedLink = if ("msf" in link) link.replace("msf", "mse") else link
+        return try {
+            val response = app.get(updatedLink, timeout = 15000)
+            response.document.selectFirst("a")?.attr("href")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // 🛠️ UTILITIES
+    private fun cleanSearchQuery(query: String): String {
+        return query
+            .replace(Regex("""[:\-]"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .replace(" ", "+")
+    }
+
+    // 📊 CLASSI DATI
+    data class TMDBData(val id: Int, val type: String)
+    
+    data class StreamingSearchData(
+        val title: String,
+        val year: String? = null,
+        val type: String = "movie",
+        val imdbId: String? = null,
+        val season: Int? = null,
+        val episode: Int? = null
+    )
+    
+    data class TMDBMultiSearch(@JsonProperty("results") val results: List<TMDBSearchResult>)
+    
+    data class TMDBSearchResult(
+        @JsonProperty("id") val id: Int,
+        @JsonProperty("media_type") val media_type: String,
+        @JsonProperty("title") val title: String?,
+        @JsonProperty("name") val name: String?,
+        @JsonProperty("poster_path") val poster_path: String?
+    )
+    
+    data class TMDBMovie(
+        @JsonProperty("title") val title: String?,
+        @JsonProperty("overview") val overview: String?,
+        @JsonProperty("poster_path") val poster_path: String?,
+        @JsonProperty("backdrop_path") val backdrop_path: String?,
+        @JsonProperty("release_date") val release_date: String?,
+        @JsonProperty("runtime") val runtime: Int?,
+        @JsonProperty("vote_average") val vote_average: Float?,
+        @JsonProperty("genres") val genres: List<TMDBGenre>?,
+        @JsonProperty("credits") val credits: TMDBCredits?,
+        @JsonProperty("external_ids") val external_ids: TMDBExternalIds?
+    )
+    
+    data class TMDBTvSeries(
+        @JsonProperty("name") val name: String?,
+        @JsonProperty("overview") val overview: String?,
+        @JsonProperty("poster_path") val poster_path: String?,
+        @JsonProperty("backdrop_path") val backdrop_path: String?,
+        @JsonProperty("first_air_date") val first_air_date: String?,
+        @JsonProperty("vote_average") val vote_average: Float?,
+        @JsonProperty("genres") val genres: List<TMDBGenre>?,
+        @JsonProperty("seasons") val seasons: List<TMDBSeasonInfo>?,
+        @JsonProperty("credits") val credits: TMDBCredits?,
+        @JsonProperty("external_ids") val external_ids: TMDBExternalIds?
+    )
+    
+    data class TMDBExternalIds(
+        @JsonProperty("imdb_id") val imdb_id: String?
+    )
+    
+    data class TMDBSeasonInfo(@JsonProperty("season_number") val season_number: Int?)
+    
+    data class TMDBSeason(@JsonProperty("episodes") val episodes: List<TMDBEpisode>?)
+    
+    data class TMDBEpisode(
+        @JsonProperty("name") val name: String?,
+        @JsonProperty("overview") val overview: String?,
+        @JsonProperty("still_path") val still_path: String?,
+        @JsonProperty("air_date") val air_date: String?,
+        @JsonProperty("episode_number") val episode_number: Int,
+        @JsonProperty("season_number") val season_number: Int
+    )
+    
+    data class TMDBGenre(@JsonProperty("name") val name: String)
+    
+    data class TMDBCast(
+        @JsonProperty("name") val name: String?,
+        @JsonProperty("character") val character: String?,
+        @JsonProperty("profile_path") val profile_path: String?
+    )
+    
+    data class TMDBCredits(@JsonProperty("cast") val cast: List<TMDBCast>?)
 }
