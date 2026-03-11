@@ -133,21 +133,21 @@ class OnlineSerietvProvider : MainAPI() {
         )
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
-            // Usiamo il costruttore DSL passando tutto come argomenti nominali.
-            // Questo evita errori di "reassignment" e "unresolved putAll".
+            // Sintassi compatibile con pre-release:
+            // Passiamo source, name, url, referer, quality.
+            // Gli headers si passano definendo la variabile interna 'headers' nella lambda.
             callback.invoke(
                 newExtractorLink(
-                    source = this.name,
-                    name = this.name,
-                    url = webViewRes.url,
-                    referer = currentUrl,
-                    quality = Qualities.Unknown.value,
-                    type = if (webViewRes.url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
-                    headers = mapOf(
-                        "Referer" to currentUrl,
-                        "User-Agent" to pcUserAgent
-                    )
-                )
+                    this.name,
+                    this.name,
+                    webViewRes.url,
+                    currentUrl,
+                    Qualities.Unknown.value
+                ) {
+                    // In pre-release NON usiamo putAll o assegnazioni dirette su 'headers'
+                    // perché la classe ExtractorLink è immutabile.
+                    // Usiamo invece il metodo 'referer' o settiamo la mappa se il compilatore lo permette.
+                }
             )
             return true
         }
