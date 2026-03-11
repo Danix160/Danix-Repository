@@ -106,14 +106,12 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Creiamo una variabile mutabile 'currentUrl' inizializzata con il valore di 'data'
         var currentUrl = data
 
         if (currentUrl.contains("uprot.net")) {
             val res = app.get(currentUrl, headers = mapOf("User-Agent" to pcUserAgent))
             val doc = res.document
             
-            // Cerchiamo il link Flexy effettivo
             val flexyLink = doc.select("a[href*='flexy.stream']").map { it.attr("href") }
                 .firstOrNull { (it.contains("/uprots/") || it.contains("/fxf/")) && !it.contains("discovernative") }
             
@@ -122,7 +120,6 @@ class OnlineSerietvProvider : MainAPI() {
             }
         }
 
-        // Ora usiamo currentUrl (che è var) per le operazioni successive
         val webViewRes = app.get(
             currentUrl,
             interceptor = WebViewResolver(
@@ -137,16 +134,14 @@ class OnlineSerietvProvider : MainAPI() {
 
         if (webViewRes.url.contains(".m3u8") || webViewRes.url.contains(".mp4")) {
             callback.invoke(
-                newExtractorLink(
-                    this.name,
-                    this.name,
-                    webViewRes.url,
-                    null
-                ) {
-                    this.referer = currentUrl
-                    this.quality = Qualities.Unknown.value
-                    this.isM3u8 = webViewRes.url.contains(".m3u8")
-                }
+                ExtractorLink(
+                    source = this.name,
+                    name = this.name,
+                    url = webViewRes.url,
+                    referer = currentUrl,
+                    quality = Qualities.Unknown.value,
+                    isM3u8 = webViewRes.url.contains(".m3u8")
+                )
             )
             return true
         }
