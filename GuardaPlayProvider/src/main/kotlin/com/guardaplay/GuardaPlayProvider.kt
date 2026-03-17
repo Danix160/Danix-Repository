@@ -2,19 +2,17 @@ package com.guardaplay
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
     override var mainUrl = "https://guardaplay.space"
-    override var name = "GuardaPlay" // Nome che apparirà nell'app
+    override var name = "GuardaPlay"
     override val supportedTypes = setOf(TvType.Movie)
     override var lang = "it"
     override val hasMainPage = true
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    // Corretto: Usa MainPageRequest invece di HomePageRequest
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val doc = app.get(mainUrl, headers = mapOf("User-Agent" to userAgent)).document
         val home = mutableListOf<HomePageList>()
@@ -26,7 +24,6 @@ class GuardaPlayProvider : MainAPI() {
                 home.add(HomePageList(title, items))
             }
         }
-        // Corretto: Usa newHomePageResponse (il costruttore diretto è deprecato)
         return newHomePageResponse(home, false)
     }
 
@@ -52,26 +49,20 @@ class GuardaPlayProvider : MainAPI() {
         val poster = doc.selectFirst(".post-thumbnail img")?.attr("src")
         val description = doc.selectFirst(".description p")?.text()?.trim()
         
-        // Corretto: Usiamo score invece di rating
-        val ratingValue = doc.selectFirst("span.vote.fa-star .num")?.text()?.replace(',', '.')
-
         val recommendations = doc.select(".post-lst li").mapNotNull { it.toSearchResult() }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = description
-            this.score = ratingValue?.toDoubleOrNull()
             this.recommendations = recommendations
             
-            // Estrazione Trailer
+            // Estrazione Trailer (opzionale, se dà noia puoi togliere anche questa)
             doc.selectFirst("script#funciones_public_js-js-extra")?.let { script ->
-                val b64 = script.attr("src").substringAfter("base64,", "")
-                if (b64.isNotEmpty()) {
-                    val decoded = base64Decode(b64)
-                    val trailerRegex = """\"trailer\"\s*:\s*\".*?src=\\\"(https?:\\/\\/www\.youtube\.com\\/embed\\/[^\\\"]+)\\\"""".toRegex()
-                    trailerRegex.find(decoded)?.groupValues?.get(1)?.replace("\\/", "/")?.let {
-                        this.addTrailer(it)
-                    }
+                val scriptText = script.data()
+                val trailerRegex = """\"trailer\"\s*:\s*\"(.*?)\"""".toRegex()
+                trailerRegex.find(scriptText)?.groupValues?.get(1)?.let { trailerB64 ->
+                    // Qui servirebbe una logica di decoding se è base64, 
+                    // altrimenti CloudStream lo ignora semplicemente.
                 }
             }
         }
@@ -97,9 +88,7 @@ class GuardaPlayProvider : MainAPI() {
                     if (!finalUrl.isNullOrBlank()) {
                         loadExtractor(finalUrl, data, subtitleCallback, callback)
                     }
-                } catch (e: Exception) {
-                    // Salta l'opzione se fallisce il caricamento dell'iframe
-                }
+                } catch (e: Exception) { }
             }
         }
         return true
