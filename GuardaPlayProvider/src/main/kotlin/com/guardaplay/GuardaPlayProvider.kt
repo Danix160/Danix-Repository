@@ -2,8 +2,6 @@ package com.guardaplay
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -26,8 +24,8 @@ class GuardaPlayProvider : MainAPI() {
         val url = if (page <= 1) request.data else "${request.data}page/$page/"
         val document = app.get(url).document
         
-        // Selettore aggiornato per Home e Categorie
-        val home = document.select("article.post, article.movies, .post-thumbnail").mapNotNull {
+        // Selettore espanso per catturare tutti i tipi di layout nella home
+        val home = document.select("article, .item, .post").mapNotNull {
             it.toSearchResult()
         }.distinctBy { it.url }
 
@@ -35,40 +33,37 @@ class GuardaPlayProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        // Titolo da h2.entry-title (come da tuo snippet)
-        val title = this.selectFirst("h2.entry-title")?.text() 
-            ?: this.selectFirst("h3")?.text() 
+        // Cerca il titolo in vari punti comuni
+        val title = this.selectFirst("h2, h3, .title, .entry-title")?.text() 
             ?: this.selectFirst("img")?.attr("alt")?.replace("Image ", "")
             ?: return null
             
-        // Link dal tag a.lnk-blk
-        val href = this.selectFirst("a.lnk-blk")?.attr("href") 
-            ?: this.selectFirst("a")?.attr("href") 
-            ?: return null
+        // Cerca il link principale
+        val href = this.selectFirst("a")?.attr("href") ?: return null
         
-        // Immagine con fix protocollo //
-        val imgElement = this.selectFirst("img")
-        var posterUrl = imgElement?.attr("data-src") 
-            ?: imgElement?.attr("data-lazy-src") 
-            ?: imgElement?.attr("src") 
+        // Fix Immagini: controlla i vari attributi lazy-load
+        val img = this.selectFirst("img")
+        var posterUrl = img?.attr("data-src")
+            ?.ifBlank { img.attr("data-lazy-src") }
+            ?.ifBlank { img.attr("src") }
             ?: ""
         
-        if (posterUrl.startsWith("//")) {
-            posterUrl = "https:$posterUrl"
-        }
-
-        val year = this.selectFirst("span.year")?.text()?.trim()?.toIntOrNull()
+        // Rendi l'URL dell'immagine assoluto e sicuro
+        if (posterUrl.startsWith("//")) posterUrl = "https:$posterUrl"
+        if (posterUrl.startsWith("/")) posterUrl = mainUrl + posterUrl
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
-            this.year = year
         }
     }
 
+    // Corretto il sistema di ricerca
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?s=$query"
         val document = app.get(url).document
-        return document.select("article.post, .item").mapNotNull {
+        
+        // Usa lo stesso sistema della home per coerenza
+        return document.select("article, .item, .post").mapNotNull {
             it.toSearchResult()
         }
     }
@@ -77,16 +72,14 @@ class GuardaPlayProvider : MainAPI() {
         val document = app.get(url).document
         val title = document.selectFirst("h1.entry-title, h1")?.text() ?: return null
         
-        var posterUrl = document.selectFirst(".poster img, .post-thumbnail img")?.attr("src") ?: ""
+        var posterUrl = document.selectFirst(".poster img, .post-thumbnail img, .entry-content img")?.attr("src") ?: ""
         if (posterUrl.startsWith("//")) posterUrl = "https:$posterUrl"
-
-        val description = document.selectFirst(".wp-content p, .description p")?.text()
-        val year = Regex("\\d{4}").find(document.select(".date, .year, .entry-meta").text())?.value?.toIntOrNull()
+        if (posterUrl.startsWith("/")) posterUrl = mainUrl + posterUrl
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = posterUrl
-            this.plot = description
-            this.year = year
+            this.plot = document.selectFirst(".wp-content p, .description p, .entry-content p")?.text()
+            this.year = Regex("\\d{4}").find(document.select(".date, .year, .entry-meta").text())?.value?.toIntOrNull()
         }
     }
 
@@ -99,64 +92,33 @@ class GuardaPlayProvider : MainAPI() {
         val document = app.get(data).document
         var found = false
 
-        // 1. Scansione degli iframe nelle opzioni (Server 1, Server 2...)
-        val options = document.select("div[id^=option] iframe, .source-box iframe, li[id^=player-option-]")
+        // Estrazione link da iframe e bottoni server
+        val sources = document.select("iframe, .source-box iframe, select option, .player-option")
         
-        for (option in options) {
-            val rawUrl = option.attr("data-src")
-                .ifBlank { option.attr("src") }
-                .ifBlank { option.attr("data-href") }
+        for (source in sources) {
+            val link = source.attr("src")
+                .ifBlank { source.attr("data-src") }
+                .ifBlank { source.attr("value") } // Per i tag <option>
             
-            if (rawUrl.isNotBlank() && !rawUrl.contains("about:blank")) {
-                if (processUrl(rawUrl, data, subtitleCallback, callback)) found = true
-            }
-        }
-
-        // 2. Scansione di emergenza negli script (per link nascosti in Ajax)
-        if (!found) {
-            document.select("script").forEach { script ->
-                val code = script.data()
-                if (code.contains("https://")) {
-                    Regex("""https?://[^\s"'<>]+""").findAll(code).forEach { match ->
-                        val url = match.value.replace("\\/", "/")
-                        if (url.contains("embed") || url.contains("video")) {
-                            if (processUrl(url, data, subtitleCallback, callback)) found = true
+            if (link.isNotBlank() && !link.contains("about:blank")) {
+                val cleanLink = if (link.startsWith("//")) "https:$link" else link
+                
+                // Se il link porta a una sottopagina del sito, la seguiamo
+                if (cleanLink.contains(mainUrl) || cleanLink.contains("/video/")) {
+                    val innerDoc = app.get(cleanLink, referer = data).document
+                    innerDoc.select("iframe").forEach { 
+                        val finalUrl = it.attr("src")
+                        if (finalUrl.isNotBlank()) {
+                            loadExtractor(finalUrl, cleanLink, subtitleCallback, callback)
+                            found = true
                         }
                     }
+                } else {
+                    loadExtractor(cleanLink, data, subtitleCallback, callback)
+                    found = true
                 }
             }
         }
-
         return found
-    }
-
-    private suspend fun processUrl(
-        url: String,
-        referer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val cleanUrl = if (url.startsWith("//")) "https:$url" else url
-        
-        return try {
-            // Logica "Doppio Salto": se l'URL è interno al sito, carichiamo la sottopagina
-            if (cleanUrl.contains("guardaplay") || cleanUrl.contains("/video/")) {
-                val innerDoc = app.get(cleanUrl, referer = referer).document
-                val finalIframe = innerDoc.selectFirst("iframe")?.attr("src")
-                    ?: innerDoc.selectFirst("iframe")?.attr("data-src")
-                
-                if (!finalIframe.isNullOrBlank()) {
-                    val fixedFinal = if (finalIframe.startsWith("//")) "https:$finalIframe" else finalIframe
-                    loadExtractor(fixedFinal, cleanUrl, subtitleCallback, callback)
-                    true
-                } else false
-            } else {
-                // Se è già un link esterno (Mixdrop, ecc.), lo carichiamo direttamente
-                loadExtractor(cleanUrl, referer, subtitleCallback, callback)
-                true
-            }
-        } catch (e: Exception) {
-            false
-        }
     }
 }
