@@ -5,7 +5,7 @@ import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import org.jsoup.nodes.Element
 
-class GuardaFlix : MainAPI() {
+class GuardaplayProvider : MainAPI() {
     override var mainUrl = "https://guardaplay.space"
     override var name = "GuardaFlix"
     override val supportedTypes = setOf(TvType.Movie)
