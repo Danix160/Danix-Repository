@@ -7,34 +7,28 @@ import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
     override var mainUrl = "https://guardaplay.space"
-    override var name = "GuardaFlix"
+    override var name = "GuardaPlay" // Nome che apparirà nell'app
     override val supportedTypes = setOf(TvType.Movie)
     override var lang = "it"
     override val hasMainPage = true
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+    // Corretto: Usa MainPageRequest invece di HomePageRequest
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-    val doc = app.get(mainUrl).document
-    val home = mutableListOf<HomePageList>()
-    // ... logica di scraping ...
-    doc.select("section.section.movies").forEach { section ->
-        val title = section.selectFirst("header .section-title")?.text() ?: return@forEach
-        val items = section.select(".post-lst li").mapNotNull { it.toSearchResult() }
-        if (items.isNotEmpty()) {
-            home.add(HomePageList(title, items))
-        }
-    }
-    return newHomePageResponse(home, false)
-}
+        val doc = app.get(mainUrl, headers = mapOf("User-Agent" to userAgent)).document
+        val home = mutableListOf<HomePageList>()
 
-// Nel metodo load:
-return newMovieLoadResponse(title, url, TvType.Movie, url) {
-    this.posterUrl = poster
-    this.plot = description
-    // Nuovo sistema per il punteggio (score)
-    this.score = rating?.toDoubleOrNull() 
-}
+        doc.select("section.section.movies").forEach { section ->
+            val title = section.selectFirst("header .section-title")?.text()?.trim() ?: return@forEach
+            val items = section.select(".post-lst li").mapNotNull { it.toSearchResult() }
+            if (items.isNotEmpty()) {
+                home.add(HomePageList(title, items))
+            }
+        }
+        // Corretto: Usa newHomePageResponse (il costruttore diretto è deprecato)
+        return newHomePageResponse(home, false)
+    }
 
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.selectFirst(".entry-title")?.text()?.trim() ?: return null
@@ -57,17 +51,19 @@ return newMovieLoadResponse(title, url, TvType.Movie, url) {
         val title = doc.selectFirst("h1.entry-title")?.text()?.trim() ?: ""
         val poster = doc.selectFirst(".post-thumbnail img")?.attr("src")
         val description = doc.selectFirst(".description p")?.text()?.trim()
-        val rating = doc.selectFirst("span.vote.fa-star .num")?.text()?.replace(',', '.')
+        
+        // Corretto: Usiamo score invece di rating
+        val ratingValue = doc.selectFirst("span.vote.fa-star .num")?.text()?.replace(',', '.')
 
         val recommendations = doc.select(".post-lst li").mapNotNull { it.toSearchResult() }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = description
-            this.rating = rating?.toRatingInt()
+            this.score = ratingValue?.toDoubleOrNull()
             this.recommendations = recommendations
             
-            // Estrazione Trailer (Logica Base64 dal codice originale)
+            // Estrazione Trailer
             doc.selectFirst("script#funciones_public_js-js-extra")?.let { script ->
                 val b64 = script.attr("src").substringAfter("base64,", "")
                 if (b64.isNotEmpty()) {
@@ -94,12 +90,15 @@ return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 ?: option.selectFirst("iframe")?.attr("src")
             
             if (rawIframe != null) {
-                // Carica la pagina dell'iframe per trovare il video reale
-                val embedDoc = app.get(rawIframe, headers = mapOf("User-Agent" to userAgent)).document
-                val finalUrl = embedDoc.selectFirst(".Video iframe[src]")?.attr("src")
-                
-                if (!finalUrl.isNullOrBlank()) {
-                    loadExtractor(finalUrl, data, subtitleCallback, callback)
+                try {
+                    val embedDoc = app.get(rawIframe, headers = mapOf("User-Agent" to userAgent)).document
+                    val finalUrl = embedDoc.selectFirst(".Video iframe[src]")?.attr("src")
+                    
+                    if (!finalUrl.isNullOrBlank()) {
+                        loadExtractor(finalUrl, data, subtitleCallback, callback)
+                    }
+                } catch (e: Exception) {
+                    // Salta l'opzione se fallisce il caricamento dell'iframe
                 }
             }
         }
