@@ -22,22 +22,30 @@ class GuardaPlayProvider : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data}page/$page/"
         val document = app.get(url).document
-        val home = document.select("article.item").mapNotNull {
+        
+        // Selettore basato sul tuo HTML: article con classe post e movies
+        val home = document.select("article.post, article.movies, .post-thumbnail").mapNotNull {
             it.toSearchResult()
         }
+
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h3 a")?.text() ?: return null
-        val href = this.selectFirst("h3 a")?.attr("href") ?: return null
+        // 1. Estrazione Titolo: cerchiamo in h2.entry-title come nel tuo snippet
+        val title = this.selectFirst("h2.entry-title")?.text() 
+            ?: this.selectFirst("h3")?.text() 
+            ?: this.selectFirst(".post-thumbnail img")?.attr("alt")?.replace("Image ", "")
+            ?: return null
+            
+        // 2. Estrazione Link: il sito usa la classe lnk-blk per il link cliccabile
+        val href = this.selectFirst("a.lnk-blk")?.attr("href") 
+            ?: this.selectFirst("a")?.attr("href") 
+            ?: return null
         
-        // FIX LOCANDINE: Gestione Protocol-Relative URL (//image.tmdb...)
+        // 3. Estrazione Immagine: gestione //image.tmdb...
         val imgElement = this.selectFirst(".post-thumbnail img, img")
-        var posterUrl = imgElement?.attr("data-src") 
-            ?: imgElement?.attr("data-lazy-src") 
-            ?: imgElement?.attr("src") 
-            ?: ""
+        var posterUrl = imgElement?.attr("src") ?: ""
         
         if (posterUrl.startsWith("//")) {
             posterUrl = "https:$posterUrl"
@@ -45,31 +53,33 @@ class GuardaPlayProvider : MainAPI() {
             posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
         }
 
+        // 4. Estrazione Anno (opzionale ma utile)
+        val year = this.selectFirst("span.year")?.text()?.trim()?.toIntOrNull()
+
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
+            this.year = year
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?s=$query"
         val document = app.get(url).document
-        return document.select("article.item").mapNotNull {
+        // Il selettore di ricerca solitamente segue la stessa struttura della home
+        return document.select("article.post, article.item").mapNotNull {
             it.toSearchResult()
         }
     }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-        val title = document.selectFirst("h1")?.text() ?: return null
+        val title = document.selectFirst("h1.entry-title, h1")?.text() ?: return null
         
-        val imgElement = document.selectFirst("div.poster img")
-        var posterUrl = imgElement?.attr("src") ?: ""
-        if (posterUrl.startsWith("//")) {
-            posterUrl = "https:$posterUrl"
-        }
+        var posterUrl = document.selectFirst(".poster img, .post-thumbnail img")?.attr("src") ?: ""
+        if (posterUrl.startsWith("//")) posterUrl = "https:$posterUrl"
 
-        val description = document.selectFirst("div.wp-content p")?.text()
-        val year = Regex("\\d{4}").find(document.select("span.date").text())?.value?.toIntOrNull()
+        val description = document.selectFirst(".wp-content p, .description p")?.text()
+        val year = Regex("\\d{4}").find(document.select(".date, .year, .entry-meta").text())?.value?.toIntOrNull()
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = posterUrl
@@ -87,8 +97,7 @@ class GuardaPlayProvider : MainAPI() {
         val document = app.get(data).document
         var found = false
 
-        // 1. Troviamo i contenitori delle opzioni (Source Box / Options)
-        // Questo legge i data-src che hai visto nel file film.txt
+        // Selettori per trovare i server (Logica per saltare il player interno di GuardaPlay)
         val options = document.select("div[id^=option] iframe, .source-box iframe, li[id^=player-option-]")
 
         options.forEach { option ->
@@ -100,29 +109,22 @@ class GuardaPlayProvider : MainAPI() {
                 val cleanFirstUrl = if (firstUrl.startsWith("//")) "https:$firstUrl" else firstUrl
                 
                 try {
-                    // 2. LOGICA DOPPIO SALTO (come Streamflix):
-                    // Carichiamo la pagina interna del player di GuardaPlay
+                    // Carichiamo la pagina intermedia per trovare l'iframe reale (es. Mixdrop/Supervideo)
                     val innerPage = app.get(cleanFirstUrl, referer = data).document
-                    
-                    // 3. Estraiamo il vero link del server (Mixdrop, Supervideo, ecc.)
-                    // Cerchiamo l'iframe finale dentro la classe .Video o tag iframe generici
                     val finalIframe = innerPage.selectFirst(".Video iframe, #player_code iframe, iframe[src*='embed']")
                     val finalUrl = finalIframe?.attr("src") ?: finalIframe?.attr("data-src")
                     
                     if (!finalUrl.isNullOrBlank()) {
                         val fixedFinalUrl = if (finalUrl.startsWith("//")) "https:$finalUrl" else finalUrl
-                        
-                        // 4. Invia all'estrattore di CloudStream
                         loadExtractor(fixedFinalUrl, cleanFirstUrl, subtitleCallback, callback)
                         found = true
                     }
                 } catch (e: Exception) {
-                    // Se il caricamento della pagina interna fallisce, proviamo comunque l'URL originale
+                    // Fallback: prova l'URL originale se il salto fallisce
                     loadExtractor(cleanFirstUrl, data, subtitleCallback, callback)
                 }
             }
         }
-        
         return found
     }
 }
