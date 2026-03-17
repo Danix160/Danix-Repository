@@ -29,42 +29,43 @@ class GuardaPlayProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-    // Cerchiamo il titolo e il link all'interno del tag 'a' che di solito avvolge l'immagine o il titolo
-    val title = this.selectFirst("h3 a, a")?.text() ?: "Senza Titolo"
-    val href = this.selectFirst("h3 a, a")?.attr("href") ?: return null
-    
-    // ESTRAZIONE LOCANDINA dal codice che mi hai mandato
-    // Cerchiamo il tag 'img' dentro '.post-thumbnail'
-    val imgElement = this.selectFirst(".post-thumbnail img, img")
-    var posterUrl = imgElement?.attr("src") ?: ""
-    
-    // Se il sito usa il lazy loading, l'immagine vera potrebbe essere in 'data-src' o 'data-lazy-src'
-    if (posterUrl.isBlank() || posterUrl.contains("data:image")) {
-        posterUrl = imgElement?.attr("data-src") ?: imgElement?.attr("data-lazy-src") ?: ""
+        val title = this.selectFirst("h3 a")?.text() ?: return null
+        val href = this.selectFirst("h3 a")?.attr("href") ?: return null
+        
+        // FIX LOCANDINE: Gestione Protocol-Relative URL (//image.tmdb...)
+        val imgElement = this.selectFirst(".post-thumbnail img, img")
+        var posterUrl = imgElement?.attr("data-src") 
+            ?: imgElement?.attr("data-lazy-src") 
+            ?: imgElement?.attr("src") 
+            ?: ""
+        
+        if (posterUrl.startsWith("//")) {
+            posterUrl = "https:$posterUrl"
+        } else if (posterUrl.startsWith("/") && !posterUrl.startsWith("//")) {
+            posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
+        }
+
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            this.posterUrl = posterUrl
+        }
     }
 
-    // FIX DEFINITIVO: Se l'URL inizia con //, aggiungiamo https:
-    if (posterUrl.startsWith("//")) {
-        posterUrl = "https:$posterUrl"
-    } else if (posterUrl.startsWith("/")) {
-        // Se è un percorso relativo tipo /t/p/w500/...
-        posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
+    override suspend fun search(query: String): List<SearchResponse> {
+        val url = "$mainUrl/?s=$query"
+        val document = app.get(url).document
+        return document.select("article.item").mapNotNull {
+            it.toSearchResult()
+        }
     }
-
-    return newMovieSearchResponse(title, href, TvType.Movie) {
-        this.posterUrl = posterUrl
-    }
-}
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
         val title = document.selectFirst("h1")?.text() ?: return null
         
-        var posterUrl = document.selectFirst("div.poster img")?.attr("src") ?: ""
+        val imgElement = document.selectFirst("div.poster img")
+        var posterUrl = imgElement?.attr("src") ?: ""
         if (posterUrl.startsWith("//")) {
             posterUrl = "https:$posterUrl"
-        } else if (posterUrl.startsWith("/")) {
-            posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
         }
 
         val description = document.selectFirst("div.wp-content p")?.text()
@@ -84,43 +85,44 @@ class GuardaPlayProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        
-        // Il confronto tra i tuoi due file mostra che i link sono dentro i "Source Box" 
-        // o nelle liste dei player (li[id^=player-option-])
-        
-        // 1. Cerchiamo tutti i possibili iframe (sia con src che con data-src)
-        val sources = document.select("div.source-box iframe, div[id^=option-] iframe, .Video iframe")
-        
-        sources.forEach { iframe ->
-            // Prendiamo data-src se src è vuoto (comune prima del click)
-            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
-            
-            if (src.isNotBlank()) {
-                val finalUrl = if (src.startsWith("//")) "https:$src" else src
-                
-                // Log per debug interno (opzionale)
-                // println("Trovato link: $finalUrl")
-                
-                loadExtractor(finalUrl, data, subtitleCallback, callback)
-            }
-        }
+        var found = false
 
-        // 2. Metodo alternativo: Scansione script per link nascosti (se il punto 1 fallisce)
-        if (document.select("iframe").isEmpty()) {
-            document.select("script").forEach { script ->
-                val content = script.data()
-                if (content.contains("src=\"http") || content.contains("data-src=\"http")) {
-                    val regex = Regex("""(?:src|data-src)="([^"]+)"""")
-                    regex.findAll(content).forEach { match ->
-                        val foundUrl = match.groupValues[1]
-                        if (foundUrl.contains("embed") || foundUrl.contains("player")) {
-                             loadExtractor(foundUrl, data, subtitleCallback, callback)
-                        }
+        // 1. Troviamo i contenitori delle opzioni (Source Box / Options)
+        // Questo legge i data-src che hai visto nel file film.txt
+        val options = document.select("div[id^=option] iframe, .source-box iframe, li[id^=player-option-]")
+
+        options.forEach { option ->
+            val firstUrl = option.attr("data-src")
+                .ifBlank { option.attr("src") }
+                .ifBlank { option.attr("data-href") }
+            
+            if (firstUrl.isNotBlank() && !firstUrl.contains("about:blank")) {
+                val cleanFirstUrl = if (firstUrl.startsWith("//")) "https:$firstUrl" else firstUrl
+                
+                try {
+                    // 2. LOGICA DOPPIO SALTO (come Streamflix):
+                    // Carichiamo la pagina interna del player di GuardaPlay
+                    val innerPage = app.get(cleanFirstUrl, referer = data).document
+                    
+                    // 3. Estraiamo il vero link del server (Mixdrop, Supervideo, ecc.)
+                    // Cerchiamo l'iframe finale dentro la classe .Video o tag iframe generici
+                    val finalIframe = innerPage.selectFirst(".Video iframe, #player_code iframe, iframe[src*='embed']")
+                    val finalUrl = finalIframe?.attr("src") ?: finalIframe?.attr("data-src")
+                    
+                    if (!finalUrl.isNullOrBlank()) {
+                        val fixedFinalUrl = if (finalUrl.startsWith("//")) "https:$finalUrl" else finalUrl
+                        
+                        // 4. Invia all'estrattore di CloudStream
+                        loadExtractor(fixedFinalUrl, cleanFirstUrl, subtitleCallback, callback)
+                        found = true
                     }
+                } catch (e: Exception) {
+                    // Se il caricamento della pagina interna fallisce, proviamo comunque l'URL originale
+                    loadExtractor(cleanFirstUrl, data, subtitleCallback, callback)
                 }
             }
         }
         
-        return true
+        return found
     }
 }
