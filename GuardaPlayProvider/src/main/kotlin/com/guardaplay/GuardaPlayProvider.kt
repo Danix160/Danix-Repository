@@ -2,6 +2,8 @@ package com.guardaplay
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import org.jsoup.nodes.Element
 
 class GuardaPlayProvider : MainAPI() {
@@ -16,44 +18,45 @@ class GuardaPlayProvider : MainAPI() {
         "$mainUrl/category/animazione/" to "Animazione",
         "$mainUrl/category/azione/" to "Azione",
         "$mainUrl/category/commedia/" to "Commedia",
-        "$mainUrl/category/horror/" to "Horror"
+        "$mainUrl/category/horror/" to "Horror",
+        "$mainUrl/category/fantascienza/" to "Fantascienza"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data}page/$page/"
         val document = app.get(url).document
         
-        // Selettore basato sul tuo HTML: article con classe post e movies
+        // Selettore aggiornato per Home e Categorie
         val home = document.select("article.post, article.movies, .post-thumbnail").mapNotNull {
             it.toSearchResult()
-        }
+        }.distinctBy { it.url }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        // 1. Estrazione Titolo: cerchiamo in h2.entry-title come nel tuo snippet
+        // Titolo da h2.entry-title (come da tuo snippet)
         val title = this.selectFirst("h2.entry-title")?.text() 
             ?: this.selectFirst("h3")?.text() 
-            ?: this.selectFirst(".post-thumbnail img")?.attr("alt")?.replace("Image ", "")
+            ?: this.selectFirst("img")?.attr("alt")?.replace("Image ", "")
             ?: return null
             
-        // 2. Estrazione Link: il sito usa la classe lnk-blk per il link cliccabile
+        // Link dal tag a.lnk-blk
         val href = this.selectFirst("a.lnk-blk")?.attr("href") 
             ?: this.selectFirst("a")?.attr("href") 
             ?: return null
         
-        // 3. Estrazione Immagine: gestione //image.tmdb...
-        val imgElement = this.selectFirst(".post-thumbnail img, img")
-        var posterUrl = imgElement?.attr("src") ?: ""
+        // Immagine con fix protocollo //
+        val imgElement = this.selectFirst("img")
+        var posterUrl = imgElement?.attr("data-src") 
+            ?: imgElement?.attr("data-lazy-src") 
+            ?: imgElement?.attr("src") 
+            ?: ""
         
         if (posterUrl.startsWith("//")) {
             posterUrl = "https:$posterUrl"
-        } else if (posterUrl.startsWith("/") && !posterUrl.startsWith("//")) {
-            posterUrl = "https://image.tmdb.org/t/p/w500$posterUrl"
         }
 
-        // 4. Estrazione Anno (opzionale ma utile)
         val year = this.selectFirst("span.year")?.text()?.trim()?.toIntOrNull()
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
@@ -65,8 +68,7 @@ class GuardaPlayProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?s=$query"
         val document = app.get(url).document
-        // Il selettore di ricerca solitamente segue la stessa struttura della home
-        return document.select("article.post, article.item").mapNotNull {
+        return document.select("article.post, .item").mapNotNull {
             it.toSearchResult()
         }
     }
@@ -97,34 +99,64 @@ class GuardaPlayProvider : MainAPI() {
         val document = app.get(data).document
         var found = false
 
-        // Selettori per trovare i server (Logica per saltare il player interno di GuardaPlay)
+        // 1. Scansione degli iframe nelle opzioni (Server 1, Server 2...)
         val options = document.select("div[id^=option] iframe, .source-box iframe, li[id^=player-option-]")
-
-        options.forEach { option ->
-            val firstUrl = option.attr("data-src")
+        
+        for (option in options) {
+            val rawUrl = option.attr("data-src")
                 .ifBlank { option.attr("src") }
                 .ifBlank { option.attr("data-href") }
             
-            if (firstUrl.isNotBlank() && !firstUrl.contains("about:blank")) {
-                val cleanFirstUrl = if (firstUrl.startsWith("//")) "https:$firstUrl" else firstUrl
-                
-                try {
-                    // Carichiamo la pagina intermedia per trovare l'iframe reale (es. Mixdrop/Supervideo)
-                    val innerPage = app.get(cleanFirstUrl, referer = data).document
-                    val finalIframe = innerPage.selectFirst(".Video iframe, #player_code iframe, iframe[src*='embed']")
-                    val finalUrl = finalIframe?.attr("src") ?: finalIframe?.attr("data-src")
-                    
-                    if (!finalUrl.isNullOrBlank()) {
-                        val fixedFinalUrl = if (finalUrl.startsWith("//")) "https:$finalUrl" else finalUrl
-                        loadExtractor(fixedFinalUrl, cleanFirstUrl, subtitleCallback, callback)
-                        found = true
+            if (rawUrl.isNotBlank() && !rawUrl.contains("about:blank")) {
+                if (processUrl(rawUrl, data, subtitleCallback, callback)) found = true
+            }
+        }
+
+        // 2. Scansione di emergenza negli script (per link nascosti in Ajax)
+        if (!found) {
+            document.select("script").forEach { script ->
+                val code = script.data()
+                if (code.contains("https://")) {
+                    Regex("""https?://[^\s"'<>]+""").findAll(code).forEach { match ->
+                        val url = match.value.replace("\\/", "/")
+                        if (url.contains("embed") || url.contains("video")) {
+                            if (processUrl(url, data, subtitleCallback, callback)) found = true
+                        }
                     }
-                } catch (e: Exception) {
-                    // Fallback: prova l'URL originale se il salto fallisce
-                    loadExtractor(cleanFirstUrl, data, subtitleCallback, callback)
                 }
             }
         }
+
         return found
+    }
+
+    private suspend fun processUrl(
+        url: String,
+        referer: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val cleanUrl = if (url.startsWith("//")) "https:$url" else url
+        
+        return try {
+            // Logica "Doppio Salto": se l'URL è interno al sito, carichiamo la sottopagina
+            if (cleanUrl.contains("guardaplay") || cleanUrl.contains("/video/")) {
+                val innerDoc = app.get(cleanUrl, referer = referer).document
+                val finalIframe = innerDoc.selectFirst("iframe")?.attr("src")
+                    ?: innerDoc.selectFirst("iframe")?.attr("data-src")
+                
+                if (!finalIframe.isNullOrBlank()) {
+                    val fixedFinal = if (finalIframe.startsWith("//")) "https:$finalIframe" else finalIframe
+                    loadExtractor(fixedFinal, cleanUrl, subtitleCallback, callback)
+                    true
+                } else false
+            } else {
+                // Se è già un link esterno (Mixdrop, ecc.), lo carichiamo direttamente
+                loadExtractor(cleanUrl, referer, subtitleCallback, callback)
+                true
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 }
