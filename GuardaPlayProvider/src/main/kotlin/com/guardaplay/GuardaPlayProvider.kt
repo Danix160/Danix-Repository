@@ -14,19 +14,27 @@ class GuardaPlayProvider : MainAPI() {
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    override suspend fun getMainPage(page: Int, request: HomePageRequest): HomePageResponse {
-        val doc = app.get(mainUrl, headers = mapOf("User-Agent" to userAgent)).document
-        val home = mutableListOf<HomePageList>()
-
-        doc.select("section.section.movies").forEach { section ->
-            val title = section.selectFirst("header .section-title")?.text()?.trim() ?: return@forEach
-            val items = section.select(".post-lst li").mapNotNull { it.toSearchResult() }
-            if (items.isNotEmpty()) {
-                home.add(HomePageList(title, items))
-            }
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+    val doc = app.get(mainUrl).document
+    val home = mutableListOf<HomePageList>()
+    // ... logica di scraping ...
+    doc.select("section.section.movies").forEach { section ->
+        val title = section.selectFirst("header .section-title")?.text() ?: return@forEach
+        val items = section.select(".post-lst li").mapNotNull { it.toSearchResult() }
+        if (items.isNotEmpty()) {
+            home.add(HomePageList(title, items))
         }
-        return HomePageResponse(home)
     }
+    return newHomePageResponse(home, false)
+}
+
+// Nel metodo load:
+return newMovieLoadResponse(title, url, TvType.Movie, url) {
+    this.posterUrl = poster
+    this.plot = description
+    // Nuovo sistema per il punteggio (score)
+    this.score = rating?.toDoubleOrNull() 
+}
 
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.selectFirst(".entry-title")?.text()?.trim() ?: return null
