@@ -24,17 +24,33 @@ class CinebyProvider : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
     val document = app.get(mainUrl).document
+    val jsonData = document.selectFirst("script#__NEXT_DATA__")?.data() ?: return newHomePageResponse(listOf(), false)
+    
     val home = mutableListOf<HomePageList>()
     
-    document.select("div.flex.flex-col.gap-16.wrapper").select("div.flex.flex-col").forEach { section ->
-        val title = section.selectFirst("h2")?.text() ?: "Featured"
-        val items = section.select("div.movieCard_movieCard__rmkHO").mapNotNull {
-            it.toSearchResult()
+    // Estraiamo i dati JSON (usando una regex semplice per non dover mappare tutto l'oggetto)
+    // Cerchiamo i blocchi di film/serie nel JSON
+    val movieRegex = Regex("""\{"id":(\d+),"title":"([^"]+)","poster_path":"([^"]+)","type":"([^"]+)"\}""")
+    val matches = movieRegex.findAll(jsonData)
+
+    val items = matches.map { match ->
+        val id = match.groupValues[1]
+        val title = match.groupValues[2]
+        val poster = fixPoster("https://image.tmdb.org/t/p/w342${match.groupValues[3]}")
+        val type = match.groupValues[4]
+        val href = if (type == "movie") "/movie/$id" else "/tv/$id"
+
+        if (type == "movie") {
+            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = poster }
+        } else {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = poster }
         }
-        if (items.isNotEmpty()) home.add(HomePageList(title, items))
+    }.toList()
+
+    if (items.isNotEmpty()) {
+        home.add(HomePageList("Popular Content", items))
     }
-    
-    // USA QUESTO METODO:
+
     return newHomePageResponse(home, false)
 }
 
