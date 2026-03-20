@@ -23,20 +23,20 @@ class CinebyProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(mainUrl).document
-        val home = mutableListOf<HomePageList>()
-        
-        // Sezioni principali identificate: Trending, Netflix, Prime, ecc.
-        document.select("div.flex.flex-col.gap-16.wrapper").select("div.flex.flex-col").forEach { section ->
-            val title = section.selectFirst("h2")?.text() ?: "Featured"
-            val items = section.select("div.movieCard_movieCard__rmkHO").mapNotNull {
-                it.toSearchResult()
-            }
-            if (items.isNotEmpty()) home.add(HomePageList(title, items))
+    val document = app.get(mainUrl).document
+    val home = mutableListOf<HomePageList>()
+    
+    document.select("div.flex.flex-col.gap-16.wrapper").select("div.flex.flex-col").forEach { section ->
+        val title = section.selectFirst("h2")?.text() ?: "Featured"
+        val items = section.select("div.movieCard_movieCard__rmkHO").mapNotNull {
+            it.toSearchResult()
         }
-        
-        return HomePageResponse(home)
+        if (items.isNotEmpty()) home.add(HomePageList(title, items))
     }
+    
+    // USA QUESTO METODO:
+    return newHomePageResponse(home, false)
+}
 
     override suspend fun search(query: String): List<SearchResponse> {
         // La ricerca usa il percorso /search con parametro q
