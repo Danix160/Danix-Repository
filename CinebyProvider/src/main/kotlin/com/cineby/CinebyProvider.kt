@@ -23,40 +23,57 @@ class CinebyProvider : MainAPI() {
     }
 
    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+    // Carichiamo la pagina principale
     val document = app.get(mainUrl).document
-    // Estraiamo il JSON grezzo dal tag script
-    val jsonData = document.selectFirst("script#__NEXT_DATA__")?.data() 
-        ?: return newHomePageResponse(listOf(), false)
-
     val home = mutableListOf<HomePageList>()
 
-    // Regex per catturare i contenuti: cerca ID, Titolo e Poster nel marasma del JSON
-    // Questo cattura sia film che serie perché il formato nel JSON è simile
-    val contentRegex = Regex("""\{"id":(\d+),"title":"([^"]+)".*?"poster_path":"([^"]+)".*?"type":"([^"]+)"""")
-    val matches = contentRegex.findAll(jsonData).toList()
-
-    val searchResults = matches.mapNotNull { match ->
-        val id = match.groupValues[1]
-        val title = match.groupValues[2]
-        val posterPath = match.groupValues[3]
-        val type = match.groupValues[4] // "movie" o "tv"
+    // 1. Cerchiamo tutte le sezioni che hanno un titolo (es. Netflix, Disney+, ecc.)
+    // Nel tuo HTML il titolo è in un h2 con classe "heading-trail"
+    document.select("div.flex.flex-col").forEach { section ->
+        val title = section.selectFirst("h2.heading-trail")?.text() ?: ""
         
-        val poster = "https://image.tmdb.org/t/p/w342$posterPath"
-        val href = if (type == "movie") "/movie/$id" else "/tv/$id"
-
-        if (type == "movie") {
-            newMovieSearchResponse(title, href, TvType.Movie) {
-                this.posterUrl = poster
+        // 2. Cerchiamo i film/serie dentro questa sezione
+        // Usiamo la classe movieCard_movieCard__rmkHO che abbiamo visto nel tuo HTML
+        val items = section.select("div.movieCard_movieCard__rmkHO").mapNotNull { card ->
+            val link = card.selectFirst("a")
+            val href = link?.attr("href") ?: return@mapNotNull null
+            val name = link.attr("aria-label").ifEmpty { 
+                card.selectFirst("h3")?.text() ?: "Unknown" 
             }
-        } else {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                this.posterUrl = poster
+            // Estraiamo il poster dall'immagine (prendiamo l'src semplice o srcset)
+            val poster = card.selectFirst("img")?.attr("src") ?: ""
+            
+            // Determiniamo se è un film o una serie TV dall'URL o dal badge
+            val typeText = card.selectFirst(".movieCard_movieCardType__z3LPm")?.text() ?: ""
+            val isTv = href.contains("/tv/") || typeText.contains("TV", ignoreCase = true)
+
+            if (isTv) {
+                newTvSeriesSearchResponse(name, href, TvType.TvSeries) {
+                    this.posterUrl = poster
+                }
+            } else {
+                newMovieSearchResponse(name, href, TvType.Movie) {
+                    this.posterUrl = poster
+                }
             }
         }
-    }.distinctBy { it.url } // Evita duplicati
 
-    if (searchResults.isNotEmpty()) {
-        home.add(HomePageList("Popolari su Cineby", searchResults))
+        if (items.isNotEmpty() && title.isNotEmpty()) {
+            home.add(HomePageList(title, items))
+        }
+    }
+
+    // Se per qualche motivo le sezioni con titolo falliscono, facciamo un tentativo globale
+    if (home.isEmpty()) {
+        val allItems = document.select("div.movieCard_movieCard__rmkHO").mapNotNull { card ->
+            val link = card.selectFirst("a")
+            val href = link?.attr("href") ?: return@mapNotNull null
+            val name = link.attr("aria-label")
+            val poster = card.selectFirst("img")?.attr("src") ?: ""
+            
+            newMovieSearchResponse(name, href, TvType.Movie) { this.posterUrl = poster }
+        }
+        if (allItems.isNotEmpty()) home.add(HomePageList("Popolari", allItems))
     }
 
     return newHomePageResponse(home, false)
