@@ -9,7 +9,7 @@ class CinebyProvider : MainAPI() {
     override var mainUrl = "https://www.cineby.gd"
     override var name = "Cineby"
     override val hasMainPage = true
-    override var lang = "en"
+    override var lang = "it"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     // Configurazione per le immagini tramite il proxy wsrv.nl usato dal sito
