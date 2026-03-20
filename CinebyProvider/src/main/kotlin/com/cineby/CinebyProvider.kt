@@ -22,33 +22,41 @@ class CinebyProvider : MainAPI() {
         }
     }
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+   override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
     val document = app.get(mainUrl).document
-    val jsonData = document.selectFirst("script#__NEXT_DATA__")?.data() ?: return newHomePageResponse(listOf(), false)
-    
-    val home = mutableListOf<HomePageList>()
-    
-    // Estraiamo i dati JSON (usando una regex semplice per non dover mappare tutto l'oggetto)
-    // Cerchiamo i blocchi di film/serie nel JSON
-    val movieRegex = Regex("""\{"id":(\d+),"title":"([^"]+)","poster_path":"([^"]+)","type":"([^"]+)"\}""")
-    val matches = movieRegex.findAll(jsonData)
+    // Estraiamo il JSON grezzo dal tag script
+    val jsonData = document.selectFirst("script#__NEXT_DATA__")?.data() 
+        ?: return newHomePageResponse(listOf(), false)
 
-    val items = matches.map { match ->
+    val home = mutableListOf<HomePageList>()
+
+    // Regex per catturare i contenuti: cerca ID, Titolo e Poster nel marasma del JSON
+    // Questo cattura sia film che serie perché il formato nel JSON è simile
+    val contentRegex = Regex("""\{"id":(\d+),"title":"([^"]+)".*?"poster_path":"([^"]+)".*?"type":"([^"]+)"""")
+    val matches = contentRegex.findAll(jsonData).toList()
+
+    val searchResults = matches.mapNotNull { match ->
         val id = match.groupValues[1]
         val title = match.groupValues[2]
-        val poster = fixPoster("https://image.tmdb.org/t/p/w342${match.groupValues[3]}")
-        val type = match.groupValues[4]
+        val posterPath = match.groupValues[3]
+        val type = match.groupValues[4] // "movie" o "tv"
+        
+        val poster = "https://image.tmdb.org/t/p/w342$posterPath"
         val href = if (type == "movie") "/movie/$id" else "/tv/$id"
 
         if (type == "movie") {
-            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = poster }
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                this.posterUrl = poster
+            }
         } else {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = poster }
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                this.posterUrl = poster
+            }
         }
-    }.toList()
+    }.distinctBy { it.url } // Evita duplicati
 
-    if (items.isNotEmpty()) {
-        home.add(HomePageList("Popular Content", items))
+    if (searchResults.isNotEmpty()) {
+        home.add(HomePageList("Popolari su Cineby", searchResults))
     }
 
     return newHomePageResponse(home, false)
