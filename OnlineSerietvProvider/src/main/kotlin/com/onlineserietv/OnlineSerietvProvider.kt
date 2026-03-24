@@ -1,12 +1,10 @@
 package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.net.SocketTimeoutException
 
 class OnlineSerietvProvider : MainAPI() {
     override var mainUrl = "https://onlineserietv.live"
@@ -23,9 +21,6 @@ class OnlineSerietvProvider : MainAPI() {
         "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte",
         "$mainUrl/serie-tv-generi/animazione/" to "Serie TV: Animazione",
         "$mainUrl/film-generi/animazione/" to "Film: Animazione",
-        "$mainUrl/film-generi/azione/" to "Film: Azione",
-        "$mainUrl/film-generi/fantascienza/" to "Film: Fantascienza",
-        "$mainUrl/film-generi/horror/" to "Film: Horror",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
@@ -75,8 +70,12 @@ class OnlineSerietvProvider : MainAPI() {
         val plot = response.select("div.post p").firstOrNull { it.text().length > 30 }?.text()?.trim()
 
         return if (url.contains("/film/")) {
-            val streamLinks = response.select("#hostlinks a").map { it.attr("href") }
-            newMovieLoadResponse(title, url, TvType.Movie, streamLinks.toString()) {
+            // Per i film cerchiamo solo il link Flexy nel box hostlinks
+            val flexyLink = response.select("#hostlinks a").firstOrNull { 
+                it.text().contains("Flexy", true) || it.attr("href").contains("/fxf/") 
+            }?.attr("href")
+            
+            newMovieLoadResponse(title, url, TvType.Movie, flexyLink ?: "") {
                 this.posterUrl = poster
                 this.year = year
                 this.plot = plot
@@ -98,17 +97,31 @@ class OnlineSerietvProvider : MainAPI() {
         var currentSeason = 1
         return rows.mapNotNull { row ->
             val cells = row.select("td")
+            
+            // Gestione cambio stagione nelle righe della tabella
             if (cells.size == 1 && row.text().contains("Stagione", true)) {
                 currentSeason = Regex("""\d+""").find(row.text())?.value?.toIntOrNull() ?: currentSeason
                 null
-            } else if (cells.size > 1) {
-                val epTitle = cells[0].text()
-                val links = row.select("a").map { it.attr("href") }
-                newEpisode(links.toString()) {
-                    this.name = epTitle
-                    this.season = currentSeason
-                    this.episode = Regex("""\d+""").find(epTitle.substringAfter("x"))?.value?.toIntOrNull()
-                }
+            } 
+            // Estrazione riga episodio
+            else if (cells.size > 1) {
+                val epTitle = cells[0].text().trim()
+                
+                // PRENDE SOLO IL LINK FLEXY
+                val flexyLink = row.select("a").firstOrNull { a ->
+                    a.text().contains("Flexy", true) || 
+                    a.attr("href").contains("/fxf/") || 
+                    a.attr("href").contains("/fxe/")
+                }?.attr("href")
+
+                if (flexyLink != null) {
+                    newEpisode(flexyLink) {
+                        this.name = epTitle
+                        this.season = currentSeason
+                        // Estrae il numero dopo la 'x' (es. 01x12 -> 12)
+                        this.episode = Regex("""(?i)\d+x(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
+                    }
+                } else null
             } else null
         }
     }
@@ -119,36 +132,35 @@ class OnlineSerietvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
-        // Pulizia e parsing dei link salvati come stringa JSON
-        val cleanData = data.removeSurrounding("[", "]").split(", ")
-        cleanData.forEach { rawLink ->
-            val link = rawLink.trim('"')
-            if (link.contains("uprot")) {
-                val bypassed = bypassUprot(link)
-                if (bypassed != null) loadExtractor(bypassed, subtitleCallback, callback)
-            } else {
-                loadExtractor(link, subtitleCallback, callback)
+        if (data.isBlank()) return false
+        
+        // Se il link è di uprot, eseguiamo il bypass
+        if (data.contains("uprot")) {
+            val bypassed = bypassUprot(data)
+            if (bypassed != null) {
+                loadExtractor(bypassed, subtitleCallback, callback)
             }
+        } else {
+            loadExtractor(data, subtitleCallback, callback)
         }
         return true
     }
 
     private suspend fun bypassUprot(link: String): String? {
-        // Sostituzione endpoint fxf -> fxe (saltiamo il primo step se possibile)
-        val target = link.replace("/fxf/", "/fxe/").replace("/msf/", "/mse/").replace("/wff/", "/wfe/")
+        // Step 1: Forza l'endpoint /fxe/ che spesso salta il countdown/captcha
+        val target = link.replace("/fxf/", "/fxe/")
         
         val doc = app.get(target, referer = mainUrl).document
         
-        // Filtriamo i link per evitare le trappole analizzate nei file txt
-        return doc.select("a[href]").firstOrNull { element ->
+        // Step 2: Cerca il link reale al video (flexy.stream)
+        // Evitiamo i link bot-trap identificati (discovernative, ecc.)
+        val realLink = doc.select("a").firstOrNull { element ->
             val href = element.attr("href")
-            val style = element.attr("style")
+            val isVisible = !element.attr("style").contains("display:none")
             
-            val isRealLink = href.contains("flexy.stream") || href.contains("maxstream.video")
-            val isVisible = !style.contains("display:none") && !style.contains("-1000px")
-            val isNotTrap = !href.contains("discovernative") && !href.contains("bulliongliding")
-            
-            isRealLink && isVisible && isNotTrap
+            href.contains("flexy.stream") && isVisible && !href.contains("visit.php")
         }?.attr("href")
+        
+        return realLink
     }
 }
