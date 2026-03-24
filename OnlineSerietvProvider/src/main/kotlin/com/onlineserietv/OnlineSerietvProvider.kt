@@ -61,68 +61,42 @@ class OnlineSerietvProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val response = app.get(url).document
-        val dati = response.selectFirst(".headingder")!!
-        val poster = dati.selectFirst(".imgs > img")?.attr("src")?.replace(Regex("""-\d+x\d+"""), "")
-        val title = dati.select(".dataplus h1").text().trim().replace(Regex("""\s\d{4}$"""), "")
+        val title = response.selectFirst("h1")?.text()?.trim() ?: ""
+        val poster = response.selectFirst(".imgs > img")?.attr("src")
         
-        val genres = dati.select(".stars span:contains(Genere) i").text()
-        val year = dati.select(".stars span:contains(Anno) i").text().toIntOrNull()
-        val plot = response.select("div.post p").firstOrNull { it.text().length > 30 }?.text()?.trim()
-
-        return if (url.contains("/film/")) {
-            // Per i film cerchiamo solo il link Flexy nel box hostlinks
-            val flexyLink = response.select("#hostlinks a").firstOrNull { 
-                it.text().contains("Flexy", true) || it.attr("href").contains("/fxf/") 
-            }?.attr("href")
-            
-            newMovieLoadResponse(title, url, TvType.Movie, flexyLink ?: "") {
-                this.posterUrl = poster
-                this.year = year
-                this.plot = plot
-                this.tags = genres.split(",").map { it.trim() }
-            }
-        } else {
-            val episodes = getEpisodes(response)
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster
-                this.year = year
-                this.plot = plot
-                this.tags = genres.split(",").map { it.trim() }
-            }
+        val episodes = getEpisodes(response)
+        
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            this.posterUrl = poster
         }
     }
 
     private fun getEpisodes(page: Document): List<Episode> {
         val rows = page.select("#hostlinks tr")
         var currentSeason = 1
+        
         return rows.mapNotNull { row ->
-            val cells = row.select("td")
-            
-            // Gestione cambio stagione nelle righe della tabella
-            if (cells.size == 1 && row.text().contains("Stagione", true)) {
+            if (row.text().contains("Stagione", true)) {
                 currentSeason = Regex("""\d+""").find(row.text())?.value?.toIntOrNull() ?: currentSeason
                 null
-            } 
-            // Estrazione riga episodio
-            else if (cells.size > 1) {
-                val epTitle = cells[0].text().trim()
-                
-                // PRENDE SOLO IL LINK FLEXY
-                val flexyLink = row.select("a").firstOrNull { a ->
-                    a.text().contains("Flexy", true) || 
-                    a.attr("href").contains("/fxf/") || 
-                    a.attr("href").contains("/fxe/")
-                }?.attr("href")
+            } else {
+                val cells = row.select("td")
+                if (cells.size > 1) {
+                    val epTitle = cells[0].text().trim()
+                    // Preleviamo il link Flexy (uprot.net/fxf/...)
+                    val flexyLink = row.select("a").firstOrNull { a ->
+                        a.text().contains("Flexy", true) || a.attr("href").contains("/fxf/")
+                    }?.attr("href")
 
-                if (flexyLink != null) {
-                    newEpisode(flexyLink) {
-                        this.name = epTitle
-                        this.season = currentSeason
-                        // Estrae il numero dopo la 'x' (es. 01x12 -> 12)
-                        this.episode = Regex("""(?i)\d+x(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
-                    }
+                    if (flexyLink != null) {
+                        newEpisode(flexyLink) {
+                            this.name = epTitle
+                            this.season = currentSeason
+                            this.episode = Regex("""(?i)\d+x(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
+                        }
+                    } else null
                 } else null
-            } else null
+            }
         }
     }
 
@@ -134,33 +108,33 @@ class OnlineSerietvProvider : MainAPI() {
     ): Boolean {
         if (data.isBlank()) return false
         
-        // Se il link è di uprot, eseguiamo il bypass
-        if (data.contains("uprot")) {
-            val bypassed = bypassUprot(data)
-            if (bypassed != null) {
-                loadExtractor(bypassed, subtitleCallback, callback)
-            }
+        // LOGICA DI BYPASS: Se il link è uprot, dobbiamo "scartarlo" per trovare il video
+        val finalUrl = if (data.contains("uprot.net")) {
+            bypassUprot(data)
         } else {
-            loadExtractor(data, subtitleCallback, callback)
+            data
+        }
+
+        if (finalUrl != null) {
+            // Ora finalUrl è "https://flexy.stream/...", Cloudstream sa come gestirlo
+            loadExtractor(finalUrl, subtitleCallback, callback)
         }
         return true
     }
 
-    private suspend fun bypassUprot(link: String): String? {
-        // Step 1: Forza l'endpoint /fxe/ che spesso salta il countdown/captcha
-        val target = link.replace("/fxf/", "/fxe/")
+    private suspend fun bypassUprot(uprotUrl: String): String? {
+        // 1. Proviamo a passare dall'endpoint 'fxe' invece di 'fxf' 
+        // Spesso uprot mostra il link diretto se si cambia la lettera finale (fxf -> fxe)
+        val attemptUrl = uprotUrl.replace("/fxf/", "/fxe/")
         
-        val doc = app.get(target, referer = mainUrl).document
+        val response = app.get(attemptUrl, referer = mainUrl).document
         
-        // Step 2: Cerca il link reale al video (flexy.stream)
-        // Evitiamo i link bot-trap identificati (discovernative, ecc.)
-        val realLink = doc.select("a").firstOrNull { element ->
-            val href = element.attr("href")
-            val isVisible = !element.attr("style").contains("display:none")
-            
-            href.contains("flexy.stream") && isVisible && !href.contains("visit.php")
-        }?.attr("href")
+        // 2. Analizziamo l'HTML della pagina di uprot per trovare il link flexy.stream
+        // Basandoci sul tuo file 'secondapagina.txt', il link è in un tag <a>
+        val realVideoLink = response.select("a").map { it.attr("href") }.firstOrNull { 
+            it.contains("flexy.stream") && !it.contains("discovernative") 
+        }
         
-        return realLink
+        return realVideoLink
     }
 }
