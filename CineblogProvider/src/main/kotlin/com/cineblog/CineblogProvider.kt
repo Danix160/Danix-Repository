@@ -149,37 +149,36 @@ class CineblogProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        // 3. GESTIONE REFERER CRITICA
-        // Se 'data' è un URL di vixsrc, dobbiamo dire al server che veniamo da Cineblog
-        val headers = mapOf(
-            "Referer" to "$mainUrl/",
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    // 1. Definiamo gli header per ingannare il sistema di protezione
+    val headers = mapOf(
+        "Referer" to "https://cineblog001.ovh/",
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    )
 
-        try {
-            val response = app.get(data, headers = headers).text
-            
-            // Cerchiamo link agli host video (Supervideo, Dropload, ecc.) nel codice del player
-            val regex = Regex("""https?://[^\s"'<>]+(?:supervideo|dropload|mixdrop|m1xdrop|dr0pstream|vidsrc|vixsrc|vapi|vcdn)[^\s"'<>]*""")
-            val links = regex.findAll(response).map { it.value.replace("\\/", "/") }.distinct().toList()
+    // 2. Chiamata alla pagina del player (vixsrc)
+    // 'data' contiene l'URL dell'episodio che abbiamo costruito in load()
+    val response = app.get(data, headers = headers).text
 
-            links.forEach { link ->
-                when {
-                    link.contains("supervideo") -> 
-                        SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
-                    link.contains("dropload") || link.contains("dr0pstream") -> 
-                        DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
-                    else -> loadExtractor(link, data, subtitleCallback, callback)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("Cineblog", "Errore caricamento link: ${e.message}")
+    // 3. Regex per estrarre i link dai provider video comuni
+    // Molti di questi link sono codificati, la regex deve essere ampia
+    val videoRegex = Regex("""https?://[\w\d\.]+\.(?:com|net|org|to|cc|it|ovh)/(?:v|e|d)/[a-zA-Z0-9]+""")
+    
+    videoRegex.findAll(response).forEach { match ->
+        val link = match.value
+        
+        // Carichiamo l'estrattore corretto in base al dominio trovato
+        when {
+            link.contains("supervideo") -> SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
+            link.contains("dropload") || link.contains("dr0pstream") -> DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
+            else -> loadExtractor(link, data, subtitleCallback, callback)
         }
-        return true
     }
+
+    return true
+}
 }
