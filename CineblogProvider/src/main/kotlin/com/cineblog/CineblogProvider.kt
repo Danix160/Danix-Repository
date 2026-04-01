@@ -101,32 +101,33 @@ class CineblogProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val doc = app.get(url).document
+        val response = app.get(url)
+        val doc = response.document
         
-        var title = doc.selectFirst("h1")?.text()?.trim() ?: doc.title().trim()
-        title = title.split(" – ").get(0).replace(Regex("(?i) streaming"), "").replace("- cineblog001", "", true).trim()
-        
+        val title = doc.selectFirst("h1")?.text()?.trim() ?: doc.title()
         val poster = fixUrlNull(doc.selectFirst("meta[property='og:image']")?.attr("content"))
-            ?: fixUrlNull(doc.selectFirst(".block-th-cover img")?.attr("src"))
-            
-        val plot = doc.selectFirst("meta[property='og:description']")?.attr("content") 
-            ?: doc.selectFirst(".story, .description")?.text()
+        val plot = doc.selectFirst("meta[property='og:description']")?.attr("content")
 
-        // Identificazione Serie TV e ID Player
-        val iframeSrc = doc.selectFirst("#player-iframe")?.attr("src") ?: ""
+        // 1. ESTRAZIONE ID DAL PLAYER (Specifico per il tuo HTML)
+        val iframe = doc.selectFirst("#player-iframe")
+        val iframeSrc = iframe?.attr("src") ?: ""
+        // Cerchiamo l'ID numerico dopo /tv/ (es: 2098)
         val seriesId = Regex("""/tv/(\d+)""").find(iframeSrc)?.groupValues?.get(1)
-        val isSerie = seriesId != null || url.contains("/detail/tv-")
+
+        val isSerie = seriesId != null || doc.selectFirst(".series-select") != null
 
         return if (isSerie) {
             val episodesList = mutableListOf<Episode>()
-            doc.select(".dropdown-item[data-episode]").forEach { item ->
-                val epData = item.attr("data-episode") 
+            
+            // 2. PARSING DEGLI EPISODI DAL DROPDOWN
+            doc.select("span[data-episode]").forEach { item ->
+                val epData = item.attr("data-episode") // Formato "1-1", "1-2"
                 val parts = epData.split("-")
                 val s = parts.getOrNull(0) ?: "1"
                 val e = parts.getOrNull(1) ?: "1"
                 
-                // URL Virtuale per vixsrc.to
-                val epUrl = if (seriesId != null) "https://vixsrc.to/tv/$seriesId/$s/$e" else url
+                // Costruiamo l'URL diretto al player vixsrc
+                val epUrl = "https://vixsrc.to/tv/$seriesId/$s/$e"
 
                 episodesList.add(newEpisode(epUrl) {
                     this.name = item.text().trim()
@@ -134,6 +135,7 @@ class CineblogProvider : MainAPI() {
                     this.episode = e.toIntOrNull()
                 })
             }
+            
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) { 
                 this.posterUrl = poster
                 this.plot = plot 
@@ -152,49 +154,31 @@ class CineblogProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val finalLinks = mutableListOf<String>()
-        
-        // Definiamo il referer principale
-        val headers = mapOf("Referer" to "$mainUrl/")
+        // 3. GESTIONE REFERER CRITICA
+        // Se 'data' è un URL di vixsrc, dobbiamo dire al server che veniamo da Cineblog
+        val headers = mapOf(
+            "Referer" to "$mainUrl/",
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
 
         try {
-            // Carichiamo la pagina (vixsrc o cineblog) con gli header corretti
             val response = app.get(data, headers = headers).text
             
-            // 1. Cerchiamo URL negli script (spesso criptati o in variabili JS)
+            // Cerchiamo link agli host video (Supervideo, Dropload, ecc.) nel codice del player
             val regex = Regex("""https?://[^\s"'<>]+(?:supervideo|dropload|mixdrop|m1xdrop|dr0pstream|vidsrc|vixsrc|vapi|vcdn)[^\s"'<>]*""")
-            regex.findAll(response).forEach { match ->
-                finalLinks.add(fixUrl(match.value))
-            }
-            
-            // 2. Se non troviamo nulla, proviamo a cercare iframe annidati
-            val doc = org.jsoup.Jsoup.parse(response)
-            doc.select("iframe").forEach { el ->
-                val src = el.attr("src")
-                if (src.isNotBlank() && !src.contains("guardahd")) {
-                    finalLinks.add(fixUrl(src))
+            val links = regex.findAll(response).map { it.value.replace("\\/", "/") }.distinct().toList()
+
+            links.forEach { link ->
+                when {
+                    link.contains("supervideo") -> 
+                        SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
+                    link.contains("dropload") || link.contains("dr0pstream") -> 
+                        DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
+                    else -> loadExtractor(link, data, subtitleCallback, callback)
                 }
             }
-        } catch (e: Exception) { 
-            Log.e("Cineblog", "LoadLinks Error: ${e.message}")
-        }
-
-        // Se vixsrc restituisce altri link, processiamoli
-        finalLinks.distinct().forEach { link ->
-            val clean = link.replace("?download", "")
-            when {
-                clean.contains("supervideo") -> 
-                    SupervideoExtractor().getUrl(clean, clean, subtitleCallback, callback)
-                
-                clean.contains("dropload") || clean.contains("dr0pstream") -> 
-                    DroploadExtractor().getUrl(clean, clean, subtitleCallback, callback)
-                
-                // Mixdrop richiede spesso il referer del player originale
-                clean.contains("mixdrop") || clean.contains("m1xdrop") ->
-                    loadExtractor(clean, data, subtitleCallback, callback)
-
-                else -> loadExtractor(clean, data, subtitleCallback, callback)
-            }
+        } catch (e: Exception) {
+            Log.e("Cineblog", "Errore caricamento link: ${e.message}")
         }
         return true
     }
