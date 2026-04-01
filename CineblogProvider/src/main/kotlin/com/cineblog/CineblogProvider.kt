@@ -100,7 +100,7 @@ class CineblogProvider : MainAPI() {
         }
     }
 
-    override suspend fun load(url: String): LoadResponse? {
+   override suspend fun load(url: String): LoadResponse? {
         val response = app.get(url)
         val doc = response.document
         
@@ -108,10 +108,10 @@ class CineblogProvider : MainAPI() {
         val poster = fixUrlNull(doc.selectFirst("meta[property='og:image']")?.attr("content"))
         val plot = doc.selectFirst("meta[property='og:description']")?.attr("content")
 
-        // 1. ESTRAZIONE ID DAL PLAYER (Specifico per il tuo HTML)
+        // 1. TROVA L'ID DELLA SERIE DALL'IFRAME (Fondamentale per le serie)
         val iframe = doc.selectFirst("#player-iframe")
         val iframeSrc = iframe?.attr("src") ?: ""
-        // Cerchiamo l'ID numerico dopo /tv/ (es: 2098)
+        // Esempio iframeSrc: https://vixsrc.to/tv/2098/1/1 -> ID è 2098
         val seriesId = Regex("""/tv/(\d+)""").find(iframeSrc)?.groupValues?.get(1)
 
         val isSerie = seriesId != null || doc.selectFirst(".series-select") != null
@@ -119,14 +119,15 @@ class CineblogProvider : MainAPI() {
         return if (isSerie) {
             val episodesList = mutableListOf<Episode>()
             
-            // 2. PARSING DEGLI EPISODI DAL DROPDOWN
+            // 2. PARSING DEGLI EPISODI
             doc.select("span[data-episode]").forEach { item ->
-                val epData = item.attr("data-episode") // Formato "1-1", "1-2"
+                val epData = item.attr("data-episode") // es. "1-1"
                 val parts = epData.split("-")
                 val s = parts.getOrNull(0) ?: "1"
                 val e = parts.getOrNull(1) ?: "1"
                 
-                // Costruiamo l'URL diretto al player vixsrc
+                // COSTRUIAMO IL LINK DIRETTO AL PLAYER ESTERNO
+                // Questo link verrà passato a loadLinks
                 val epUrl = "https://vixsrc.to/tv/$seriesId/$s/$e"
 
                 episodesList.add(newEpisode(epUrl) {
@@ -141,6 +142,7 @@ class CineblogProvider : MainAPI() {
                 this.plot = plot 
             }
         } else {
+            // Per i film usiamo l'URL della pagina stessa
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = plot
@@ -149,36 +151,49 @@ class CineblogProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-): Boolean {
-    // 1. Definiamo gli header per ingannare il sistema di protezione
-    val headers = mapOf(
-        "Referer" to "https://cineblog001.ovh/",
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-    )
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        // 3. LOGICA DI ESTRAZIONE DIFFERENZIATA
+        val finalLinks = mutableListOf<String>()
 
-    // 2. Chiamata alla pagina del player (vixsrc)
-    // 'data' contiene l'URL dell'episodio che abbiamo costruito in load()
-    val response = app.get(data, headers = headers).text
+        // Se l'URL è di vixsrc.to (Serie TV), serve il Referer di Cineblog
+        val headers = mapOf(
+            "Referer" to "$mainUrl/",
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
 
-    // 3. Regex per estrarre i link dai provider video comuni
-    // Molti di questi link sono codificati, la regex deve essere ampia
-    val videoRegex = Regex("""https?://[\w\d\.]+\.(?:com|net|org|to|cc|it|ovh)/(?:v|e|d)/[a-zA-Z0-9]+""")
-    
-    videoRegex.findAll(response).forEach { match ->
-        val link = match.value
-        
-        // Carichiamo l'estrattore corretto in base al dominio trovato
-        when {
-            link.contains("supervideo") -> SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
-            link.contains("dropload") || link.contains("dr0pstream") -> DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
-            else -> loadExtractor(link, data, subtitleCallback, callback)
+        try {
+            val responseText = app.get(data, headers = headers).text
+            
+            // Cerchiamo i link degli host (Supervideo, Dropload, ecc)
+            // Usiamo una regex che pulisce anche i caratteri di escape \/
+            val regex = Regex("""https?://[^\s"'<>]+(?:supervideo|dropload|mixdrop|m1xdrop|dr0pstream)[^\s"'<>]*""")
+            regex.findAll(responseText).forEach { match ->
+                finalLinks.add(match.value.replace("\\/", "/"))
+            }
+            
+            // Se non trova nulla con la regex, proviamo l'estrazione standard Cloudstream
+            if (finalLinks.isEmpty()) {
+                loadExtractor(data, data, subtitleCallback, callback)
+            }
+
+        } catch (e: Exception) {
+            Log.e("Cineblog", "Errore loadLinks: ${e.message}")
         }
-    }
 
-    return true
-}
+        // 4. INVIO DEI LINK AGLI ESTRATTORI
+        finalLinks.distinct().forEach { link ->
+            when {
+                link.contains("supervideo") -> 
+                    SupervideoExtractor().getUrl(link, link, subtitleCallback, callback)
+                link.contains("dropload") || link.contains("dr0pstream") -> 
+                    DroploadExtractor().getUrl(link, link, subtitleCallback, callback)
+                else -> loadExtractor(link, data, subtitleCallback, callback)
+            }
+        }
+        return true
+    }
 }
