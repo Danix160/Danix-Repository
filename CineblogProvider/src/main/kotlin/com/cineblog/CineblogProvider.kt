@@ -54,7 +54,7 @@ class SupervideoExtractor : ExtractorApi() {
 // =============================================================================
 
 class CineblogProvider : MainAPI() {
-    override var mainUrl = "https://cineblog001.wiki"
+    override var mainUrl = "https://cineblog001.ovh"
     override var name = "Cineblog01"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "it"
