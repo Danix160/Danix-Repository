@@ -154,24 +154,32 @@ class CineblogProvider : MainAPI() {
     ): Boolean {
         val finalLinks = mutableListOf<String>()
         
+        // Definiamo il referer principale
+        val headers = mapOf("Referer" to "$mainUrl/")
+
         try {
-            // Se data è un URL di vixsrc.to, lo carichiamo con il referer corretto
-            val doc = if (data.contains("vixsrc.to")) {
-                app.get(data, referer = "$mainUrl/").document 
-            } else {
-                app.get(data).document
+            // Carichiamo la pagina (vixsrc o cineblog) con gli header corretti
+            val response = app.get(data, headers = headers).text
+            
+            // 1. Cerchiamo URL negli script (spesso criptati o in variabili JS)
+            val regex = Regex("""https?://[^\s"'<>]+(?:supervideo|dropload|mixdrop|m1xdrop|dr0pstream|vidsrc|vixsrc|vapi|vcdn)[^\s"'<>]*""")
+            regex.findAll(response).forEach { match ->
+                finalLinks.add(fixUrl(match.value))
             }
             
-            // Estrazione da script e iframe
-            doc.select("script, iframe, li[data-link], a[data-link]").forEach { el ->
-                val content = if (el.tagName() == "script") el.html() else el.attr("src").ifEmpty { el.attr("data-link") }
-                val regex = Regex("""https?://[^\s"'<>]+(?:supervideo|dropload|mixdrop|m1xdrop|dr0pstream|vidsrc|vixsrc)[^\s"'<>]*""")
-                regex.findAll(content).forEach { match ->
-                    finalLinks.add(fixUrl(match.value))
+            // 2. Se non troviamo nulla, proviamo a cercare iframe annidati
+            val doc = org.jsoup.Jsoup.parse(response)
+            doc.select("iframe").forEach { el ->
+                val src = el.attr("src")
+                if (src.isNotBlank() && !src.contains("guardahd")) {
+                    finalLinks.add(fixUrl(src))
                 }
             }
-        } catch (e: Exception) { }
+        } catch (e: Exception) { 
+            Log.e("Cineblog", "LoadLinks Error: ${e.message}")
+        }
 
+        // Se vixsrc restituisce altri link, processiamoli
         finalLinks.distinct().forEach { link ->
             val clean = link.replace("?download", "")
             when {
@@ -181,6 +189,10 @@ class CineblogProvider : MainAPI() {
                 clean.contains("dropload") || clean.contains("dr0pstream") -> 
                     DroploadExtractor().getUrl(clean, clean, subtitleCallback, callback)
                 
+                // Mixdrop richiede spesso il referer del player originale
+                clean.contains("mixdrop") || clean.contains("m1xdrop") ->
+                    loadExtractor(clean, data, subtitleCallback, callback)
+
                 else -> loadExtractor(clean, data, subtitleCallback, callback)
             }
         }
