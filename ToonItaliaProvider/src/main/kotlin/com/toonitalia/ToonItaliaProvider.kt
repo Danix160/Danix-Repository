@@ -48,60 +48,41 @@ class ToonItaliaProvider : MainAPI() {
     }
 
 override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = request.data
+        // Carichiamo la pagina (gestendo anche la paginazione se necessario)
+        val url = if (page <= 1) mainUrl else "$mainUrl/page/$page/"
         val res = app.get(url, headers = commonHeaders, timeout = 10)
         val document = res.document
         
         val homeSections = mutableListOf<HomePageList>()
 
-        // 1. Proviamo a cercare le colonne. 
-        // Se 'div.col' fallisce, proviamo a cercare i titoli h2 che definiscono le sezioni
-        val columns = document.select("div.col, section, .grid > div")
+        // Estraiamo tutti gli articoli presenti nella pagina
+        val items = parseItems(document)
         
-        if (columns.isEmpty()) {
-            // Fallback: Se non trova colonne, cerca tutti gli item e mettili in una sezione generica
-            val items = parseItems(document)
-            if (items.isNotEmpty()) {
-                homeSections.add(HomePageList("Ultimi Arrivi", items))
-            }
-        } else {
-            columns.forEach { column ->
-                val sectionName = column.selectFirst("h2")?.text()?.trim() 
-                    ?: column.selectFirst("h3")?.text()?.trim()
-                    ?: return@forEach // Salta se non c'è un titolo nella colonna
-                
-                val items = parseItems(column)
-                if (items.isNotEmpty()) {
-                    homeSections.add(HomePageList(sectionName, items))
+        if (items.isNotEmpty()) {
+            // Aggiungiamo un'unica sezione chiamata "Ultimi Arrivi"
+            homeSections.add(HomePageList("Ultimi Arrivi", items))
+        }
+
+        // Se non trova nulla con parseItems (magari i selettori sono diversi), 
+        // facciamo un tentativo più specifico per la struttura WordPress standard
+        if (homeSections.isEmpty()) {
+            val fallbackItems = document.select("article").mapNotNull { element ->
+                val link = element.selectFirst("h2 a, .entry-title a, a") ?: return@mapNotNull null
+                val title = link.text().trim()
+                val href = link.attr("href")
+                val poster = element.selectFirst("img")?.attr("src")
+
+                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                    this.posterUrl = poster
+                    this.posterHeaders = commonHeaders
                 }
+            }
+            if (fallbackItems.isNotEmpty()) {
+                homeSections.add(HomePageList("Recenti", fallbackItems))
             }
         }
 
         return newHomePageResponse(homeSections, false)
-    }
-
-    // Funzione helper per estrarre gli item da un elemento (colonna o documento)
-    private fun parseItems(container: org.jsoup.nodes.Element): List<SearchResponse> {
-        return container.select("div.item, article").mapNotNull { element ->
-            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
-            val href = linkElement.attr("href")
-            val title = linkElement.text().trim()
-
-            // Cerca l'immagine: prova src, poi data-src, poi l'immagine dentro il link
-            val imgElement = element.selectFirst("img")
-            val posterUrl = imgElement?.let { 
-                val src = it.attr("src")
-                val dataSrc = it.attr("data-src")
-                if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
-                    if (!dataSrc.isNullOrEmpty()) dataSrc else src
-                } else src
-            }
-
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                this.posterUrl = posterUrl
-                this.posterHeaders = commonHeaders
-            }
-        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
