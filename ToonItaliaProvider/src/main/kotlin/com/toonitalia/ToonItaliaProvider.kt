@@ -48,38 +48,41 @@ class ToonItaliaProvider : MainAPI() {
     }
 
 override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (page <= 1) mainUrl else "$mainUrl/page/$page/"
-        val res = app.get(url, headers = commonHeaders, timeout = 10)
+        // La home di questo sito è statica, quindi carichiamo sempre la base
+        val res = app.get(mainUrl, headers = commonHeaders, timeout = 10)
         val document = res.document
         
         val homeSections = mutableListOf<HomePageList>()
 
-        // Estraiamo gli articoli usando la funzione parseItems
-        val items = parseItems(document)
-        
-        if (items.isNotEmpty()) {
-            homeSections.add(HomePageList("Ultimi Arrivi", items))
+        // Selezioniamo ogni colonna (div.col)
+        document.select("div.col").forEach { column ->
+            // Il titolo della sezione è dentro l'h2 (es: 🔥 Ultimi Aggiornamenti)
+            val sectionName = column.selectFirst("h2")?.text()?.trim() ?: return@forEach
+            
+            // Estraiamo gli item di questa specifica colonna
+            val items = parseItems(column)
+            
+            if (items.isNotEmpty()) {
+                homeSections.add(HomePageList(sectionName, items))
+            }
         }
 
         return newHomePageResponse(homeSections, false)
     }
 
-    // QUESTA È LA FUNZIONE CHE MANCAVA E CAUSAVA L'ERRORE
     private fun parseItems(container: org.jsoup.nodes.Element): List<SearchResponse> {
-        // Selettore basato sulla struttura reale: h2.entry-title per i titoli in home
-        return container.select("article").mapNotNull { element ->
-            val linkElement = element.selectFirst("h2.entry-title a, a") ?: return@mapNotNull null
+        // Cerchiamo i div con classe 'item' come nel tuo HTML
+        return container.select("div.item").mapNotNull { element ->
+            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
             val href = linkElement.attr("href")
             val title = linkElement.text().trim()
 
-            if (title.isEmpty() || href.contains("category/")) return@mapNotNull null
-
-            // Gestione poster con supporto lazy-loading (data-src)
+            // Estraiamo l'immagine dal tag img
             val imgElement = element.selectFirst("img")
             val posterUrl = imgElement?.let { 
                 val src = it.attr("src")
                 val dataSrc = it.attr("data-src")
-                // Se src è vuoto o è un'icona/placeholder, usa data-src
+                // Gestione lazy-loading
                 if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
                     if (!dataSrc.isNullOrEmpty()) dataSrc else src
                 } else src
