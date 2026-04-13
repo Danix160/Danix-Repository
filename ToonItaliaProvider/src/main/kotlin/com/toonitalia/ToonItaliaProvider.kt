@@ -48,42 +48,60 @@ class ToonItaliaProvider : MainAPI() {
     }
 
 override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (page <= 1) request.data else "${request.data}/page/$page/"
-        val document = app.get(url, headers = commonHeaders, timeout = 10).document
+        val url = request.data
+        val res = app.get(url, headers = commonHeaders, timeout = 10)
+        val document = res.document
         
         val homeSections = mutableListOf<HomePageList>()
 
-        // Selezioniamo tutte le colonne (div con classe 'col')
-        document.select("div.col").forEach { column ->
-            val sectionName = column.selectFirst("h2")?.text()?.trim() ?: "Contenuti"
-            
-            val items = column.select("div.item").mapNotNull { element ->
-                val linkElement = element.selectFirst("a") ?: return@mapNotNull null
-                val href = linkElement.attr("href")
-                val title = linkElement.text().trim()
-
-                val imgElement = element.selectFirst("img")
-                val posterUrl = imgElement?.let { 
-                    val src = it.attr("src")
-                    val dataSrc = it.attr("data-src")
-                    if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
-                        if (dataSrc.isNullOrEmpty()) src else dataSrc
-                    } else src
-                }
-
-                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                    this.posterUrl = posterUrl
-                    this.posterHeaders = commonHeaders
-                }
-            }
-
+        // 1. Proviamo a cercare le colonne. 
+        // Se 'div.col' fallisce, proviamo a cercare i titoli h2 che definiscono le sezioni
+        val columns = document.select("div.col, section, .grid > div")
+        
+        if (columns.isEmpty()) {
+            // Fallback: Se non trova colonne, cerca tutti gli item e mettili in una sezione generica
+            val items = parseItems(document)
             if (items.isNotEmpty()) {
-                homeSections.add(HomePageList(sectionName, items))
+                homeSections.add(HomePageList("Ultimi Arrivi", items))
+            }
+        } else {
+            columns.forEach { column ->
+                val sectionName = column.selectFirst("h2")?.text()?.trim() 
+                    ?: column.selectFirst("h3")?.text()?.trim()
+                    ?: return@forEach // Salta se non c'è un titolo nella colonna
+                
+                val items = parseItems(column)
+                if (items.isNotEmpty()) {
+                    homeSections.add(HomePageList(sectionName, items))
+                }
             }
         }
-         // CORREZIONE: Usiamo newHomePageResponse invece del costruttore diretto
-        // Il secondo parametro 'false' indica se c'è una pagina successiva (hasNext)
+
         return newHomePageResponse(homeSections, false)
+    }
+
+    // Funzione helper per estrarre gli item da un elemento (colonna o documento)
+    private fun parseItems(container: org.jsoup.nodes.Element): List<SearchResponse> {
+        return container.select("div.item, article").mapNotNull { element ->
+            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+            val href = linkElement.attr("href")
+            val title = linkElement.text().trim()
+
+            // Cerca l'immagine: prova src, poi data-src, poi l'immagine dentro il link
+            val imgElement = element.selectFirst("img")
+            val posterUrl = imgElement?.let { 
+                val src = it.attr("src")
+                val dataSrc = it.attr("data-src")
+                if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
+                    if (!dataSrc.isNullOrEmpty()) dataSrc else src
+                } else src
+            }
+
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                this.posterUrl = posterUrl
+                this.posterHeaders = commonHeaders
+            }
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
