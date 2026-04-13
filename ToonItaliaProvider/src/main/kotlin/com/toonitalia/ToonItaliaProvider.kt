@@ -55,16 +55,13 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
 
         // Selezioniamo tutte le colonne (div con classe 'col')
         document.select("div.col").forEach { column ->
-            // Estraiamo il titolo della sezione (es. "🔥 Ultimi Aggiornamenti")
             val sectionName = column.selectFirst("h2")?.text()?.trim() ?: "Contenuti"
             
-            // Estraiamo gli item dentro questa specifica colonna
             val items = column.select("div.item").mapNotNull { element ->
                 val linkElement = element.selectFirst("a") ?: return@mapNotNull null
                 val href = linkElement.attr("href")
                 val title = linkElement.text().trim()
 
-                // L'immagine è nel tag <img>, che è fratello di <a>
                 val imgElement = element.selectFirst("img")
                 val posterUrl = imgElement?.let { 
                     val src = it.attr("src")
@@ -84,8 +81,9 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
                 homeSections.add(HomePageList(sectionName, items))
             }
         }
-        
-        return HomePageResponse(homeSections)
+         // CORREZIONE: Usiamo newHomePageResponse invece del costruttore diretto
+        // Il secondo parametro 'false' indica se c'è una pagina successiva (hasNext)
+        return newHomePageResponse(homeSections, false)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
