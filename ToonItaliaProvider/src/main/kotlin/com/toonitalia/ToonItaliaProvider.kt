@@ -48,41 +48,48 @@ class ToonItaliaProvider : MainAPI() {
     }
 
 override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        // Carichiamo la pagina (gestendo anche la paginazione se necessario)
         val url = if (page <= 1) mainUrl else "$mainUrl/page/$page/"
         val res = app.get(url, headers = commonHeaders, timeout = 10)
         val document = res.document
         
         val homeSections = mutableListOf<HomePageList>()
 
-        // Estraiamo tutti gli articoli presenti nella pagina
+        // Estraiamo gli articoli usando la funzione parseItems
         val items = parseItems(document)
         
         if (items.isNotEmpty()) {
-            // Aggiungiamo un'unica sezione chiamata "Ultimi Arrivi"
             homeSections.add(HomePageList("Ultimi Arrivi", items))
         }
 
-        // Se non trova nulla con parseItems (magari i selettori sono diversi), 
-        // facciamo un tentativo più specifico per la struttura WordPress standard
-        if (homeSections.isEmpty()) {
-            val fallbackItems = document.select("article").mapNotNull { element ->
-                val link = element.selectFirst("h2 a, .entry-title a, a") ?: return@mapNotNull null
-                val title = link.text().trim()
-                val href = link.attr("href")
-                val poster = element.selectFirst("img")?.attr("src")
+        return newHomePageResponse(homeSections, false)
+    }
 
-                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                    this.posterUrl = poster
-                    this.posterHeaders = commonHeaders
-                }
+    // QUESTA È LA FUNZIONE CHE MANCAVA E CAUSAVA L'ERRORE
+    private fun parseItems(container: org.jsoup.nodes.Element): List<SearchResponse> {
+        // Selettore basato sulla struttura reale: h2.entry-title per i titoli in home
+        return container.select("article").mapNotNull { element ->
+            val linkElement = element.selectFirst("h2.entry-title a, a") ?: return@mapNotNull null
+            val href = linkElement.attr("href")
+            val title = linkElement.text().trim()
+
+            if (title.isEmpty() || href.contains("category/")) return@mapNotNull null
+
+            // Gestione poster con supporto lazy-loading (data-src)
+            val imgElement = element.selectFirst("img")
+            val posterUrl = imgElement?.let { 
+                val src = it.attr("src")
+                val dataSrc = it.attr("data-src")
+                // Se src è vuoto o è un'icona/placeholder, usa data-src
+                if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
+                    if (!dataSrc.isNullOrEmpty()) dataSrc else src
+                } else src
             }
-            if (fallbackItems.isNotEmpty()) {
-                homeSections.add(HomePageList("Recenti", fallbackItems))
+
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                this.posterUrl = posterUrl
+                this.posterHeaders = commonHeaders
             }
         }
-
-        return newHomePageResponse(homeSections, false)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
