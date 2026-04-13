@@ -48,36 +48,37 @@ class ToonItaliaProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-    val url = if (page <= 1) request.data else "${request.data}/page/$page/"
-    val document = app.get(url, headers = commonHeaders, timeout = 10).document
-    
-    val items = document.select("article").mapNotNull { article ->
-        val titleHeader = article.selectFirst("h2.entry-title a") ?: article.selectFirst("a")
-        val href = titleHeader?.attr("href") ?: return@mapNotNull null
-        val title = titleHeader.text().trim()
+        val url = if (page <= 1) request.data else "${request.data}/page/$page/"
+        val document = app.get(url, headers = commonHeaders, timeout = 10).document
+        
+        // Cerchiamo sia 'article' (formato standard WP) che '.item' (il tuo nuovo formato)
+        val items = document.select("article, .item").mapNotNull { element ->
+            // Cerchiamo il link del titolo
+            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+            val href = linkElement.attr("href")
+            val title = linkElement.text().trim()
 
-        // MIGLIORAMENTO: Controllo più severo sulle immagini
-        val imgElement = article.selectFirst("img")
-        var posterUrl = imgElement?.let { 
-            val src = it.attr("src")
-            val dataSrc = it.attr("data-src")
-            // Se src è vuoto o è un placeholder (tipo .gif o base64), usa data-src
-            if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) dataSrc else src
-        }
+            // Cerchiamo l'immagine. 
+            // .selectFirst("img") la trova sia se è dentro <a> sia se è fuori ma dentro .item
+            val imgElement = element.selectFirst("img")
+            
+            val posterUrl = imgElement?.let { 
+                val src = it.attr("src")
+                val dataSrc = it.attr("data-src")
+                // Se src è vuoto, un placeholder o una gif, usa data-src (lazy load)
+                if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
+                    if (dataSrc.isNullOrEmpty()) src else dataSrc
+                } else src
+            } ?: searchPlaceholderLogo
 
-        // Se dopo il controllo l'URL è ancora vuoto o nullo, usa il logo di default
-        if (posterUrl.isNullOrEmpty()) {
-            posterUrl = searchPlaceholderLogo
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                this.posterUrl = posterUrl
+                this.posterHeaders = commonHeaders
+            }
         }
-
-        newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            this.posterUrl = posterUrl
-            this.posterHeaders = commonHeaders
-        }
+        
+        return newHomePageResponse(request.name, items)
     }
-    
-    return newHomePageResponse(request.name, items)
-}
 
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?s=$query"
