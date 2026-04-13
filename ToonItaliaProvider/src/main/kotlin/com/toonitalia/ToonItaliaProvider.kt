@@ -51,16 +51,17 @@ class ToonItaliaProvider : MainAPI() {
         val url = if (page <= 1) request.data else "${request.data}/page/$page/"
         val document = app.get(url, headers = commonHeaders, timeout = 10).document
         
-        // Modifica qui: Adattamento alla nuova struttura <div class="item"> o <article>
-        val items = document.select("article, .item").mapNotNull { element ->
-            // Cerca il link: può essere h2.entry-title a (vecchio) o a diretto (nuovo)
-            val linkElement = element.selectFirst("h2.entry-title a") ?: element.selectFirst("a")
-            val href = linkElement?.attr("href") ?: return@mapNotNull null
-            val title = linkElement.text().trim().ifEmpty { "Senza Titolo" }
-            
-            // Cerca l'immagine dentro il link o nell'elemento
-            val posterUrl = element.selectFirst("img")?.let { img ->
-                img.attr("src").ifEmpty { img.attr("data-src") }
+        // La nuova struttura usa <article> per ogni post nella grid
+        val items = document.select("article").mapNotNull { article ->
+            // Cerca il link principale che contiene il titolo
+            val titleHeader = article.selectFirst("h2.entry-title a") ?: article.selectFirst("a")
+            val href = titleHeader?.attr("href") ?: return@mapNotNull null
+            val title = titleHeader.text().trim()
+
+            // Cerca l'immagine: nel nuovo HTML è dentro il tag <a>
+            val img = article.selectFirst("img")
+            val posterUrl = img?.let { 
+                it.attr("src").ifEmpty { it.attr("data-src") } 
             } ?: searchPlaceholderLogo
 
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
@@ -76,12 +77,13 @@ class ToonItaliaProvider : MainAPI() {
         val url = "$mainUrl/?s=$query"
         val document = app.get(url, headers = commonHeaders).document
         
-        return document.select("article, .item").amap { element ->
-            val linkElement = element.selectFirst("h2.entry-title a") ?: element.selectFirst("a")
-            val href = linkElement?.attr("href") ?: return@amap null
-            val title = linkElement.text()
+        return document.select("article").amap { article ->
+            val titleHeader = article.selectFirst("h2.entry-title a") ?: article.selectFirst("a")
+            val href = titleHeader?.attr("href") ?: return@amap null
+            val title = titleHeader.text()
 
-            // Per la ricerca carichiamo la pagina interna per avere il poster corretto se manca nella lista
+            // Per i risultati di ricerca, spesso è meglio estrarre il poster dalla pagina interna 
+            // per avere la massima qualità o se non presente nell'anteprima
             val innerPage = app.get(href, headers = commonHeaders).document
             val posterUrl = innerPage.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
                 ?: innerPage.selectFirst("meta[property=\"og:image\"]")?.attr("content")
@@ -96,6 +98,8 @@ class ToonItaliaProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val response = app.get(url, headers = commonHeaders)
         val document = response.document
+        
+        // Pulizia titolo dai tag inutili
         val title = document.selectFirst("h1.entry-title")?.text()
             ?.replace(Regex("(?i)streaming|sub\\s?ita"), "")?.trim() ?: ""
         
@@ -109,6 +113,7 @@ class ToonItaliaProvider : MainAPI() {
         val isMovie = categories.any { it.contains("film animazione") || it == "film" }
         val tvType = if (isMovie) TvType.Movie else TvType.TvSeries
 
+        // Estrazione trama: prende il primo paragrafo significativo
         var plot = document.select("div.entry-content p")
             .map { it.text() }
             .firstOrNull { it.length > 60 && !it.contains(Regex("(?i)Titolo originale|Paese di origine")) }
@@ -117,6 +122,7 @@ class ToonItaliaProvider : MainAPI() {
         val year = Regex("""\b(19\d{2}|20[0-2]\d)\b""").find(fullText)?.groupValues?.get(1)?.toIntOrNull()
 
         val episodes = mutableListOf<Episode>()
+        // Split dei contenuti per identificare le righe degli episodi
         val lines = entryContent?.html()?.split(Regex("<br\\s*/?>|</p>|</div>|<li>|\\n")) ?: listOf()
         var absoluteEpCounter = 1
 
@@ -124,14 +130,16 @@ class ToonItaliaProvider : MainAPI() {
             val docLine = Jsoup.parseBodyFragment(line)
             val text = docLine.text().trim()
             
+            // Filtra solo link esterni validi appartenenti agli host supportati
             val validLinks = docLine.select("a").filter { a -> 
-                val href = a.attr("href")
-                href.startsWith("http") && !href.contains("toonitalia.xyz") && 
-                supportedHosts.any { host -> href.contains(host) }
+                val link = a.attr("href")
+                link.startsWith("http") && !link.contains("toonitalia.xyz") && 
+                supportedHosts.any { host -> link.contains(host) }
             }.map { it.attr("href") }.distinct()
 
             if (validLinks.isNotEmpty()) {
                 val isTrailerRow = text.contains(Regex("(?i)sigla|intro|trailer"))
+                // Gestione pattern SxE (es: 1x05 o 1x05a)
                 val matchSE = Regex("""(\d+)[×x](\d+)([a-zA-Z]?)""").find(text)
 
                 val s = if (isTrailerRow) 0 else if (isMovie) null else (matchSE?.groupValues?.get(1)?.toIntOrNull() ?: 1)
@@ -188,6 +196,7 @@ class ToonItaliaProvider : MainAPI() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // Carica ogni link trovato per l'episodio tramite gli estrattori automatici
         data.split("###").forEach { url ->
             loadExtractor(fixHostUrl(url), subtitleCallback, callback)
         }
