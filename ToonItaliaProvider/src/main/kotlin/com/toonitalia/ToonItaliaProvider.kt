@@ -47,37 +47,45 @@ class ToonItaliaProvider : MainAPI() {
             .replace("streamup.ws", "streamwish.to")
     }
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data}/page/$page/"
         val document = app.get(url, headers = commonHeaders, timeout = 10).document
         
-        // Cerchiamo sia 'article' (formato standard WP) che '.item' (il tuo nuovo formato)
-        val items = document.select("article, .item").mapNotNull { element ->
-            // Cerchiamo il link del titolo
-            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
-            val href = linkElement.attr("href")
-            val title = linkElement.text().trim()
+        val homeSections = mutableListOf<HomePageList>()
 
-            // Cerchiamo l'immagine. 
-            // .selectFirst("img") la trova sia se è dentro <a> sia se è fuori ma dentro .item
-            val imgElement = element.selectFirst("img")
+        // Selezioniamo tutte le colonne (div con classe 'col')
+        document.select("div.col").forEach { column ->
+            // Estraiamo il titolo della sezione (es. "🔥 Ultimi Aggiornamenti")
+            val sectionName = column.selectFirst("h2")?.text()?.trim() ?: "Contenuti"
             
-            val posterUrl = imgElement?.let { 
-                val src = it.attr("src")
-                val dataSrc = it.attr("data-src")
-                // Se src è vuoto, un placeholder o una gif, usa data-src (lazy load)
-                if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
-                    if (dataSrc.isNullOrEmpty()) src else dataSrc
-                } else src
-            } ?: searchPlaceholderLogo
+            // Estraiamo gli item dentro questa specifica colonna
+            val items = column.select("div.item").mapNotNull { element ->
+                val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+                val href = linkElement.attr("href")
+                val title = linkElement.text().trim()
 
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                this.posterUrl = posterUrl
-                this.posterHeaders = commonHeaders
+                // L'immagine è nel tag <img>, che è fratello di <a>
+                val imgElement = element.selectFirst("img")
+                val posterUrl = imgElement?.let { 
+                    val src = it.attr("src")
+                    val dataSrc = it.attr("data-src")
+                    if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
+                        if (dataSrc.isNullOrEmpty()) src else dataSrc
+                    } else src
+                }
+
+                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                    this.posterUrl = posterUrl
+                    this.posterHeaders = commonHeaders
+                }
+            }
+
+            if (items.isNotEmpty()) {
+                homeSections.add(HomePageList(sectionName, items))
             }
         }
         
-        return newHomePageResponse(request.name, items)
+        return HomePageResponse(homeSections)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
