@@ -27,12 +27,6 @@ class ToonItaliaProvider : MainAPI() {
         "mixdrop", "streamtape", "fastream", "filemoon", "wolfstream", "streamwish"
     )
 
-    override val mainPage = mainPageOf(
-        "$mainUrl/category/anime" to "Anime",
-        "$mainUrl/category/film-animazione/" to "Film Animazione",
-        "$mainUrl/category/serie-tv/" to "Serie TV",
-    )
-
     private fun fixHostUrl(url: String): String {
         return url
             .replace("chuckle-tube.com", "voe.sx")
@@ -47,21 +41,14 @@ class ToonItaliaProvider : MainAPI() {
             .replace("streamup.ws", "streamwish.to")
     }
 
-override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        // La home di questo sito è statica, quindi carichiamo sempre la base
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val res = app.get(mainUrl, headers = commonHeaders, timeout = 10)
         val document = res.document
-        
         val homeSections = mutableListOf<HomePageList>()
 
-        // Selezioniamo ogni colonna (div.col)
         document.select("div.col").forEach { column ->
-            // Il titolo della sezione è dentro l'h2 (es: 🔥 Ultimi Aggiornamenti)
             val sectionName = column.selectFirst("h2")?.text()?.trim() ?: return@forEach
-            
-            // Estraiamo gli item di questa specifica colonna
             val items = parseItems(column)
-            
             if (items.isNotEmpty()) {
                 homeSections.add(HomePageList(sectionName, items))
             }
@@ -71,18 +58,18 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
     }
 
     private fun parseItems(container: org.jsoup.nodes.Element): List<SearchResponse> {
-        // Cerchiamo i div con classe 'item' come nel tuo HTML
         return container.select("div.item").mapNotNull { element ->
-            val linkElement = element.selectFirst("a") ?: return@mapNotNull null
+            val linkElement = element.selectFirst("a.card-link") ?: element.selectFirst("a") ?: return@mapNotNull null
             val href = linkElement.attr("href")
-            val title = linkElement.text().trim()
+            
+            // Il titolo ora è dentro <span class="title">
+            val title = linkElement.selectFirst("span.title")?.text()?.trim() 
+                ?: linkElement.text().trim()
 
-            // Estraiamo l'immagine dal tag img
             val imgElement = element.selectFirst("img")
             val posterUrl = imgElement?.let { 
                 val src = it.attr("src")
                 val dataSrc = it.attr("data-src")
-                // Gestione lazy-loading
                 if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
                     if (!dataSrc.isNullOrEmpty()) dataSrc else src
                 } else src
@@ -104,8 +91,6 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
             val href = titleHeader?.attr("href") ?: return@amap null
             val title = titleHeader.text()
 
-            // Per i risultati di ricerca, spesso è meglio estrarre il poster dalla pagina interna 
-            // per avere la massima qualità o se non presente nell'anteprima
             val innerPage = app.get(href, headers = commonHeaders).document
             val posterUrl = innerPage.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
                 ?: innerPage.selectFirst("meta[property=\"og:image\"]")?.attr("content")
@@ -121,7 +106,6 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
         val response = app.get(url, headers = commonHeaders)
         val document = response.document
         
-        // Pulizia titolo dai tag inutili
         val title = document.selectFirst("h1.entry-title")?.text()
             ?.replace(Regex("(?i)streaming|sub\\s?ita"), "")?.trim() ?: ""
         
@@ -135,8 +119,7 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
         val isMovie = categories.any { it.contains("film animazione") || it == "film" }
         val tvType = if (isMovie) TvType.Movie else TvType.TvSeries
 
-        // Estrazione trama: prende il primo paragrafo significativo
-        var plot = document.select("div.entry-content p")
+        val plot = document.select("div.entry-content p")
             .map { it.text() }
             .firstOrNull { it.length > 60 && !it.contains(Regex("(?i)Titolo originale|Paese di origine")) }
 
@@ -144,7 +127,6 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
         val year = Regex("""\b(19\d{2}|20[0-2]\d)\b""").find(fullText)?.groupValues?.get(1)?.toIntOrNull()
 
         val episodes = mutableListOf<Episode>()
-        // Split dei contenuti per identificare le righe degli episodi
         val lines = entryContent?.html()?.split(Regex("<br\\s*/?>|</p>|</div>|<li>|\\n")) ?: listOf()
         var absoluteEpCounter = 1
 
@@ -152,7 +134,6 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
             val docLine = Jsoup.parseBodyFragment(line)
             val text = docLine.text().trim()
             
-            // Filtra solo link esterni validi appartenenti agli host supportati
             val validLinks = docLine.select("a").filter { a -> 
                 val link = a.attr("href")
                 link.startsWith("http") && !link.contains("toonitalia.xyz") && 
@@ -161,7 +142,6 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
 
             if (validLinks.isNotEmpty()) {
                 val isTrailerRow = text.contains(Regex("(?i)sigla|intro|trailer"))
-                // Gestione pattern SxE (es: 1x05 o 1x05a)
                 val matchSE = Regex("""(\d+)[×x](\d+)([a-zA-Z]?)""").find(text)
 
                 val s = if (isTrailerRow) 0 else if (isMovie) null else (matchSE?.groupValues?.get(1)?.toIntOrNull() ?: 1)
@@ -218,7 +198,6 @@ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageR
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Carica ogni link trovato per l'episodio tramite gli estrattori automatici
         data.split("###").forEach { url ->
             loadExtractor(fixHostUrl(url), subtitleCallback, callback)
         }
