@@ -106,8 +106,13 @@ class ToonItaliaProvider : MainAPI() {
         val response = app.get(url, headers = commonHeaders)
         val document = response.document
         
+        // Estraiamo le categorie per capire se è un film
+        val categories = document.select(".entry-categories-inner a, .cat-links a").map { it.text().lowercase() }
+        val isMovie = categories.any { it.contains("film animazione") || it == "film" }
+        
+        // Pulizia titolo: rimuove "film", "streaming", ecc.
         val title = document.selectFirst("h1.entry-title")?.text()
-            ?.replace(Regex("(?i)streaming|sub\\s?ita"), "")?.trim() ?: ""
+            ?.replace(Regex("(?i)streaming|sub\\s?ita|\\bfilm\\b"), "")?.trim() ?: ""
         
         val poster = document.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
             ?: searchPlaceholderLogo
@@ -115,8 +120,6 @@ class ToonItaliaProvider : MainAPI() {
         val entryContent = document.selectFirst("div.entry-content")
         val fullText = entryContent?.text() ?: ""
 
-        val categories = document.select(".entry-categories-inner a").map { it.text().lowercase() }
-        val isMovie = categories.any { it.contains("film animazione") || it == "film" }
         val tvType = if (isMovie) TvType.Movie else TvType.TvSeries
 
         val plot = document.select("div.entry-content p")
@@ -142,23 +145,21 @@ class ToonItaliaProvider : MainAPI() {
 
             if (validLinks.isNotEmpty()) {
                 val isTrailerRow = text.contains(Regex("(?i)sigla|intro|trailer"))
-                val matchSE = Regex("""(\d+)[×x](\d+)([a-zA-Z]?)""").find(text)
-
-                val s = if (isTrailerRow) 0 else if (isMovie) null else (matchSE?.groupValues?.get(1)?.toIntOrNull() ?: 1)
+                
+                // Se è un film, non ci servono stagioni o numeri episodio nel database interno
+                val s = if (isTrailerRow) 0 else if (isMovie) null else 1
                 val e = if (isTrailerRow) 0 else if (isMovie) null else absoluteEpCounter
-
-                val epLabel = matchSE?.let { 
-                    val epNum = it.groupValues[2]
-                    val epLetter = it.groupValues[3]
-                    "$epNum$epLetter" 
-                } ?: "$absoluteEpCounter"
 
                 val dataUrls = validLinks.joinToString("###")
                 
+                // Gestione label per serie (1a, 1b...)
+                val matchSE = Regex("""(\d+)[×x](\d+)([a-zA-Z]?)""").find(text)
+                val epLabel = matchSE?.let { "${it.groupValues[2]}${it.groupValues[3]}" } ?: "$absoluteEpCounter"
+
                 var epNamePart = text.split(Regex("(?i)VOE|Lulu|Streaming|Vidhide|Mixdrop|RPMShare|STREAMUP|Link| -")).first().trim()
                 if (epNamePart.isEmpty() || epNamePart.length < 2) epNamePart = "Episodio"
 
-                val finalName = if (isMovie) "Film" else "$epLabel - $epNamePart"
+                val finalName = if (isMovie) "Riproduci Film" else "$epLabel - $epNamePart"
 
                 episodes.add(newEpisode(dataUrls) {
                     this.name = finalName
@@ -171,10 +172,9 @@ class ToonItaliaProvider : MainAPI() {
             }
         }
 
-        val finalEpisodes = episodes.sortedWith(compareBy({ it.season ?: 0 }, { it.episode ?: 0 }))
-
-        return if (tvType == TvType.Movie) {
-            newMovieLoadResponse(title, url, TvType.Movie, finalEpisodes.firstOrNull()?.data ?: "") {
+        // Importante: CloudStream usa risposte diverse per attivare layout diversi
+        return if (isMovie) {
+            newMovieLoadResponse(title, url, TvType.Movie, episodes.firstOrNull()?.data ?: "") {
                 this.posterUrl = poster
                 this.plot = plot
                 this.year = year
@@ -182,7 +182,7 @@ class ToonItaliaProvider : MainAPI() {
                 this.posterHeaders = commonHeaders
             }
         } else {
-            newTvSeriesLoadResponse(title, url, tvType, finalEpisodes) {
+            newTvSeriesLoadResponse(title, url, tvType, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.year = year
