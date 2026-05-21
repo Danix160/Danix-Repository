@@ -175,7 +175,8 @@ class OnlineSerieTvProvider : MainAPI() {
         val episodeData = parseJson<EpisodeData>(data)
         
         for (link in episodeData.videoLinks) {
-            loadExtractor(link, subtitleCallback, callback)
+            // Chiamata corretta tramite l'estensione nativa sulla stringa dell'URL
+            link.loadExtractor(subtitleCallback, callback)
         }
         return true
     }
