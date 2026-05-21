@@ -7,8 +7,6 @@ import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.net.URLEncoder
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 
 class OnlineSerieTvProvider : MainAPI() {
     override var mainUrl = "https://onlineserietv.lol"
@@ -229,14 +227,10 @@ class OnlineSerieTvProvider : MainAPI() {
             val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
             val cachedStagioniSizes = mutableMapOf<Int, Int>()
 
+            // Eseguiamo il fetch unico e sequenziale per ogni stagione rilevata
             if (tmdbData != null && detectedSeasons.isNotEmpty()) {
-                val tasks = detectedSeasons.map { season ->
-                    async {
-                        val epsMap = getTmdbSeasonEpisodes(tmdbData.id, season)
-                        Pair(season, epsMap)
-                    }
-                }
-                tasks.awaitAll().forEach { (season, epsMap) ->
+                detectedSeasons.forEach { season ->
+                    val epsMap = getTmdbSeasonEpisodes(tmdbData.id, season)
                     cachedStagioni[season] = epsMap
                     cachedStagioniSizes[season] = epsMap?.size ?: 0
                 }
