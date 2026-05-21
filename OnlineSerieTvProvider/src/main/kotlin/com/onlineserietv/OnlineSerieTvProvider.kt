@@ -119,14 +119,31 @@ class OnlineSerieTvProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
         val rawTitle = document.selectFirst("h1")?.text() ?: "Senza Titolo"
-        
-        val year = extractYear(rawTitle)
         val titleClean = cleanTitle(rawTitle)
         val isSubIta = rawTitle.contains("""(?i)\bSUB[- ]?ITA\b""".toRegex())
         
-        val sitePoster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: document.selectFirst(".imagen img")?.attr("src")
+        // ------------------------------------------------------------------------
+        // NUOVA LOGICA CHIRURGICA PER L'ANNO
+        // Cerca l'elemento span che contiene la parola "Anno:" e preleva il testo dentro il tag <i>
+        var year: Int? = null
+        document.select(".score .stars span").forEach { element ->
+            if (element.text().contains("Anno:", ignoreCase = true)) {
+                val yearText = element.selectFirst("i")?.text()
+                year = yearText?.toIntOrNull()
+            }
+        }
+        
+        // Fallback se la struttura del box ".score" dovesse fallire
+        if (year == null) {
+            val genericText = document.select(".score, .stars, .info").text()
+            year = """(19|20)\d{2}""".toRegex().find(genericText)?.value?.toIntOrNull() ?: extractYear(rawTitle)
+        }
+        // ------------------------------------------------------------------------
 
-        if (url.contains("/serietv/")) {
+        val sitePoster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: document.selectFirst(".imagen img")?.attr("src")
+        val isMovie = url.contains("/film/") || url.contains("/movies")
+
+        if (!isMovie) {
             val tmdbData = getTmdbTvMetadata(titleClean, year)
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
@@ -163,10 +180,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     
                     val tmdbEp = if (tmdbData != null) cachedStagioni[season]?.get(episode) else null
                     
-                    // GESTIONE FALLBACK LOGICA POSTER ANTEPRIMA:
-                    // 1. Se c'è lo stillPath (miniatura dell'episodio TMDB) usa quello.
-                    // 2. Altrimenti, se c'è il poster della serie TMDB usa quello.
-                    // 3. Se TMDB non ha trovato nulla (null), usa la locandina del sito originale (sitePoster).
                     val episodePoster = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" }
                         ?: tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
                         ?: sitePoster
@@ -213,6 +226,7 @@ class OnlineSerieTvProvider : MainAPI() {
         val yearParam = if (year != null) "&first_air_date_year=$year" else ""
         val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
         return try {
+            // Filtra cercando la corrispondenza esatta di titolo MA vincolata all'anno estratto dalla pagina
             app.get(url).parsed<TmdbTvResponse>().results?.firstOrNull { isTitleMatching(query, it.name) }
                 ?: app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull()
         } catch (e: Exception) { null }
