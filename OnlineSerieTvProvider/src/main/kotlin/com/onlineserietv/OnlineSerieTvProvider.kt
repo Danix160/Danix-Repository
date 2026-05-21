@@ -20,18 +20,20 @@ class OnlineSerieTvProvider : MainAPI() {
     private val tmdbBaseUrl = "https://api.themoviedb.org/3"
 
     override val mainPage = mainPageOf(
-        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime",
         "$mainUrl/movies" to "Film",
         "$mainUrl/serie-tv/" to "Serie TV",
     )
 
     private fun cleanTitle(title: String): String {
-        // Normalizzazione apostrofi e traduzione nomi comuni per TMDB
         var cleaned = title
             .replace("’", "'")
             .replace("‘", "'")
+            .replace("L'uomo ragno", "Spider-Man", ignoreCase = true)
+            .replace("L uomo ragno", "Spider-Man", ignoreCase = true)
+            .replace("Uomo Ragno", "Spider-Man", ignoreCase = true)
+            .replace("the scooby doo show", "The Scooby-Doo Show", ignoreCase = true)
+            .replace("scooby doo", "Scooby-Doo", ignoreCase = true)
             .replace("Pokemon", "Pokémon", ignoreCase = true)
-            .replace("L uomo ragno", "L'uomo ragno", ignoreCase = true)
             .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
             
         val regexDaRimuovere = """(?i)\b(serie animata|serie tv|animazione|in streaming|online|hdtv|web-dl)\b""".toRegex()
@@ -44,7 +46,7 @@ class OnlineSerieTvProvider : MainAPI() {
             .replace("""\s*[-–—:|]+\s*$""".toRegex(), "") 
             .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
             .replace("""\s+""".toRegex(), " ")
-            .replace("'", "") // Rimuove apostrofo dopo la pulizia
+            .replace("'", "")
             .trim()
 
         return cleaned
@@ -57,30 +59,26 @@ class OnlineSerieTvProvider : MainAPI() {
 
     private fun base64UrlEncode(string: String) = URLEncoder.encode(string, "UTF-8")
 
-    private fun isTitleMatching(query: String, tmdbTitle: String): Boolean {
-    // Funzione locale per normalizzare il testo (rimuove accenti e caratteri speciali)
-    fun normalize(text: String): String {
+    private fun normalizeText(text: String): String {
         return text.lowercase()
             .replace("é", "e")
             .replace("è", "e")
-            .replace("á", "a")
-            .replace("ó", "o")
-            .replace("í", "i")
-            .replace("ú", "u")
+            .replace("à", "a")
+            .replace("ò", "o")
+            .replace("ì", "i")
+            .replace("ù", "u")
             .replace("""[^a-z0-9]""".toRegex(), "")
     }
 
-    val q = normalize(query)
-    val t = normalize(tmdbTitle)
-    
-    // Se una stringa contiene l'altra (es. "pokemon" e "pokemoniz"), o viceversa, è un match
-    if (q.contains(t) || t.contains(q)) return true
-    
-    // Controllo secondario sulle parole singole lunghe
-    val queryWords = query.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
-    val tmdbWords = tmdbTitle.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
-    return queryWords.any { tmdbWords.contains(it) }
-}
+    private fun isTitleMatching(query: String, tmdbTitle: String): Boolean {
+        val q = normalizeText(query)
+        val t = normalizeText(tmdbTitle)
+        if (q.contains(t) || t.contains(q)) return true
+        
+        val queryWords = query.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
+        val tmdbWords = tmdbTitle.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
+        return queryWords.any { tmdbWords.contains(it) }
+    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
@@ -167,16 +165,22 @@ class OnlineSerieTvProvider : MainAPI() {
                         }
                     }
                     
-                    val tmdbEp = cachedStagioni[season]?.get(episode)
+                    val tmdbEp = if (tmdbData != null) cachedStagioni[season]?.get(episode) else null
                     
+                    // GESTIONE FALLBACK LOGICA POSTER ANTEPRIMA:
+                    // 1. Se c'è lo stillPath (miniatura dell'episodio TMDB) usa quello.
+                    // 2. Altrimenti, se c'è il poster della serie TMDB usa quello.
+                    // 3. Se TMDB non ha trovato nulla (null), usa la locandina del sito originale (sitePoster).
+                    val episodePoster = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+                        ?: tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+                        ?: sitePoster
+
                     episodesList.add(newEpisode(link) {
                         this.name = tmdbEp?.name ?: "Episodio $episode"
                         this.season = season
                         this.episode = episode
                         this.description = tmdbEp?.overview
-                        // Prende la miniatura dell'episodio (stillPath), se manca usa il poster della serie, altrimenti quello del sito
-                        this.posterUrl = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } 
-                            ?: (tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster)
+                        this.posterUrl = episodePoster
                     })
                 }
             }
@@ -203,13 +207,19 @@ class OnlineSerieTvProvider : MainAPI() {
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
         val yearParam = if (year != null) "&year=$year" else ""
         val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
-        return app.get(url).parsed<TmdbMovieResponse>().results?.firstOrNull { isTitleMatching(query, it.title) }
+        return try {
+            app.get(url).parsed<TmdbMovieResponse>().results?.firstOrNull { isTitleMatching(query, it.title) }
+                ?: app.get("$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT").parsed<TmdbMovieResponse>().results?.firstOrNull()
+        } catch (e: Exception) { null }
     }
 
     private suspend fun getTmdbTvMetadata(query: String, year: Int?): TmdbTvResult? {
         val yearParam = if (year != null) "&first_air_date_year=$year" else ""
         val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
-        return app.get(url).parsed<TmdbTvResponse>().results?.firstOrNull { isTitleMatching(query, it.name) }
+        return try {
+            app.get(url).parsed<TmdbTvResponse>().results?.firstOrNull { isTitleMatching(query, it.name) }
+                ?: app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull()
+        } catch (e: Exception) { null }
     }
 
     private suspend fun getTmdbSeasonEpisodes(tvId: Int, season: Int): Map<Int, TmdbEpisode>? {
