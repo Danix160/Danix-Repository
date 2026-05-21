@@ -30,6 +30,7 @@ class OnlineSerieTvProvider : MainAPI() {
         var cleaned = title
             .replace("’", "'")
             .replace("‘", "'")
+            .replace("Pokemon", "Pokémon", ignoreCase = true)
             .replace("L uomo ragno", "L'uomo ragno", ignoreCase = true)
             .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
             
