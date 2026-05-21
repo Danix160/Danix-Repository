@@ -135,7 +135,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
    override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 5
+        val maxPagesToSearch = 10
 
         for (page in 1..maxPagesToSearch) {
             try {
@@ -264,14 +264,14 @@ class OnlineSerieTvProvider : MainAPI() {
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
                 this.plot = finalDescription
-                if (imdbId != null) this.syncId = imdbId
+                if (imdbId != null) this.syncData = mapOf("imdb" to imdbId)
             }
         } else {
             val imdbId = getImdbIdViaOmdb(title, isTv = false)
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = finalDescription
-                if (imdbId != null) this.syncId = imdbId
+                if (imdbId != null) this.syncData = mapOf("imdb" to imdbId)
             }
         }
     }
