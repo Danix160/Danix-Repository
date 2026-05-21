@@ -1,5 +1,6 @@
 package com.onlineserietv
 
+import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor 
@@ -21,47 +22,58 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
-    private val omdbApiKey = "d6f266ee"
-    private val omdbBaseUrl = "https://www.omdbapi.com/"
+    private val cinemetaUrl = "https://v3-cinemeta.strem.io"
 
     /**
-     * Cerca l'opera su OMDb tramite titolo e restituisce l'ID IMDb (ttXXXXXXX) se trovato.
+     * Cerca l'opera su Cinemeta tramite titolo e restituisce l'ID IMDb (ttXXXXXXX)
      */
-    private suspend fun getImdbIdViaOmdb(title: String, isTv: Boolean): String? {
+    private suspend fun getImdbIdViaCinemeta(title: String, isTv: Boolean): String? {
         val type = if (isTv) "series" else "movie"
-        val url = "$omdbBaseUrl?apikey=$omdbApiKey&s=${java.net.URLEncoder.encode(title, "UTF-8")}&type=$type"
+        // Rimuoviamo "SUB ITA" e puliamo il titolo per la ricerca su Cinemeta
+        val cleanQuery = title.replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "").trim()
+        val url = "$cinemetaUrl/catalog/$type/top/search=${java.net.URLEncoder.encode(cleanQuery, "UTF-8")}.json"
         
         return try {
             val response = app.get(url).text
-            "\"imdbID\":\"(tt\\d+)\"".toRegex().find(response)?.groupValues?.get(1)
+            // Estrae il primo imdb id (es. "imdb_id":"tt1234567" o "id":"tt1234567")
+            val id = "\"id\":\"(tt\\d+)\"".toRegex().find(response)?.groupValues?.get(1)
+                ?: "\"imdb_id\":\"(tt\\d+)\"".toRegex().find(response)?.groupValues?.get(1)
+            Log.d("Cinemeta-Debug", "ID trovato per '$cleanQuery': $id")
+            id
         } catch (e: Exception) {
+            Log.e("Cinemeta-Debug", "Errore ricerca ID per '$cleanQuery'", e)
             null
         }
     }
 
     /**
-     * Scarica l'intero JSON di una specifica stagione per estrarre le locandine in blocco.
+     * Scarica i metadati di Cinemeta per la serie e mappa ogni "stagione-episodio" al suo poster specifico.
      */
-    private suspend fun getSeasonEpisodesPosters(imdbId: String?, seriesTitle: String, season: Int): Map<Int, String> {
-        val postersMap = mutableMapOf<Int, String>()
-        val queryParam = if (imdbId != null) "i=$imdbId" else "t=${java.net.URLEncoder.encode(seriesTitle, "UTF-8")}"
-        val url = "$omdbBaseUrl?apikey=$omdbApiKey&$queryParam&Season=$season"
+    private suspend fun getCinemetaEpisodesPosters(imdbId: String): Map<String, String> {
+        val postersMap = mutableMapOf<String, String>()
+        val url = "$cinemetaUrl/meta/series/$imdbId.json"
 
         try {
             val response = app.get(url).text
-            // Trova tutti i blocchi degli episodi nel JSON della stagione
-            val episodeBlocks = """\{"Title"[^}]+""".toRegex().findAll(response)
+            // Cinemeta restituisce una lista di "videos". Estraiamo stagione, episodio e thumbnail (poster)
+            // Struttura tipica: {"season":1,"episode":2,...,"thumbnail":"https://..."}
+            val videoBlocks = """\{"season":[^}]+""".toRegex().findAll(response)
             
-            episodeBlocks.forEach { block ->
-                val epText = block.value
-                val epNum = "\"Episode\":\"(\\d+)\"".toRegex().find(epText)?.groupValues?.get(1)?.toIntOrNull()
-                val posterLink = "\"Poster\":\"([^\"]+)\"".toRegex().find(epText)?.groupValues?.get(1)
+            videoBlocks.forEach { block ->
+                val text = block.value
+                val season = "\"season\":(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toIntOrNull()
+                val episode = "\"episode\":(\\d+)".toRegex().find(text)?.groupValues?.get(1)?.toIntOrNull()
+                val thumbnail = "\"thumbnail\":\"([^\"]+)\"".toRegex().find(text)?.groupValues?.get(1)
                 
-                if (epNum != null && posterLink != null && posterLink != "N/A" && posterLink.startsWith("http")) {
-                    postersMap[epNum] = posterLink
+                if (season != null && episode != null && !thumbnail.isNullOrBlank()) {
+                    // Chiave univoca "stagione_episodio" (es. "1_5")
+                    postersMap["${season}_${episode}"] = thumbnail.replace("\\/", "/")
                 }
             }
-        } catch (_: Exception) {}
+            Log.d("Cinemeta-Debug", "Mappati ${postersMap.size} poster degli episodi da Cinemeta")
+        } catch (e: Exception) {
+            Log.e("Cinemeta-Debug", "Errore nel parsing dei video di Cinemeta per $imdbId", e)
+        }
         
         return postersMap
     }
@@ -94,7 +106,6 @@ class OnlineSerieTvProvider : MainAPI() {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
 
-        // Selettore 1: Struttura dei blocchi in Home (uagb-post)
         document.select(".uagb-post__inner-wrap").forEach { element ->
             val titleEl = element.selectFirst(".uagb-post__title a")
             val rawTitle = titleEl?.text() ?: return@forEach
@@ -112,7 +123,6 @@ class OnlineSerieTvProvider : MainAPI() {
             )
         }
 
-        // Selettore 2: Struttura classica dei blocchi standard (.movie)
         document.select(".movie").forEach { element ->
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
             val title = cleanTitle(rawTitle)
@@ -147,7 +157,6 @@ class OnlineSerieTvProvider : MainAPI() {
                 val document = response.document
                 val initialCount = results.size
 
-                // 1. Parsing dei risultati di ricerca (struttura .movie)
                 document.select(".movie").forEach { element ->
                     val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
                     val title = cleanTitle(rawTitle)
@@ -164,7 +173,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
                 
-                // 2. Fallback per risultati strutturati come uagb-post
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
                     val rawTitle = titleEl?.text() ?: return@forEach
@@ -229,10 +237,9 @@ class OnlineSerieTvProvider : MainAPI() {
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
             
-            val imdbId = getImdbIdViaOmdb(title, isTv = true)
-            
-            // Mappa per salvare le locandine delle stagioni già scaricate ed evitare chiamate doppie
-            val seasonsCache = mutableMapOf<Int, Map<Int, String>>()
+            val imdbId = getImdbIdViaCinemeta(title, isTv = true)
+            // Scarichiamo in un colpo solo la mappa di tutti i poster degli episodi se l'id IMDb esiste
+            val episodesPostersCache = if (imdbId != null) getImdbIdViaCinemeta(title, isTv = true)?.let { getCinemetaEpisodesPosters(it) } else null
             
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
@@ -243,12 +250,8 @@ class OnlineSerieTvProvider : MainAPI() {
                     val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-                    // Se la stagione non è in cache, scarica tutti i suoi poster in una volta sola
-                    if (!seasonsCache.containsKey(season)) {
-                        seasonsCache[season] = getSeasonEpisodesPosters(imdbId, title, season)
-                    }
-                    
-                    val episodePoster = seasonsCache[season]?.get(episode) ?: poster
+                    // Recupera il poster dell'episodio specifico dalla mappa di Cinemeta ("stagione_episodio"), altrimenti fallback su quello generale
+                    val episodePoster = episodesPostersCache?.get("${season}_${episode}") ?: poster
 
                     episodesList.add(
                         newEpisode(link) {
@@ -267,7 +270,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 if (imdbId != null) this.syncData = mutableMapOf("imdb" to imdbId)
             }
         } else {
-            val imdbId = getImdbIdViaOmdb(title, isTv = false)
+            val imdbId = getImdbIdViaCinemeta(title, isTv = false)
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = finalDescription
