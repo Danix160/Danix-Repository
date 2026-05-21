@@ -147,13 +147,18 @@ class OnlineSerieTvProvider : MainAPI() {
         
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
-            
-        // Estrazione e pulizia avanzata della trama
-        val description = document.select("div.tsll p, .entry-content p, .post-content p")
-            .map { it.text().trim() }
-            .firstOrNull { it.length > 20 && !it.startsWith("Regia:") && !it.startsWith("Genere:") }
-            ?.replace("(?i)^Trama:\\s*".toRegex(), "") // Rimuove l'eventuale scritta "Trama:" iniziale
-            ?: document.selectFirst("meta[property=og:description]")?.attr("content")
+
+        // Estrazione e isolamento avanzato del testo della trama dopo la parola chiave "Trama"
+        val description = document.selectFirst(".tsll p, .entry-content p, .post-content p, div p")?.text()?.trim()
+            ?: document.select("div.tsll, .entry-content, .post-content").text().let { fullText ->
+                if (fullText.contains("Trama")) {
+                    fullText.substringAfter("Trama").trim()
+                } else {
+                    fullText
+                }
+            }.ifBlank {
+                document.selectFirst("meta[property=og:description]")?.attr("content")
+            }?.replace("(?i)^Trama:\\s*".toRegex(), "") // Rimuove residui della stringa "Trama:" iniziale
 
         return if (url.contains("/serietv/")) {
             val episodesList = mutableListOf<Episode>()
@@ -173,7 +178,7 @@ class OnlineSerieTvProvider : MainAPI() {
                             this.name = "Episodio $episode"
                             this.season = season
                             this.episode = episode
-                            this.posterUrl = poster // Poster impostato correttamente
+                            this.posterUrl = poster
                         }
                     )
                 }
