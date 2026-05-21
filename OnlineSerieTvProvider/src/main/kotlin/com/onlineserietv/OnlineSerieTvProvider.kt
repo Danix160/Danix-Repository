@@ -2,7 +2,7 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor // Import corretto del metodo di estensione
+import com.lagradost.cloudstream3.utils.loadExtractor 
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Document
@@ -21,32 +21,19 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
-    /**
-     * Rimuove l'anno, tag come STAGIONE e suffissi del sito,
-     * ma mantiene e formatta la dicitura SUB ITA alla fine del titolo.
-     */
     private fun cleanTitle(title: String): String {
-        // Controlla se il titolo originale contiene "SUB ITA" o "SUB-ITA"
         val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
 
         var cleaned = title
-            .replace("l uomo ragno", "l'uomo ragno")
-            .replace("pokemon", "pokémon")
             .replace(" in streaming - OnlineSerieTv", "")
-            // Rimuove esplicitamente SUB ITA temporaneamente per non incasinare la pulizia dell'anno
             .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
-            // Rimuove scritte inutili come ITA, STAGIONE 1, STAGIONE, ecc.
             .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
-            // Rimuove l'anno (es. 2024, (2025), [2026]) ovunque si trovi
             .replace("""\s*[\(\[-]?\s*(19|20)\d{2}\s*[\)\]-]?\s*""".toRegex(), " ")
-            // Rimuove trattini o simboli rimasti isolati prima o dopo
             .replace("""\s*[-–—:|]+\s*$""".toRegex(), "") 
             .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
-            // Sostituisce spazi multipli con uno singolo
             .replace("""\s+""".toRegex(), " ")
             .trim()
 
-        // Se originariamente c'era SUB ITA, lo riaggiunge formattato bene in coda
         if (isSubIta) {
             cleaned = "$cleaned SUB ITA"
         }
@@ -58,14 +45,12 @@ class OnlineSerieTvProvider : MainAPI() {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
 
-        // Selettore 1: Struttura dei blocchi in Home (uagb-post)
         document.select(".uagb-post__inner-wrap").forEach { element ->
             val titleEl = element.selectFirst(".uagb-post__title a")
             val rawTitle = titleEl?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle) // Titolo Pulito
+            val title = cleanTitle(rawTitle)
             val url = titleEl.attr("href")
             val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
-            
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
 
             homeResults.add(
@@ -76,14 +61,12 @@ class OnlineSerieTvProvider : MainAPI() {
             )
         }
 
-        // Selettore 2: Struttura classica dei blocchi standard (.movie)
         document.select(".movie").forEach { element ->
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle) // Titolo Pulito
+            val title = cleanTitle(rawTitle)
             val linkEl = element.selectFirst(".imagen a") ?: element.selectFirst("a")
             val url = linkEl?.attr("href") ?: return@forEach
             val poster = element.selectFirst("img")?.attr("src")
-
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
 
             homeResults.add(
@@ -105,19 +88,16 @@ class OnlineSerieTvProvider : MainAPI() {
             try {
                 val url = if (page == 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
                 val response = app.get(url)
-                
                 if (response.code != 200) break
                 
                 val document = response.document
                 val initialCount = results.size
 
-                // 1. Parsing dei risultati di ricerca (struttura .movie)
                 document.select(".movie").forEach { element ->
                     val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle) // Titolo Pulito
+                    val title = cleanTitle(rawTitle)
                     val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
                     val poster = element.selectFirst("img")?.attr("src")
-
                     val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
 
                     results.add(
@@ -128,14 +108,12 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
                 
-                // 2. Fallback per risultati strutturati come uagb-post
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
                     val rawTitle = titleEl?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle) // Titolo Pulito
+                    val title = cleanTitle(rawTitle)
                     val targetUrl = titleEl.attr("href")
                     val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
-                    
                     val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
 
                     results.add(
@@ -146,15 +124,11 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
 
-                if (results.size == initialCount) {
-                    break
-                }
-
+                if (results.size == initialCount) break
             } catch (e: Exception) {
                 break
             }
         }
-
         return results.distinctBy { it.url }
     }
 
@@ -164,14 +138,11 @@ class OnlineSerieTvProvider : MainAPI() {
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")
             ?: "Senza Titolo"
         
-        val title = cleanTitle(rawTitle) // Titolo Pulito
-        
+        val title = cleanTitle(rawTitle)
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
 
-        // Sistema di estrazione trama multi-livello
         var description: String? = null
-        
         val tramaElement = document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
         if (tramaElement != null) {
             description = tramaElement.nextElementSibling()?.selectFirst("p")?.text()
@@ -194,10 +165,12 @@ class OnlineSerieTvProvider : MainAPI() {
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
             
-            document.select("table tr, div.data-content a, td a").forEach { element ->
+            // OTTIMIZZAZIONE: Leggiamo direttamente gli elementi a senza chiamate strutturali pesanti all'indietro (parents)
+            document.select("table tr td a, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
                 if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
-                    val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
+                    // Estrarre la stringa descrittiva direttamente dal testo visibile o dall'attributo, evitando cicli parents()
+                    val rowText = element.text()
                     
                     val match = "(\\d+)x(\\d+)".toRegex().find(rowText)
                     val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
