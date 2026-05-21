@@ -139,7 +139,7 @@ class OnlineSerieTvProvider : MainAPI() {
                             this.name = tmdbEp?.name ?: "Episodio $episode"
                             this.season = season
                             this.episode = episode
-                            this.plot = tmdbEp?.overview
+                            this.description = tmdbEp?.overview // Corretto da 'this.plot' a 'this.description'
                             this.posterUrl = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: (tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster)
                         }
                     )
