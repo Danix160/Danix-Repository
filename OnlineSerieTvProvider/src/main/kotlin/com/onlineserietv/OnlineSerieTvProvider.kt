@@ -30,6 +30,8 @@ class OnlineSerieTvProvider : MainAPI() {
         val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
 
         var cleaned = title
+            .replace("l uomo ragno", "l'uomo ragno)
+            .replace("pokemon", "pokémon")
             .replace(" in streaming - OnlineSerieTv", "")
             // Rimuove esplicitamente SUB ITA temporaneamente per non incasinare la pulizia dell'anno
             .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
