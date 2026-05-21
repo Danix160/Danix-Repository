@@ -21,6 +21,13 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
+    private fun cleanTitle(title: String): String {
+        return title
+            .replace("""\s*[\(\[-]\s*\d{4}\s*[\)\]-]""".toRegex(), "") // Rimuove (2024) o [2024]
+            .replace("""\s+\d{4}\s*$""".toRegex(), "")                // Rimuove l'anno isolato alla fine
+            .trim()
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
