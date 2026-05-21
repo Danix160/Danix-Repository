@@ -3,7 +3,7 @@ package com.onlineserietv
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.LoadUtils.getExtractorUrl
+import com.lagradost.cloudstream3.utils.ExtractorApiKt.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
@@ -18,13 +18,12 @@ class OnlineSerieTvProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    // Data class interna per il passaggio dei dati multimediali tra i metodi di Cloudstream
     data class EpisodeData(
         val videoLinks: List<String>
     )
 
-    // 1. GESTIONE HOME PAGE
-    override suspend fun getMainPage(page: Int, request: HomePageRequest): HomePageResponse? {
+    // 1. GESTIONE HOME PAGE (Corretto MainPageRequest e l'helper di risposta)
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(mainUrl).document
         val homePages = mutableListOf<HomePageList>()
 
@@ -48,7 +47,7 @@ class OnlineSerieTvProvider : MainAPI() {
             homePages.add(HomePageList("Ultimi Film aggiunti", moviesList))
         }
 
-        return HomePageResponse(homePages, hasNext = false)
+        return newHomePageResponse(homePages, hasNext = false)
     }
 
     private fun Element.toHomeSearchResult(type: TvType): SearchResponse? {
@@ -66,11 +65,9 @@ class OnlineSerieTvProvider : MainAPI() {
 
     // 2. GESTIONE DELLA RICERCA
     override suspend fun search(query: String): List<SearchResponse> {
-        // Formattazione dell'URL di ricerca standard WordPress
         val searchUrl = "$mainUrl/?s=${query.replace(" ", "+")}"
         val document = app.get(searchUrl).document
         
-        // Selettore basato sulla griglia div#box_movies > div.movie trovato in cerca.txt
         return document.select("div#box_movies div.movie").mapNotNull { element ->
             val linkElement = element.selectFirst("div.imagen a") ?: return@mapNotNull null
             val url = linkElement.attr("href")
@@ -91,7 +88,7 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 
-    // 3. CARICAMENTO DEI METADATI (FILM E SERIE TV)
+    // 3. CARICAMENTO DEI METADATI (Corretto TvSeriesLoadResponse e MovieLoadResponse con i nuovi costruttori helper)
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
         
@@ -108,7 +105,6 @@ class OnlineSerieTvProvider : MainAPI() {
 
         val episodeTable = document.selectFirst("table")
         
-        // Se c'è la tabella, elaboriamo come Serie TV
         if (episodeTable != null) {
             val episodesList = mutableListOf<Episode>()
             val rows = episodeTable.select("tr")
@@ -137,18 +133,16 @@ class OnlineSerieTvProvider : MainAPI() {
                 }
             }
 
-            return TvSeriesLoadResponse(
+            return newTvSeriesLoadResponse(
                 name = title,
                 url = url,
-                apiName = this.name,
                 type = TvType.TvSeries,
-                episodeGuide = episodesList,
-                posterUrl = poster,
-                plot = description
-            )
-        } 
-        // Altrimenti, elaboriamo come Film singolo
-        else {
+                episodes = episodesList
+            ) {
+                this.posterUrl = poster
+                this.plot = description
+            }
+        } else {
             val entryContent = document.selectFirst("div.entry-content") ?: document.body()
             val movieLinks = entryContent.select("a").mapNotNull { element ->
                 val href = element.attr("href")
@@ -159,32 +153,28 @@ class OnlineSerieTvProvider : MainAPI() {
 
             if (movieLinks.isEmpty()) return null
 
-            return MovieLoadResponse(
+            return newMovieLoadResponse(
                 name = title,
                 url = url,
-                apiName = this.name,
                 type = TvType.Movie,
-                dataUrl = EpisodeData(movieLinks).toJson(),
-                posterUrl = poster,
-                plot = description
-            )
+                dataUrl = EpisodeData(movieLinks).toJson()
+            ) {
+                this.posterUrl = poster
+                this.plot = description
+            }
         }
     }
 
-    // 4. ESTRAZIONE FINALE DEI LINK VIDEO
+    // 4. ESTRAZIONE FINALE DEI LINK VIDEO (Corretto il puntamento a loadExtractor)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Deserializziamo l'oggetto JSON contenente l'elenco dei link estratti in precedenza
         val episodeData = parseJson<EpisodeData>(data)
         
         for (link in episodeData.videoLinks) {
-            // Se i link passano da un servizi di protezione (come uprot.net), Cloudstream ha bisogno
-            // di seguire il redirect o chiamare gli Extractor integrati corretti.
-            // Sfruttiamo i caricamenti nativi dei principali video host di terze parti:
             loadExtractor(link, subtitleCallback, callback)
         }
         return true
