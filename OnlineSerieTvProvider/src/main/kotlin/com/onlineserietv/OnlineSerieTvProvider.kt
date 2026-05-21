@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import com.fasterxml.jackson.annotation.JsonProperty
+import java.net.URLEncoder
 import org.jsoup.nodes.Document
 
 class OnlineSerieTvProvider : MainAPI() {
