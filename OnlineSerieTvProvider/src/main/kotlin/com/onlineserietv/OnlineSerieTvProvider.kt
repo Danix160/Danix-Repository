@@ -21,7 +21,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies" to "Film",
-        "$mainUrl/serie-tv/" to "Serie TV",
+        "$mainUrl/serie-tv/" to "Serie TV"
     )
 
     private fun cleanTitle(title: String): String {
@@ -53,7 +53,7 @@ class OnlineSerieTvProvider : MainAPI() {
         return match?.value?.toIntOrNull()
     }
 
-    private fun base64UrlEncode(string: String) = URLEncoder.encode(string, "UTF-8")
+    private fun base64UrlEncode(string: String): String = URLEncoder.encode(string, "UTF-8")
 
     private fun normalizeText(text: String): String {
         return text.lowercase()
@@ -97,7 +97,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/?s=$query"
+        val url = "$mainUrl/?s=${base64UrlEncode(query)}"
         val document = app.get(url).document
         val results = mutableListOf<SearchResponse>()
 
@@ -122,9 +122,7 @@ class OnlineSerieTvProvider : MainAPI() {
         val titleClean = cleanTitle(rawTitle)
         val isSubIta = rawTitle.contains("""(?i)\bSUB[- ]?ITA\b""".toRegex())
         
-        // ------------------------------------------------------------------------
-        // NUOVA LOGICA CHIRURGICA PER L'ANNO
-        // Cerca l'elemento span che contiene la parola "Anno:" e preleva il testo dentro il tag <i>
+        // Estrazione chirurgica dell'anno dal box dei dettagli HTML
         var year: Int? = null
         document.select(".score .stars span").forEach { element ->
             if (element.text().contains("Anno:", ignoreCase = true)) {
@@ -133,12 +131,10 @@ class OnlineSerieTvProvider : MainAPI() {
             }
         }
         
-        // Fallback se la struttura del box ".score" dovesse fallire
         if (year == null) {
             val genericText = document.select(".score, .stars, .info").text()
             year = """(19|20)\d{2}""".toRegex().find(genericText)?.value?.toIntOrNull() ?: extractYear(rawTitle)
         }
-        // ------------------------------------------------------------------------
 
         val sitePoster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: document.selectFirst(".imagen img")?.attr("src")
         val isMovie = url.contains("/film/") || url.contains("/movies")
@@ -214,21 +210,28 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
+        val encodedQuery = base64UrlEncode(query)
         val yearParam = if (year != null) "&year=$year" else ""
-        val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
+        val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
         return try {
-            app.get(url).parsed<TmdbMovieResponse>().results?.firstOrNull { isTitleMatching(query, it.title) }
-                ?: app.get("$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT").parsed<TmdbMovieResponse>().results?.firstOrNull()
+            val results = app.get(url).parsed<TmdbMovieResponse>().results
+            // Cerca prima il film che ha l'anno corrispondente e il titolo valido
+            results?.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
+                ?: results?.firstOrNull { isTitleMatching(query, it.title) }
+                ?: app.get("$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT").parsed<TmdbMovieResponse>().results?.firstOrNull()
         } catch (e: Exception) { null }
     }
 
     private suspend fun getTmdbTvMetadata(query: String, year: Int?): TmdbTvResult? {
+        val encodedQuery = base64UrlEncode(query)
         val yearParam = if (year != null) "&first_air_date_year=$year" else ""
-        val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
+        val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
         return try {
-            // Filtra cercando la corrispondenza esatta di titolo MA vincolata all'anno estratto dalla pagina
-            app.get(url).parsed<TmdbTvResponse>().results?.firstOrNull { isTitleMatching(query, it.name) }
-                ?: app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull()
+            val results = app.get(url).parsed<TmdbTvResponse>().results
+            // FUNZIONE DI CONVALIDA SICURA: Scorre i risultati e seleziona la serie il cui 'first_air_date' contiene l'anno esatto del sito (es. 1997)
+            results?.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
+                ?: results?.firstOrNull { isTitleMatching(query, it.name) }
+                ?: app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull()
         } catch (e: Exception) { null }
     }
 
@@ -239,9 +242,20 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     data class TmdbMovieResponse(val results: List<TmdbMovieResult>?)
-    data class TmdbMovieResult(val title: String, val overview: String?, @JsonProperty("poster_path") val posterPath: String?)
+    data class TmdbMovieResult(
+        val title: String, 
+        val overview: String?, 
+        @JsonProperty("poster_path") val posterPath: String?,
+        @JsonProperty("release_date") val releaseDate: String?
+    )
     data class TmdbTvResponse(val results: List<TmdbTvResult>?)
-    data class TmdbTvResult(val id: Int, val name: String, val overview: String?, @JsonProperty("poster_path") val posterPath: String?)
+    data class TmdbTvResult(
+        val id: Int, 
+        val name: String, 
+        val overview: String?, 
+        @JsonProperty("poster_path") val posterPath: String?,
+        @JsonProperty("first_air_date") val firstAirDate: String?
+    )
     data class TmdbSeasonResponse(val episodes: List<TmdbEpisode>?)
     data class TmdbEpisode(val name: String, val overview: String?, @JsonProperty("episode_number") val episodeNumber: Int, @JsonProperty("still_path") val stillPath: String?)
 }
