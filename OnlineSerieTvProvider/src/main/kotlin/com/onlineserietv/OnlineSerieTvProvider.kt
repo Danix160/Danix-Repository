@@ -16,8 +16,8 @@ class OnlineSerieTvProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
     init {
-        registerExtractor(Uprot())
-        registerExtractor(MaxStream())
+        addExtractor(Uprot())
+        addExtractor(MaxStream())
     }
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Ultime Serie e Film",
