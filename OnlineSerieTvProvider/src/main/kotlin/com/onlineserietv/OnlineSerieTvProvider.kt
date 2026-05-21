@@ -1,19 +1,15 @@
 package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addEpisodes
-import com.lagradost.cloudstream3.metaproviders.TmdbProvider
+import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 
 class OnlineSerieTvProvider : MainAPI() {
 
     override var mainUrl = "https://onlineserietv.lol"
-
     override var name = "OnlineSerieTv"
-
     override val hasMainPage = true
-
     override var lang = "it"
 
     override val supportedTypes = setOf(
@@ -21,67 +17,51 @@ class OnlineSerieTvProvider : MainAPI() {
         TvType.TvSeries
     )
 
-    private val tmdb = TmdbProvider()
-
     override val mainPage = mainPageOf(
+        "$mainUrl/serie-tv/" to "Serie TV",
         "$mainUrl/film/" to "Film",
-        "$mainUrl/serietv/" to "Serie TV"
+        "$mainUrl/animazione/" to "Animazione"
     )
-
-    private fun cleanTitle(title: String): String {
-        return title
-            .replace("Streaming", "", true)
-            .replace("Gratis", "", true)
-            .replace("ITA", "", true)
-            .replace("HD", "", true)
-            .replace("\\(.*?\\)".toRegex(), "")
-            .trim()
-    }
 
     private fun Element.toSearchResult(): SearchResponse? {
 
-        val href = fixUrl(
-            this.selectFirst("a")?.attr("href")
+        val title =
+            this.selectFirst("h2, h3, .title")?.text()?.trim()
                 ?: return null
-        )
 
-        val title = cleanTitle(
-            this.selectFirst("img")?.attr("alt")
-                ?: this.selectFirst(".title")
-                    ?.text()
-                ?: this.selectFirst("h2")
-                    ?.text()
-                ?: return null
-        )
+        val href =
+            fixUrl(
+                this.selectFirst("a")?.attr("href")
+                    ?: return null
+            )
 
-        val poster = this.selectFirst("img")
-            ?.let {
-                it.attr("data-src")
-                    .ifBlank {
-                        it.attr("src")
-                    }
+        val poster =
+            this.selectFirst("img")?.let { img ->
+
+                img.attr("data-src").ifBlank {
+                    img.attr("src")
+                }
             }
 
-        val isTv =
-            href.contains("/serietv/")
-                    || href.contains("/serie-tv/")
+        val isMovie =
+            href.contains("/film/")
 
-        return if (isTv) {
+        return if (isMovie) {
 
-            newTvSeriesSearchResponse(
+            newMovieSearchResponse(
                 title,
                 href,
-                TvType.TvSeries
+                TvType.Movie
             ) {
                 this.posterUrl = poster
             }
 
         } else {
 
-            newMovieSearchResponse(
+            newTvSeriesSearchResponse(
                 title,
                 href,
-                TvType.Movie
+                TvType.TvSeries
             ) {
                 this.posterUrl = poster
             }
@@ -103,7 +83,7 @@ class OnlineSerieTvProvider : MainAPI() {
         val document = app.get(url).document
 
         val home = document.select(
-            "article, .post, .items article, .ml-item"
+            "article, .items article, .post"
         ).mapNotNull {
             it.toSearchResult()
         }.distinctBy {
@@ -116,16 +96,15 @@ class OnlineSerieTvProvider : MainAPI() {
         )
     }
 
-    override suspend fun search(
-        query: String
-    ): List<SearchResponse> {
+    override suspend fun search(query: String): List<SearchResponse> {
 
-        val document = app.get(
-            "$mainUrl/?s=${query}"
-        ).document
+        val url =
+            "$mainUrl/?s=${query.replace(" ", "+")}"
+
+        val document = app.get(url).document
 
         return document.select(
-            "article, .post, .items article, .ml-item"
+            "article, .items article, .post"
         ).mapNotNull {
             it.toSearchResult()
         }.distinctBy {
@@ -137,221 +116,169 @@ class OnlineSerieTvProvider : MainAPI() {
 
         val document = app.get(url).document
 
-        val rawTitle = document.selectFirst("h1")
-            ?.text()
-            ?: document.selectFirst(
-                "meta[property=og:title]"
-            )?.attr("content")
-            ?: "Senza Titolo"
-
-        val title = cleanTitle(rawTitle)
-
-        val tmdbData =
-            tmdb.search(title)
-                ?.firstOrNull()
+        val title =
+            document.selectFirst(
+                "h1"
+            )?.text()?.trim()
+                ?: "No Title"
 
         val poster =
-            tmdbData?.posterUrl
-                ?: document.selectFirst(
-                    "meta[property=og:image]"
-                )?.attr("content")
-                ?: document.selectFirst(
-                    ".imagen img"
-                )?.attr("src")
-
-        var description: String? = null
-
-        val tramaElement = document.select(
-            "b:contains(Trama), strong:contains(Trama)"
-        ).firstOrNull()
-
-        if (tramaElement != null) {
-
-            description =
-                tramaElement.nextElementSibling()
-                    ?.selectFirst("p")
-                    ?.text()
-                    ?: tramaElement.nextElementSiblings()
-                        .firstOrNull {
-                            it.tagName() == "p"
-                        }
-                        ?.text()
-        }
-
-        if (description.isNullOrBlank()) {
-
-            description = document.select(
-                "div.tsll p, .entry-content p, .post-content p"
-            )
-                .map {
-                    it.text().trim()
-                }
-                .firstOrNull {
-                    it.length > 30
-                }
-        }
-
-        val finalDescription =
-            tmdbData?.overview
-                ?: description
-                ?: document.selectFirst(
-                    "meta[property=og:description]"
-                )?.attr("content")
-
-        /**
-         * SERIE TV
-         */
-        if (
-            url.contains("/serietv/")
-            || url.contains("/serie-tv/")
-        ) {
-
-            val episodes = mutableListOf<Episode>()
-
-            var epCount = 1
-
-            document.select(
-                "table tr, div.data-content a, td a"
-            ).forEach { element ->
-
-                val link = element.attr("href")
-
-                if (
-                    link.isNotBlank() &&
-                    (
-                        link.contains("uprot") ||
-                        link.contains("stream") ||
-                        link.contains("tape") ||
-                        link.contains("mixdrop") ||
-                        link.contains("vidoza") ||
-                        link.contains("streamwish")
-                    )
-                ) {
-
-                    val rowText =
-                        element.parents()
-                            .select("tr")
-                            .first()
-                            ?.text()
-                            ?: element.text()
-
-                    val match =
-                        "(\\d+)x(\\d+)"
-                            .toRegex()
-                            .find(rowText)
-
-                    val season =
-                        match?.groupValues
-                            ?.get(1)
-                            ?.toIntOrNull()
-                            ?: 1
-
-                    val episode =
-                        match?.groupValues
-                            ?.get(2)
-                            ?.toIntOrNull()
-                            ?: epCount++
-
-                    episodes.add(
-                        newEpisode(link) {
-
-                            this.name =
-                                "Episodio $episode"
-
-                            this.posterUrl =
-                                poster
-
-                            this.season =
-                                season
-
-                            this.episode =
-                                episode
-                        }
-                    )
+            document.selectFirst("img")?.let { img ->
+                img.attr("data-src").ifBlank {
+                    img.attr("src")
                 }
             }
 
-            return newTvSeriesLoadResponse(
+        val description =
+            document.selectFirst(
+                "meta[property=og:description]"
+            )?.attr("content")
+                ?: document.selectFirst(
+                    ".wp-content p"
+                )?.text()
+
+        val year =
+            document.selectFirst(
+                ".date, .year"
+            )?.text()
+                ?.filter {
+                    it.isDigit()
+                }
+                ?.take(4)
+                ?.toIntOrNull()
+
+        val tags =
+            document.select(
+                ".sgeneros a, .genres a"
+            ).map {
+                it.text()
+            }
+
+        val actors =
+            document.select(
+                ".persons a, .cast a"
+            ).map {
+                Actor(it.text())
+            }
+
+        val isMovie =
+            url.contains("/film/")
+
+        return if (!isMovie) {
+
+            val episodes = mutableListOf<Episode>()
+
+            document.select(
+                ".se-c, .episodios li, li.mark-episode"
+            ).forEachIndexed { index, element ->
+
+                val epTitle =
+                    element.selectFirst(
+                        "a"
+                    )?.text()
+                        ?: "Episodio ${index + 1}"
+
+                val epLink =
+                    fixUrl(
+                        element.selectFirst(
+                            "a"
+                        )?.attr("href")
+                            ?: url
+                    )
+
+                episodes.add(
+                    Episode(
+                        epLink,
+                        epTitle
+                    )
+                )
+            }
+
+            newTvSeriesLoadResponse(
                 title,
                 url,
                 TvType.TvSeries,
-                episodes.distinctBy {
-                    "${it.season}-${it.episode}"
-                }
+                episodes
             ) {
 
                 this.posterUrl = poster
 
-                this.plot = finalDescription
+                this.plot = description
+
+                this.year = year
+
+                this.tags = tags
+
+                addActors(actors)
             }
-        }
 
-        /**
-         * FILM
-         */
-        return newMovieLoadResponse(
-            title,
-            url,
-            TvType.Movie,
-            url
-        ) {
+        } else {
 
-            this.posterUrl = poster
+            newMovieLoadResponse(
+                title,
+                url,
+                TvType.Movie,
+                url
+            ) {
 
-            this.plot = finalDescription
+                this.posterUrl = poster
+
+                this.plot = description
+
+                this.year = year
+
+                this.tags = tags
+
+                addActors(actors)
+            }
         }
     }
 
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
-        subtitleCallback: SubtitleFileCallback,
-        callback: ExtractorLinkCallback
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
     ): Boolean {
 
         val document = app.get(data).document
 
-        val links = mutableSetOf<String>()
+        document.select("iframe").forEach { iframe ->
 
-        document.select("iframe").forEach {
-
-            val src = fixUrl(
-                it.attr("src")
-            )
+            val src =
+                iframe.attr("src")
 
             if (src.isNotBlank()) {
-                links.add(src)
+
+                loadExtractor(
+                    fixUrl(src),
+                    data,
+                    subtitleCallback,
+                    callback
+                )
             }
         }
 
-        document.select("a").forEach {
+        document.select("a").forEach { link ->
 
-            val href = fixUrl(
-                it.attr("href")
-            )
+            val href =
+                link.attr("href")
 
             if (
-                href.contains("mixdrop")
-                || href.contains("streamwish")
-                || href.contains("vidoza")
-                || href.contains("dood")
-                || href.contains("streamtape")
-                || href.contains("filelions")
-                || href.contains("uqload")
+                href.contains("mixdrop") ||
+                href.contains("streamtape") ||
+                href.contains("dood") ||
+                href.contains("filemoon") ||
+                href.contains("supervideo")
             ) {
 
-                links.add(href)
+                loadExtractor(
+                    fixUrl(href),
+                    data,
+                    subtitleCallback,
+                    callback
+                )
             }
-        }
-
-        links.distinct().forEach { link ->
-
-            loadExtractor(
-                link,
-                data,
-                subtitleCallback,
-                callback
-            )
         }
 
         return true
