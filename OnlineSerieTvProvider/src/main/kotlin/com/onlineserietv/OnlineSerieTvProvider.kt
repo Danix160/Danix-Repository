@@ -264,14 +264,14 @@ class OnlineSerieTvProvider : MainAPI() {
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
                 this.plot = finalDescription
-                if (imdbId != null) this.syncData = mapOf("imdb" to imdbId)
+                if (imdbId != null) this.syncData = mutableMapOf("imdb" to imdbId)
             }
         } else {
             val imdbId = getImdbIdViaOmdb(title, isTv = false)
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = finalDescription
-                if (imdbId != null) this.syncData = mapOf("imdb" to imdbId)
+                if (imdbId != null) this.syncData = mutableMapOf("imdb" to imdbId)
             }
         }
     }
