@@ -2,7 +2,7 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorApi
+import com.lagradost.cloudstream3.utils.loadExtractor // Import corretto del metodo di estensione
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Document
@@ -20,7 +20,7 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv/" to "Serie TV",
     )
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
 
@@ -62,11 +62,10 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        // Il sito usa la query di ricerca classica di WordPress ?s=query
         val document = app.get("$mainUrl/?s=$query").document
         val results = mutableListOf<SearchResponse>()
 
-        // Parsing dei risultati di ricerca (struttura .movie da cerca.txt)
+        // Parsing dei risultati di ricerca (struttura .movie)
         document.select(".movie").forEach { element ->
             val title = element.selectFirst("h2")?.text() ?: return@forEach
             val url = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
@@ -115,43 +114,33 @@ class OnlineSerieTvProvider : MainAPI() {
             ?: document.selectFirst(".tsll p")?.text()
 
         return if (url.contains("/serietv/")) {
-            // Struttura Serie TV: Generiamo gli episodi partendo dalle tabelle dei link
             val episodesList = mutableListOf<Episode>()
-            
-            // Seleziona tutte le righe della tabella o i link che contengono la dicitura Stagione/Episodio (es. 01x01)
             var epCount = 1
+            
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
-                // Filtriamo per i link di streaming esterni (es. uprot, streamtape, maxstream, flexy)
                 if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
-                    // Proviamo ad estrarre il nome dell'episodio dal testo circostante o dal tag della riga
                     val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
                     
-                    // Cerchiamo pattern tipo 01x02 per capire stagione ed episodio
                     val match = "(\\d+)x(\\d+)".toRegex().find(rowText)
                     val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-                    // Per evitare duplicati dello stesso episodio con host differenti, 
-                    // usiamo come data il link completo inserendolo nel campo data dell'episodio
                     episodesList.add(
-                        Episode(
-                            data = link,
-                            name = "Episodio $episode",
-                            season = season,
-                            episode = episode
-                        )
+                        newEpisode(link) {
+                            this.name = "Episodio $episode"
+                            this.season = season
+                            this.episode = episode
+                        }
                     )
                 }
             }
 
-            // Raggruppiamo per stagione/episodio se necessario o passiamo la lista pulita
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
-            // Struttura Film
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = description
@@ -165,19 +154,18 @@ class OnlineSerieTvProvider : MainAPI() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Se stiamo gestendo una serie tv, 'data' conterrà già il link dell'host estratto dall'episodio.
-        // Se è un film, 'data' sarà l'URL della pagina del film, quindi dobbiamo estrarre i link dalla pagina.
         if (data.contains("/film/")) {
             val document = app.get(data).document
             document.select("a").forEach { element ->
                 val link = element.attr("href")
                 if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
-                    ExtractorApi.loadExtractor(link, mainUrl, subtitleCallback, callback)
+                    // Rimosso ExtractorApi. e invocato direttamente il metodo globale
+                    loadExtractor(link, mainUrl, subtitleCallback, callback)
                 }
             }
         } else {
-            // È un link diretto a un host/redirector estratto precedentemente dall'episodio
-            ExtractorApi.loadExtractor(data, mainUrl, subtitleCallback, callback)
+            // Rimosso ExtractorApi. e invocato direttamente il metodo globale
+            loadExtractor(data, mainUrl, subtitleCallback, callback)
         }
         return true
     }
