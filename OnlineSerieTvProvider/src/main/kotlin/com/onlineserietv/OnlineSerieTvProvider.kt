@@ -28,11 +28,7 @@ class OnlineSerieTvProvider : MainAPI() {
         var cleaned = title
             .replace("’", "'")
             .replace("‘", "'")
-            .replace("L'uomo ragno", "Spider-Man", ignoreCase = true)
-            .replace("L uomo ragno", "Spider-Man", ignoreCase = true)
-            .replace("Uomo Ragno", "Spider-Man", ignoreCase = true)
-            .replace("the scooby doo show", "The Scooby-Doo Show", ignoreCase = true)
-            .replace("scooby doo", "Scooby-Doo", ignoreCase = true)
+            .replace("L uomo ragno", "L'uomo ragno", ignoreCase = true)
             .replace("Pokemon", "Pokémon", ignoreCase = true)
             .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
             
