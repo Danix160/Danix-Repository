@@ -148,17 +148,31 @@ class OnlineSerieTvProvider : MainAPI() {
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
 
-        // Estrazione e isolamento avanzato del testo della trama dopo la parola chiave "Trama"
-        val description = document.selectFirst(".tsll p, .entry-content p, .post-content p, div p")?.text()?.trim()
-            ?: document.select("div.tsll, .entry-content, .post-content").text().let { fullText ->
-                if (fullText.contains("Trama")) {
-                    fullText.substringAfter("Trama").trim()
-                } else {
-                    fullText
-                }
-            }.ifBlank {
-                document.selectFirst("meta[property=og:description]")?.attr("content")
-            }?.replace("(?i)^Trama:\\s*".toRegex(), "") // Rimuove residui della stringa "Trama:" iniziale
+        // NUOVA LOGICA: Cerca selettivamente i tag <p> dentro la descrizione
+        var description: String? = null
+        
+        // Tentativo 1: Trova l'elemento che contiene la parola "Trama" e prendiamo il paragrafo successivo
+        val tramaElement = document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
+        if (tramaElement != null) {
+            // Cerchiamo il primo tag <p> che si trova dopo il blocco "Trama"
+            description = tramaElement.nextElementSibling()?.selectFirst("p")?.text()
+                ?: tramaElement.nextElementSiblings().firstOrNull { it.tagName() == "p" }?.text()
+        }
+
+        // Tentativo 2 (Fallback): Se il primo tentativo fallisce, analizziamo tutti i tag <p> e prendiamo quello valido
+        if (description.isNullOrBlank()) {
+            description = document.select("div.tsll p, .entry-content p, .post-content p, div.post p")
+                .map { it.text().trim() }
+                .firstOrNull { it.length > 30 && !it.contains("generato") && !it.contains("creata da") && !it.contains("visto in streaming") }
+        }
+
+        // Tentativo 3 (Fallback estremo): Meta tag og:description della pagina
+        if (description.isNullOrBlank()) {
+            description = document.selectFirst("meta[property=og:description]")?.attr("content")
+        }
+
+        // Pulizia finale da scritte residue
+        val finalDescription = description?.replace("(?i)^Trama:\\s*".toRegex(), "")?.trim()
 
         return if (url.contains("/serietv/")) {
             val episodesList = mutableListOf<Episode>()
@@ -186,12 +200,12 @@ class OnlineSerieTvProvider : MainAPI() {
 
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
-                this.plot = description
+                this.plot = finalDescription
             }
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
-                this.plot = description
+                this.plot = finalDescription
             }
         }
     }
