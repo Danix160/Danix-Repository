@@ -30,7 +30,6 @@ class OnlineSerieTvProvider : MainAPI() {
             .replace("’", "'")
             .replace("‘", "'")
             .replace("L uomo ragno", "L'uomo ragno", ignoreCase = true)
-            .replace("Pokemon", "Pokémon", ignoreCase = true)
             .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
 
         val regexDaRimuovere =
