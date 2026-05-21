@@ -4,7 +4,6 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class MaxStream : ExtractorApi() {
     override val name = "MaxStream"
@@ -26,14 +25,14 @@ class MaxStream : ExtractorApi() {
         if (match != null) {
             val videoUrl = match.groupValues[1].replace("\"", "").trim()
 
+            // Utilizziamo il costruttore base senza i parametri opzionali bloccati
             callback.invoke(
-                newExtractorLink(
-                    this.name,
-                    this.name,
-                    videoUrl,
-                    referer = url,
-                    quality = Qualities.Unknown.value,
-                    isM3u8 = videoUrl.contains(".m3u8")
+                ExtractorLink(
+                    source = this.name,
+                    name = this.name,
+                    url = videoUrl,
+                    referer = url ?: "",
+                    quality = Qualities.Unknown.value
                 )
             )
         }
