@@ -95,7 +95,8 @@ class OnlineSerieTvProvider : MainAPI() {
             val poster = if (type == TvType.Movie) {
                 getTmdbMovieMetadata(titleOnly, year)?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
             } else {
-                val tmdb = getTmdbTvMetadata(titleOnly, year)
+                // Se la query riguarda Scooby, bypassa TMDB per evitare locandine errate
+                val tmdb = if (titleOnly.contains("scooby", ignoreCase = true)) null else getTmdbTvMetadata(titleOnly, year)
                 if (tmdb != null) {
                     "https://image.tmdb.org/t/p/w500${tmdb.posterPath}"
                 } else {
@@ -125,7 +126,7 @@ class OnlineSerieTvProvider : MainAPI() {
             val poster = if (type == TvType.Movie) {
                 getTmdbMovieMetadata(titleOnly, year)?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
             } else {
-                val tmdb = getTmdbTvMetadata(titleOnly, year)
+                val tmdb = if (titleOnly.contains("scooby", ignoreCase = true)) null else getTmdbTvMetadata(titleOnly, year)
                 if (tmdb != null) {
                     "https://image.tmdb.org/t/p/w500${tmdb.posterPath}"
                 } else {
@@ -161,10 +162,10 @@ class OnlineSerieTvProvider : MainAPI() {
         val sitePoster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: document.selectFirst(".imagen img")?.attr("src")
 
         if (url.contains("/serietv/") || !url.contains("/film/")) {
-            var tmdbData = getTmdbTvMetadata(titleOnly, year)
+            // Se è Scooby Doo, forziamo il fallimento di TMDB impostando tmdbData direttamente a null
+            val tmdbData = if (titleOnly.contains("scooby", ignoreCase = true)) null else getTmdbTvMetadata(titleOnly, year)
             var tvMazeData: TvMazeShow? = null
             
-            // FALLBACK SU TVMAZE: Se TMDB fallisce, interroghiamo TVMaze
             if (tmdbData == null) {
                 tvMazeData = getTvMazeMetadata(titleOnly, year)
             }
@@ -188,12 +189,12 @@ class OnlineSerieTvProvider : MainAPI() {
                     var epPlot: String? = null
                     var epPoster = sitePoster
 
-                    // Logica TMDB
+                    // Flusso Metadati TMDB
                     if (tmdbData != null) {
                         var checkSeason = season
                         while (true) {
                             if (!cachedStagioniTmdb.containsKey(checkSeason)) {
-                                val epsMap = getTmdbSeasonEpisodes(tmdbData!!.id, checkSeason)
+                                val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
                                 cachedStagioniTmdb[checkSeason] = epsMap
                                 cachedStagioniSizes[checkSeason] = epsMap?.size ?: 0
                             }
@@ -211,19 +212,19 @@ class OnlineSerieTvProvider : MainAPI() {
                             epName = tmdbEp.name
                             epPlot = tmdbEp.overview
                             epPoster = tmdbEp.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } 
-                                ?: "https://image.tmdb.org/t/p/w500${tmdbData!!.posterPath}"
+                                ?: "https://image.tmdb.org/t/p/w500${tmdbData.posterPath}"
                         }
                     } 
-                    // Logica di fallback TVMaze (Esempio: Scooby-Doo)
+                    // Flusso Metadati TVMaze (Attivo per Scooby o serie non trovate su TMDB)
                     else if (tvMazeData != null) {
                         if (cachedTvMazeEpisodes == null) {
-                            cachedTvMazeEpisodes = getTvMazeEpisodes(tvMazeData!!.id)
+                            cachedTvMazeEpisodes = getTvMazeEpisodes(tvMazeData.id)
                         }
                         val tvMazeEp = cachedTvMazeEpisodes?.firstOrNull { it.season == season && it.number == episode }
                         if (tvMazeEp != null) {
                             epName = tvMazeEp.name ?: epName
-                            epPlot = tvMazeEp.summary?.replace("<[^>]*>".toRegex(), "") // Rimuove tag HTML dalle sinossi di TVMaze
-                            epPoster = tvMazeEp.image?.medium ?: tvMazeData!!.image?.medium ?: sitePoster
+                            epPlot = tvMazeEp.summary?.replace("<[^>]*>".toRegex(), "") 
+                            epPoster = tvMazeEp.image?.medium ?: tvMazeData.image?.medium ?: sitePoster
                         }
                     }
 
@@ -294,13 +295,12 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // ==============================================
-    // STRATO DI RECUPERO METADATI TVMAZE (FALLBACK)
+    // STRATO DI RECUPERO METADATI TVMAZE
     // ==============================================
     private suspend fun getTvMazeMetadata(query: String, year: Int?): TvMazeShow? {
         val url = "$tvMazeBaseUrl/search/shows?q=${base64UrlEncode(query)}"
         return try {
             val response = app.get(url).parsed<List<TvMazeSearchResponse>>()
-            // Filtra cercando la corrispondenza esatta del titolo e opzionalmente dell'anno di debutto
             response.firstOrNull { 
                 isTitleMatching(query, it.show.name) && (year == null || it.show.premiered?.contains(year.toString()) == true)
             }?.show ?: response.firstOrNull { isTitleMatching(query, it.show.name) }?.show
