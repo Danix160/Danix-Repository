@@ -20,9 +20,9 @@ class OnlineSerieTvProvider : MainAPI() {
     private val tmdbBaseUrl = "https://api.themoviedb.org/3"
 
     override val mainPage = mainPageOf(
+        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime",
         "$mainUrl/movies" to "Film",
         "$mainUrl/serie-tv/" to "Serie TV",
-        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
     private fun cleanTitle(title: String): String {
@@ -120,20 +120,60 @@ class OnlineSerieTvProvider : MainAPI() {
         if (url.contains("/serietv/")) {
             val tmdbData = getTmdbTvMetadata(titleClean, year)
             val episodesList = mutableListOf<Episode>()
+            var epCount = 1
             
+            val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
+            val cachedStagioniSizes = mutableMapOf<Int, Int>()
+
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
                 if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
-                    episodesList.add(newEpisode(link) { this.name = "Episodio" })
+                    val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
+                    val match = """(\d+)x(\d+)""".toRegex().find(rowText)
+                    var season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    var episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
+
+                    if (tmdbData != null) {
+                        var checkSeason = season
+                        while (true) {
+                            if (!cachedStagioni.containsKey(checkSeason)) {
+                                val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
+                                cachedStagioni[checkSeason] = epsMap
+                                cachedStagioniSizes[checkSeason] = epsMap?.size ?: 0
+                            }
+                            val maxEpisodesInSeason = cachedStagioniSizes[checkSeason] ?: 0
+                            if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
+                                episode -= maxEpisodesInSeason
+                                checkSeason++
+                            } else {
+                                season = checkSeason
+                                break
+                            }
+                        }
+                    }
+                    
+                    val tmdbEp = cachedStagioni[season]?.get(episode)
+                    
+                    episodesList.add(newEpisode(link) {
+                        this.name = tmdbEp?.name ?: "Episodio $episode"
+                        this.season = season
+                        this.episode = episode
+                        this.description = tmdbEp?.overview
+                        // Prende la miniatura dell'episodio (stillPath), se manca usa il poster della serie, altrimenti quello del sito
+                        this.posterUrl = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } 
+                            ?: (tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster)
+                    })
                 }
             }
-            return newTvSeriesLoadResponse(tmdbData?.name ?: titleClean, url, TvType.TvSeries, episodesList) {
+            val finalTitle = (tmdbData?.name ?: titleClean) + if (isSubIta) " SUB ITA" else ""
+            return newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
                 this.plot = tmdbData?.overview ?: document.selectFirst("meta[property=og:description]")?.attr("content")
             }
         } else {
             val tmdbMovie = getTmdbMovieMetadata(titleClean, year)
-            return newMovieLoadResponse(tmdbMovie?.title ?: titleClean, url, TvType.Movie, url) {
+            val finalTitle = (tmdbMovie?.title ?: titleClean) + if (isSubIta) " SUB ITA" else ""
+            return newMovieLoadResponse(finalTitle, url, TvType.Movie, url) {
                 this.posterUrl = tmdbMovie?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
                 this.plot = tmdbMovie?.overview ?: document.selectFirst("meta[property=og:description]")?.attr("content")
             }
