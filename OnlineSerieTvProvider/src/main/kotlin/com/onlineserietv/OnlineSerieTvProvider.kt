@@ -3,7 +3,7 @@ package com.onlineserietv
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.ExtractorApi.loadExtractor
+import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
@@ -175,8 +175,8 @@ class OnlineSerieTvProvider : MainAPI() {
         val episodeData = parseJson<EpisodeData>(data)
         
         for (link in episodeData.videoLinks) {
-            // Chiamata corretta tramite l'estensione nativa sulla stringa dell'URL
-            link.loadExtractor(subtitleCallback, callback)
+            // Chiamata esplicita e sicura tramite l'oggetto ExtractorApi di Cloudstream
+            ExtractorApi.loadExtractor(link, subtitleCallback, callback)
         }
         return true
     }
