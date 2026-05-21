@@ -1,182 +1,181 @@
-package com.onlineserietv
+package com.onlineserietv // Cambia il package in base alla tua cartella di progetto
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.AppUtils.toJson
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import org.jsoup.nodes.Element
-import java.util.regex.Pattern
+import com.lagradost.cloudstream3.utils.loadExtractor
+import org.jsoup.nodes.Document
 
 class OnlineSerieTvProvider : MainAPI() {
     override var mainUrl = "https://onlineserietv.lol"
     override var name = "OnlineSerieTv"
     override val hasMainPage = true
+    override var lang = "it"
     override val hasChromecastSupport = true
-    override val supportedTypes = setOf(
-        TvType.Movie,
-        TvType.TvSeries
+    override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
+
+    override val mainPage = mainPageOf(
+        "$mainUrl/" to "Ultime Serie e Film",
+        "$mainUrl/serie-tv/" to "Serie TV",
     )
 
-    data class EpisodeData(
-        val videoLinks: List<String>
-    )
+    override suspend fun getMainPage(page: Int, request: HomePageRequest): HomePageResponse {
+        val document = app.get(request.data).document
+        val homeResults = mutableListOf<SearchResponse>()
 
-    // 1. GESTIONE HOME PAGE
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val document = app.get(mainUrl).document
-        val homePages = mutableListOf<HomePageList>()
-
-        val seriesElements = document.select("div.wp-block-uagb-post-grid article.uagb-post__inner-wrap")
-            .filter { it.selectFirst("h3.uagb-post__title a")?.attr("href")?.contains("/serietv/") == true }
-        
-        val seriesList = seriesElements.mapNotNull { element ->
-            element.toHomeSearchResult(TvType.TvSeries)
-        }
-        if (seriesList.isNotEmpty()) {
-            homePages.add(HomePageList("Ultime Serie Tv aggiunte o aggiornate", seriesList))
-        }
-
-        val moviesElements = document.select("div.wp-block-uagb-post-grid article.uagb-post__inner-wrap")
-            .filter { it.selectFirst("h3.uagb-post__title a")?.attr("href")?.contains("/film/") == true }
-
-        val moviesList = moviesElements.mapNotNull { element ->
-            element.toHomeSearchResult(TvType.Movie)
-        }
-        if (moviesList.isNotEmpty()) {
-            homePages.add(HomePageList("Ultimi Film aggiunti", moviesList))
-        }
-
-        return newHomePageResponse(homePages, hasNext = false)
-    }
-
-    private fun Element.toHomeSearchResult(type: TvType): SearchResponse? {
-        val titleElement = this.selectFirst("h3.uagb-post__title a") ?: return null
-        val title = titleElement.text().trim()
-        val url = titleElement.attr("href")
-        val poster = this.selectFirst("div.uagb-post__image img")?.attr("src") ?: ""
-
-        return if (type == TvType.Movie) {
-            newMovieSearchResponse(title, url, TvType.Movie) { this.posterUrl = poster }
-        } else {
-            newTvSeriesSearchResponse(title, url, TvType.TvSeries) { this.posterUrl = poster }
-        }
-    }
-
-    // 2. GESTIONE DELLA RICERCA
-    override suspend fun search(query: String): List<SearchResponse> {
-        val searchUrl = "$mainUrl/?s=${query.replace(" ", "+")}"
-        val document = app.get(searchUrl).document
-        
-        return document.select("div#box_movies div.movie").mapNotNull { element ->
-            val linkElement = element.selectFirst("div.imagen a") ?: return@mapNotNull null
-            val url = linkElement.attr("href")
-            val title = element.selectFirst("h2")?.text()?.trim() ?: ""
-            val poster = element.selectFirst("div.imagen img")?.attr("src") ?: ""
+        // Selettore 1: Struttura dei blocchi in Home (uagb-post)
+        document.select(".uagb-post__inner-wrap").forEach { element ->
+            val titleEl = element.selectFirst(".uagb-post__title a")
+            val title = titleEl?.text() ?: return@forEach
+            val url = titleEl.attr("href")
+            val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
             
-            val type = if (url.contains("/serietv/")) TvType.TvSeries else TvType.Movie
+            val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
 
-            if (type == TvType.Movie) {
+            homeResults.add(
                 newMovieSearchResponse(title, url, TvType.Movie) {
                     this.posterUrl = poster
+                    this.type = type
                 }
-            } else {
-                newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
-                    this.posterUrl = poster
-                }
-            }
+            )
         }
+
+        // Selettore 2: Struttura classica dei blocchi standard (.movie)
+        document.select(".movie").forEach { element ->
+            val title = element.selectFirst("h2")?.text() ?: return@forEach
+            val linkEl = element.selectFirst(".imagen a") ?: element.selectFirst("a")
+            val url = linkEl?.attr("href") ?: return@forEach
+            val poster = element.selectFirst("img")?.attr("src")
+
+            val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+
+            homeResults.add(
+                newMovieSearchResponse(title, url, TvType.Movie) {
+                    this.posterUrl = poster
+                    this.type = type
+                }
+            )
+        }
+
+        return newHomePageResponse(request.name, homeResults)
     }
 
-    // 3. CARICAMENTO DEI METADATI
-    override suspend fun load(url: String): LoadResponse? {
+    override suspend fun search(query: String): List<SearchResponse> {
+        // Il sito usa la query di ricerca classica di WordPress ?s=query
+        val document = app.get("$mainUrl/?s=$query").document
+        val results = mutableListOf<SearchResponse>()
+
+        // Parsing dei risultati di ricerca (struttura .movie da cerca.txt)
+        document.select(".movie").forEach { element ->
+            val title = element.selectFirst("h2")?.text() ?: return@forEach
+            val url = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
+            val poster = element.selectFirst("img")?.attr("src")
+
+            val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+
+            results.add(
+                newMovieSearchResponse(title, url, TvType.Movie) {
+                    this.posterUrl = poster
+                    this.type = type
+                }
+            )
+        }
+        
+        // Fallback per risultati strutturati come uagb-post
+        document.select(".uagb-post__inner-wrap").forEach { element ->
+            val titleEl = element.selectFirst(".uagb-post__title a")
+            val title = titleEl?.text() ?: return@forEach
+            val url = titleEl.attr("href")
+            val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
+            
+            val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+
+            results.add(
+                newMovieSearchResponse(title, url, TvType.Movie) {
+                    this.posterUrl = poster
+                    this.type = type
+                }
+            )
+        }
+
+        return results
+    }
+
+    override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
+        val title = document.selectFirst("h1")?.text() 
+            ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.replace(" in streaming - OnlineSerieTv", "") 
+            ?: "Senza Titolo"
         
-        val title = document.selectFirst("meta[property=og:title]")?.attr("content")
-            ?.replace(" in streaming - OnlineSerieTv", "")?.trim() 
-            ?: document.selectFirst("h2")?.text()?.trim() 
-            ?: return null
+        val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
+            ?: document.selectFirst(".imagen img")?.attr("src")
+            
+        val description = document.selectFirst("meta[property=og:description]")?.attr("content")
+            ?: document.selectFirst(".tsll p")?.text()
 
-        val poster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: ""
-        
-        val description = document.selectFirst("b:contains(Trama)")?.nextElementSibling()?.text()?.trim()
-            ?: document.selectFirst("div.tsll p")?.text()?.trim()
-            ?: document.select("div.entry-content p").firstOrNull { it.text().contains("Trama") || it.text().length > 50 }?.text()?.trim()
-
-        val episodeTable = document.selectFirst("table")
-        
-        if (episodeTable != null) {
+        return if (url.contains("/serietv/")) {
+            // Struttura Serie TV: Generiamo gli episodi partendo dalle tabelle dei link
             val episodesList = mutableListOf<Episode>()
-            val rows = episodeTable.select("tr")
+            
+            // Seleziona tutte le righe della tabella o i link che contengono la dicitura Stagione/Episodio (es. 01x01)
+            var epCount = 1
+            document.select("table tr, div.data-content a, td a").forEach { element ->
+                val link = element.attr("href")
+                // Filtriamo per i link di streaming esterni (es. uprot, streamtape, maxstream, flexy)
+                if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
+                    // Proviamo ad estrarre il nome dell'episodio dal testo circostante o dal tag della riga
+                    val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
+                    
+                    // Cerchiamo pattern tipo 01x02 per capire stagione ed episodio
+                    val match = "(\\d+)x(\\d+)".toRegex().find(rowText)
+                    val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-            for (row in rows) {
-                val cols = row.select("td")
-                if (cols.isEmpty()) continue
-
-                val epText = cols[0].text().trim()
-                val matcher = Pattern.compile("(\\d+)x(\\d+)").matcher(epText)
-                if (matcher.find()) {
-                    val seasonNumber = matcher.group(1).toIntOrNull() ?: 1
-                    val episodeNumber = matcher.group(2).toIntOrNull() ?: 1
-
-                    val links = cols.drop(1).mapNotNull { col ->
-                        col.selectFirst("a")?.attr("href")
-                    }.filter { it.isNotEmpty() }
-
-                    if (links.isNotEmpty()) {
-                        episodesList.add(newEpisode(EpisodeData(links).toJson()) {
-                            this.name = epText
-                            this.season = seasonNumber
-                            this.episode = episodeNumber
-                        })
-                    }
+                    // Per evitare duplicati dello stesso episodio con host differenti, 
+                    // usiamo come data il link completo inserendolo nel campo data dell'episodio
+                    episodesList.add(
+                        Episode(
+                            data = link,
+                            name = "Episodio $episode",
+                            season = season,
+                            episode = episode
+                        )
+                    )
                 }
             }
 
-            return newTvSeriesLoadResponse(
-                name = title,
-                url = url,
-                type = TvType.TvSeries,
-                episodes = episodesList
-            ) {
+            // Raggruppiamo per stagione/episodio se necessario o passiamo la lista pulita
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
                 this.plot = description
             }
         } else {
-            val entryContent = document.selectFirst("div.entry-content") ?: document.body()
-            val movieLinks = entryContent.select("a").mapNotNull { element ->
-                val href = element.attr("href")
-                if (href.isNotEmpty() && !href.contains(mainUrl) && !href.contains("facebook") && !href.contains("twitter")) {
-                    href
-                } else null
-            }.distinct()
-
-            if (movieLinks.isEmpty()) return null
-
-            return newMovieLoadResponse(
-                name = title,
-                url = url,
-                type = TvType.Movie,
-                dataUrl = EpisodeData(movieLinks).toJson()
-            ) {
+            // Struttura Film
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = description
             }
         }
     }
 
-    // 4. ESTRAZIONE FINALE DEI LINK VIDEO
     override suspend fun loadLinks(
         data: String,
-        isCasting: Boolean,
+        isCaster: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val episodeData = parseJson<EpisodeData>(data)
-        
-        for (link in episodeData.videoLinks) {
-            // Chiamata esplicita e sicura tramite l'oggetto ExtractorApi di Cloudstream
-            ExtractorApi.loadExtractor(link, subtitleCallback, callback)
+        // Se stiamo gestendo una serie tv, 'data' conterrà già il link dell'host estratto dall'episodio.
+        // Se è un film, 'data' sarà l'URL della pagina del film, quindi dobbiamo estrarre i link dalla pagina.
+        if (data.contains("/film/")) {
+            val document = app.get(data).document
+            document.select("a").forEach { element ->
+                val link = element.attr("href")
+                if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
+                    loadExtractor(link, mainUrl, subtitleCallback, callback)
+                }
+            }
+        } else {
+            // È un link diretto a un host/redirector estratto precedentemente dall'episodio
+            loadExtractor(data, mainUrl, subtitleCallback, callback)
         }
         return true
     }
