@@ -23,6 +23,36 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/movies" to "Film",
         "$mainUrl/serie-tv/" to "Serie TV"
     )
+    
+     private fun cleanTitle(title: String): String {
+        var cleaned = title
+            .replace("’", "'")
+            .replace("‘", "'")
+            .replace("L uomo ragno", "L'uomo ragno", ignoreCase = true)
+            .replace("Pokemon", "Pokémon", ignoreCase = true)
+            .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
+            
+        val regexDaRimuovere = """(?i)\b(serie animata|serie tv|animazione|in streaming|online|hdtv|web-dl)\b""".toRegex()
+        
+        cleaned = cleaned
+            .replace(regexDaRimuovere, "")
+            .replace("""(?i)\bSUB[- ]?ITA\b""".toRegex(), "")
+            .replace("""(?i)\b(ITA|STAGIONE \d+|STAGIONE)\b""".toRegex(), "")
+            .replace("""\s*[\(\[-]?\s*(19|20)\d{2}\s*[\)\]-]?\s*""".toRegex(), " ")
+            .replace("""\s*[-–—:|]+\s*$""".toRegex(), "") 
+            .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
+            .replace("""\s+""".toRegex(), " ")
+            .replace("'", "")
+            .trim()
+
+        return cleaned
+    }
+
+    private fun extractYear(title: String): Int? {
+        val match = """(19|20)\d{2}""".toRegex().find(title)
+        return match?.value?.toIntOrNull()
+    }
+
     // ---------------------------------------------------------
     // TVMAZE DATA CLASSES
     // ---------------------------------------------------------
