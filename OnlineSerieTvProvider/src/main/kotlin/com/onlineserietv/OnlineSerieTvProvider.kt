@@ -5,7 +5,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.mvvm.parallelMap // Utilizza il parallelMap interno di Cloudstream
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.net.URLEncoder
 
@@ -204,7 +203,9 @@ class OnlineSerieTvProvider : MainAPI() {
         val finalSitePlot = siteDescription?.replace("(?i)^Trama:\\s*".toRegex(), "")?.trim()
 
         if (!isMovie) {
+            // Unico recupero dati principali da TMDB (Metadati e Poster Generali della serie)
             val tmdbData = getTmdbTvMetadata(titleClean, siteYear)
+            val globalPoster = tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
             val episodesList = mutableListOf<Episode>()
             
             val validElements = document.select("table tr, div.data-content a, td a").filter { element ->
@@ -212,76 +213,28 @@ class OnlineSerieTvProvider : MainAPI() {
                 link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))
             }
 
-            val detectedSeasons = mutableSetOf<Int>()
             var backupEpCount = 1
-            
-            val parsedElementsData = validElements.map { element ->
+
+            // PARSING ISTANTANEO: Genera gli episodi direttamente dai dati locali della pagina
+            validElements.forEach { element ->
                 val link = element.attr("href")
                 val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
+                
                 val match = """(\d+)x(\d+)""".toRegex().find(rowText)
                 val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: backupEpCount++
-                detectedSeasons.add(season)
-                Triple(link, season, episode)
-            }
-
-            val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
-            val cachedStagioniSizes = mutableMapOf<Int, Int>()
-
-            // OTTIMIZZAZIONE FULMINEA: Scarica i dati di tutte le stagioni in PARALLELO usando parallelMap di Cloudstream
-            if (tmdbData != null && detectedSeasons.isNotEmpty()) {
-                detectedSeasons.toList().parallelMap { season ->
-                    val epsMap = getTmdbSeasonEpisodes(tmdbData.id, season)
-                    Pair(season, epsMap)
-                }.forEach { (season, epsMap) ->
-                    cachedStagioni[season] = epsMap
-                    cachedStagioniSizes[season] = epsMap?.size ?: 0
-                }
-            }
-
-            parsedElementsData.forEach { (link, initialSeason, initialEpisode) ->
-                var season = initialSeason
-                var episode = initialEpisode
-
-                if (tmdbData != null) {
-                    var checkSeason = season
-                    while (true) {
-                        val maxEpisodesInSeason = cachedStagioniSizes[checkSeason] ?: 0
-                        if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
-                            episode -= maxEpisodesInSeason
-                            checkSeason++
-                            
-                            // Se mancano dati della stagione successiva (es. sforamento), la recuperiamo al volo in sicurezza
-                            if (!cachedStagioni.containsKey(checkSeason)) {
-                                val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
-                                cachedStagioni[checkSeason] = epsMap
-                                cachedStagioniSizes[checkSeason] = epsMap?.size ?: 0
-                            }
-                        } else {
-                            season = checkSeason
-                            break
-                        }
-                        if (maxEpisodesInSeason == 0) break
-                    }
-                }
-
-                val tmdbEp = if (tmdbData != null) cachedStagioni[season]?.get(episode) else null
-                val episodePoster = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" }
-                    ?: tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
-                    ?: sitePoster
 
                 episodesList.add(newEpisode(link) {
-                    this.name = tmdbEp?.name ?: "Episodio $episode"
+                    this.name = "Episodio $episode"
                     this.season = season
                     this.episode = episode
-                    this.description = tmdbEp?.overview
-                    this.posterUrl = episodePoster
+                    this.posterUrl = globalPoster
                 })
             }
 
             val finalTitle = (tmdbData?.name ?: titleClean) + if (isSubIta) " SUB ITA" else ""
             return newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, episodesList) {
-                this.posterUrl = tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
+                this.posterUrl = globalPoster
                 this.plot = tmdbData?.overview ?: finalSitePlot
             }
         } else {
@@ -342,12 +295,6 @@ class OnlineSerieTvProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    private suspend fun getTmdbSeasonEpisodes(tvId: Int, season: Int): Map<Int, TmdbEpisode>? {
-        return try {
-            app.get("$tmdbBaseUrl/tv/$tvId/season/$season?api_key=$tmdbApiKey&language=it-IT").parsed<TmdbSeasonResponse>().episodes?.associateBy { it.episodeNumber }
-        } catch (e: Exception) { null }
-    }
-
     data class TmdbMovieResponse(val results: List<TmdbMovieResult>?)
     data class TmdbMovieResult(
         val title: String, 
@@ -363,6 +310,4 @@ class OnlineSerieTvProvider : MainAPI() {
         @JsonProperty("poster_path") val posterPath: String?,
         @JsonProperty("first_air_date") val firstAirDate: String?
     )
-    data class TmdbSeasonResponse(val episodes: List<TmdbEpisode>?)
-    data class TmdbEpisode(val name: String, val overview: String?, @JsonProperty("episode_number") val episodeNumber: Int, @JsonProperty("still_path") val stillPath: String?)
 }
