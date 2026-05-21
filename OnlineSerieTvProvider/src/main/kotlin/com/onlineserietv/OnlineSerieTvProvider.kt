@@ -22,15 +22,34 @@ class OnlineSerieTvProvider : MainAPI() {
     )
 
     /**
-     * Rimuove l'anno (es. "(2024)", "[2025]" o "2026") e i suffissi del sito dal titolo
+     * Rimuove l'anno, tag come STAGIONE e suffissi del sito,
+     * ma mantiene e formatta la dicitura SUB ITA alla fine del titolo.
      */
     private fun cleanTitle(title: String): String {
-        return title
+        // Controlla se il titolo originale contiene "SUB ITA" o "SUB-ITA"
+        val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
+
+        var cleaned = title
             .replace(" in streaming - OnlineSerieTv", "")
-            .replace("""\s*[\(\[-]\s*(19|20)\d{2}\s*[\)\]-]\s*""".toRegex(), " ") // Rimuove (2024) o [2024]
-            .replace("""\s*(19|20)\d{2}\s*$""".toRegex(), "")                     // Rimuove l'anno isolato alla fine
-            .replace("""\s*[-–]\s*$""".toRegex(), "")                             // Rimuove trattini orfani rimasti alla fine
+            // Rimuove esplicitamente SUB ITA temporaneamente per non incasinare la pulizia dell'anno
+            .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
+            // Rimuove scritte inutili come ITA, STAGIONE 1, STAGIONE, ecc.
+            .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
+            // Rimuove l'anno (es. 2024, (2025), [2026]) ovunque si trovi
+            .replace("""\s*[\(\[-]?\s*(19|20)\d{2}\s*[\)\]-]?\s*""".toRegex(), " ")
+            // Rimuove trattini o simboli rimasti isolati prima o dopo
+            .replace("""\s*[-–—:|]+\s*$""".toRegex(), "") 
+            .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
+            // Sostituisce spazi multipli con uno singolo
+            .replace("""\s+""".toRegex(), " ")
             .trim()
+
+        // Se originariamente c'era SUB ITA, lo riaggiunge formattato bene in coda
+        if (isSubIta) {
+            cleaned = "$cleaned SUB ITA"
+        }
+
+        return cleaned
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
@@ -148,30 +167,25 @@ class OnlineSerieTvProvider : MainAPI() {
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
 
-        // NUOVA LOGICA: Cerca selettivamente i tag <p> dentro la descrizione
+        // Sistema di estrazione trama multi-livello
         var description: String? = null
         
-        // Tentativo 1: Trova l'elemento che contiene la parola "Trama" e prendiamo il paragrafo successivo
         val tramaElement = document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
         if (tramaElement != null) {
-            // Cerchiamo il primo tag <p> che si trova dopo il blocco "Trama"
             description = tramaElement.nextElementSibling()?.selectFirst("p")?.text()
                 ?: tramaElement.nextElementSiblings().firstOrNull { it.tagName() == "p" }?.text()
         }
 
-        // Tentativo 2 (Fallback): Se il primo tentativo fallisce, analizziamo tutti i tag <p> e prendiamo quello valido
         if (description.isNullOrBlank()) {
             description = document.select("div.tsll p, .entry-content p, .post-content p, div.post p")
                 .map { it.text().trim() }
                 .firstOrNull { it.length > 30 && !it.contains("generato") && !it.contains("creata da") && !it.contains("visto in streaming") }
         }
 
-        // Tentativo 3 (Fallback estremo): Meta tag og:description della pagina
         if (description.isNullOrBlank()) {
             description = document.selectFirst("meta[property=og:description]")?.attr("content")
         }
 
-        // Pulizia finale da scritte residue
         val finalDescription = description?.replace("(?i)^Trama:\\s*".toRegex(), "")?.trim()
 
         return if (url.contains("/serietv/")) {
