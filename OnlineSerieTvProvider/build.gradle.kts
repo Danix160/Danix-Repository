@@ -11,7 +11,7 @@ cloudstream {
     extra["prefix"] = "OnlineSerieTV"
     extra["displayName"] = "OnlineSerieTV"
     
-    version = 1
+    version = 2
     description = "OnlineSerieTV Prova"
     authors = listOf("Danix")
     
