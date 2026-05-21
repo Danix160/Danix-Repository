@@ -78,15 +78,13 @@ class OnlineSerieTvProvider : MainAPI() {
 
    override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 10 // Puoi aumentare o diminuire questo limite a piacimento
+        val maxPagesToSearch = 10
 
         for (page in 1..maxPagesToSearch) {
             try {
-                // Costruiamo l'URL per la pagina corrente. Esempio: https://onlineserietv.lol/page/2/?s=query
                 val url = if (page == 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
                 val response = app.get(url)
                 
-                // Se la pagina non esiste (es. 404), ci fermiamo
                 if (response.code != 200) break
                 
                 val document = response.document
@@ -127,20 +125,15 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
 
-                // Se in questa pagina non abbiamo trovato alcun elemento nuovo, 
-                // significa che siamo andati oltre l'ultima pagina disponibile. Interrompiamo il ciclo.
                 if (results.size == initialCount) {
                     break
                 }
 
             } catch (e: Exception) {
-                // In caso di errore di rete su una pagina successiva, interrompiamo il ciclo 
-                // per salvare i risultati ottenuti fino a quel momento
                 break
             }
         }
 
-        // Ritorna la lista combinata di tutte le pagine scansionate, ripulita da eventuali duplicati
         return results.distinctBy { it.url }
     }
 
@@ -155,8 +148,12 @@ class OnlineSerieTvProvider : MainAPI() {
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
             
-        val description = document.selectFirst("meta[property=og:description]")?.attr("content")
-            ?: document.selectFirst(".tsll p")?.text()
+        // Estrazione e pulizia avanzata della trama
+        val description = document.select("div.tsll p, .entry-content p, .post-content p")
+            .map { it.text().trim() }
+            .firstOrNull { it.length > 20 && !it.startsWith("Regia:") && !it.startsWith("Genere:") }
+            ?.replace("(?i)^Trama:\\s*".toRegex(), "") // Rimuove l'eventuale scritta "Trama:" iniziale
+            ?: document.selectFirst("meta[property=og:description]")?.attr("content")
 
         return if (url.contains("/serietv/")) {
             val episodesList = mutableListOf<Episode>()
@@ -176,7 +173,7 @@ class OnlineSerieTvProvider : MainAPI() {
                             this.name = "Episodio $episode"
                             this.season = season
                             this.episode = episode
-                            this.posterUrl = poster
+                            this.posterUrl = poster // Poster impostato correttamente
                         }
                     )
                 }
@@ -205,12 +202,10 @@ class OnlineSerieTvProvider : MainAPI() {
             document.select("a").forEach { element ->
                 val link = element.attr("href")
                 if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
-                    // Rimosso ExtractorApi. e invocato direttamente il metodo globale
                     loadExtractor(link, mainUrl, subtitleCallback, callback)
                 }
             }
         } else {
-            // Rimosso ExtractorApi. e invocato direttamente il metodo globale
             loadExtractor(data, mainUrl, subtitleCallback, callback)
         }
         return true
