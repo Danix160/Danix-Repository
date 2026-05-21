@@ -82,7 +82,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
    override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 10
+        val maxPagesToSearch = 5
 
         for (page in 1..maxPagesToSearch) {
             try {
@@ -134,67 +134,49 @@ class OnlineSerieTvProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-        val rawTitle = document.selectFirst("h1")?.text() 
-            ?: document.selectFirst("meta[property=og:title]")?.attr("content")
-            ?: "Senza Titolo"
-        
+        val rawTitle = document.selectFirst("h1")?.text() ?: "Senza Titolo"
         val title = cleanTitle(rawTitle)
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-            ?: document.selectFirst(".imagen img")?.attr("src")
-
-        var description: String? = null
-        val tramaElement = document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
-        if (tramaElement != null) {
-            description = tramaElement.nextElementSibling()?.selectFirst("p")?.text()
-                ?: tramaElement.nextElementSiblings().firstOrNull { it.tagName() == "p" }?.text()
-        }
-
-        if (description.isNullOrBlank()) {
-            description = document.select("div.tsll p, .entry-content p, .post-content p, div.post p")
-                .map { it.text().trim() }
-                .firstOrNull { it.length > 30 && !it.contains("generato") && !it.contains("creata da") && !it.contains("visto in streaming") }
-        }
-
-        if (description.isNullOrBlank()) {
-            description = document.selectFirst("meta[property=og:description]")?.attr("content")
-        }
-
-        val finalDescription = description?.replace("(?i)^Trama:\\s*".toRegex(), "")?.trim()
+        val description = document.selectFirst("meta[property=og:description]")?.attr("content")
 
         return if (url.contains("/serietv/")) {
             val episodesList = mutableListOf<Episode>()
-            var epCount = 1
+            var currentSeason = 1
             
-            // OTTIMIZZAZIONE: Leggiamo direttamente gli elementi a senza chiamate strutturali pesanti all'indietro (parents)
-            document.select("table tr td a, div.data-content a, td a").forEach { element ->
-                val link = element.attr("href")
-                if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
-                    // Estrarre la stringa descrittiva direttamente dal testo visibile o dall'attributo, evitando cicli parents()
-                    val rowText = element.text()
-                    
-                    val match = "(\\d+)x(\\d+)".toRegex().find(rowText)
-                    val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
+            // Analisi righe tabella per stagioni e link MaxStream (msf)
+            document.select("table tr").forEach { row ->
+                // Check cambio stagione
+                val header = row.selectFirst("td[colspan=4] b")
+                if (header != null) {
+                    val seasonMatch = "Stagione (\\d+)".toRegex().find(header.text())
+                    if (seasonMatch != null) {
+                        currentSeason = seasonMatch.groupValues[1].toIntOrNull() ?: 1
+                    }
+                }
 
-                    episodesList.add(
-                        newEpisode(link) {
-                            this.name = "Episodio $episode"
-                            this.season = season
-                            this.episode = episode
-                            this.posterUrl = poster
-                        }
-                    )
+                // Cerca link MaxStream (msf)
+                val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
+                if (maxStreamLink != null) {
+                    val fullText = row.selectFirst("td")?.text() ?: ""
+                    val epMatch = "(\\d+)x(\\d+)".toRegex().find(fullText)
+                    val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodesList.size + 1)
+
+                    episodesList.add(newEpisode(maxStreamLink.attr("href")) {
+                        this.name = "Episodio $episodeNumber"
+                        this.season = currentSeason
+                        this.episode = episodeNumber
+                        this.posterUrl = poster
+                    })
                 }
             }
-
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
-                this.plot = finalDescription
+                this.plot = description
             }
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
-                this.plot = finalDescription
+                this.plot = description
             }
         }
     }
