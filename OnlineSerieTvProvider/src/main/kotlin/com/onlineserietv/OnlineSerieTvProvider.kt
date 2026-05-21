@@ -41,7 +41,7 @@ class OnlineSerieTvProvider : MainAPI() {
         document.select(".uagb-post__inner-wrap").forEach { element ->
             val titleEl = element.selectFirst(".uagb-post__title a")
             val rawTitle = titleEl?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle)
+            val title = cleanTitle(rawTitle) // Titolo Pulito
             val url = titleEl.attr("href")
             val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
             
@@ -58,7 +58,7 @@ class OnlineSerieTvProvider : MainAPI() {
         // Selettore 2: Struttura classica dei blocchi standard (.movie)
         document.select(".movie").forEach { element ->
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle)
+            val title = cleanTitle(rawTitle) // Titolo Pulito
             val linkEl = element.selectFirst(".imagen a") ?: element.selectFirst("a")
             val url = linkEl?.attr("href") ?: return@forEach
             val poster = element.selectFirst("img")?.attr("src")
@@ -78,13 +78,15 @@ class OnlineSerieTvProvider : MainAPI() {
 
    override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 10
+        val maxPagesToSearch = 10 // Puoi aumentare o diminuire questo limite a piacimento
 
         for (page in 1..maxPagesToSearch) {
             try {
+                // Costruiamo l'URL per la pagina corrente. Esempio: https://onlineserietv.lol/page/2/?s=query
                 val url = if (page == 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
                 val response = app.get(url)
                 
+                // Se la pagina non esiste (es. 404), ci fermiamo
                 if (response.code != 200) break
                 
                 val document = response.document
@@ -93,7 +95,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 // 1. Parsing dei risultati di ricerca (struttura .movie)
                 document.select(".movie").forEach { element ->
                     val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle)
+                    val title = cleanTitle(rawTitle) // Titolo Pulito
                     val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
                     val poster = element.selectFirst("img")?.attr("src")
 
@@ -111,7 +113,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
                     val rawTitle = titleEl?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle)
+                    val title = cleanTitle(rawTitle) // Titolo Pulito
                     val targetUrl = titleEl.attr("href")
                     val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
                     
@@ -125,15 +127,20 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
 
+                // Se in questa pagina non abbiamo trovato alcun elemento nuovo, 
+                // significa che siamo andati oltre l'ultima pagina disponibile. Interrompiamo il ciclo.
                 if (results.size == initialCount) {
                     break
                 }
 
             } catch (e: Exception) {
+                // In caso di errore di rete su una pagina successiva, interrompiamo il ciclo 
+                // per salvare i risultati ottenuti fino a quel momento
                 break
             }
         }
 
+        // Ritorna la lista combinata di tutte le pagine scansionate, ripulita da eventuali duplicati
         return results.distinctBy { it.url }
     }
 
@@ -143,7 +150,7 @@ class OnlineSerieTvProvider : MainAPI() {
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")
             ?: "Senza Titolo"
         
-        val title = cleanTitle(rawTitle)
+        val title = cleanTitle(rawTitle) // Titolo Pulito
         
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
@@ -164,15 +171,13 @@ class OnlineSerieTvProvider : MainAPI() {
                     val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-                    // Aggiunto posterUrl all'interno dell'oggetto dell'episodio
                     episodesList.add(
-                        Episode(
-                            data = link,
-                            name = "Episodio $episode",
-                            season = season,
-                            episode = episode,
-                            posterUrl = poster // Imposta il poster globale della serie per ogni episodio
-                        )
+                        newEpisode(link) {
+                            this.name = "Episodio $episode"
+                            this.season = season
+                            this.episode = episode
+                            this.posterUrl = poster
+                        }
                     )
                 }
             }
@@ -200,10 +205,12 @@ class OnlineSerieTvProvider : MainAPI() {
             document.select("a").forEach { element ->
                 val link = element.attr("href")
                 if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
+                    // Rimosso ExtractorApi. e invocato direttamente il metodo globale
                     loadExtractor(link, mainUrl, subtitleCallback, callback)
                 }
             }
         } else {
+            // Rimosso ExtractorApi. e invocato direttamente il metodo globale
             loadExtractor(data, mainUrl, subtitleCallback, callback)
         }
         return true
