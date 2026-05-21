@@ -46,7 +46,23 @@ class OnlineSerieTvProvider : MainAPI() {
         return match?.value?.toIntOrNull()
     }
 
-    // Forza il recupero del poster da TMDB per la Home Page
+    /**
+     * Verifica se il titolo trovato su TMDB è coerente con quello cercato.
+     * Evita che la ricerca di "Batman" restituisca "Superman".
+     */
+    private fun isTitleMatching(query: String, tmdbTitle: String): Boolean {
+        val q = query.lowercase().replace("[^a-z0-9]".toRegex(), "")
+        val t = tmdbTitle.lowercase().replace("[^a-z0-9]".toRegex(), "")
+        
+        // Se uno dei due titoli contiene l'altro, o se condividono le parole chiave principali, è valido
+        if (q.contains(t) || t.contains(q)) return true
+        
+        // Controllo sulle singole parole (almeno una parola significativa deve coincidere)
+        val queryWords = query.lowercase().split(" ").filter { it.length > 3 }
+        val tmdbWords = tmdbTitle.lowercase().split(" ").filter { it.length > 3 }
+        return queryWords.any { tmdbWords.contains(it) }
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
@@ -58,7 +74,6 @@ class OnlineSerieTvProvider : MainAPI() {
             val url = titleEl.attr("href")
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
             
-            // Chiamata TMDB per avere il poster corretto in Home
             val titleOnly = title.replace(" SUB ITA", "").trim()
             val year = extractYear(rawTitle)
             val tmdbPoster = if (type == TvType.Movie) {
@@ -78,7 +93,6 @@ class OnlineSerieTvProvider : MainAPI() {
             val url = linkEl?.attr("href") ?: return@forEach
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
             
-            // Chiamata TMDB per avere il poster corretto in Home
             val titleOnly = title.replace(" SUB ITA", "").trim()
             val year = extractYear(rawTitle)
             val tmdbPoster = if (type == TvType.Movie) {
@@ -94,7 +108,6 @@ class OnlineSerieTvProvider : MainAPI() {
         return newHomePageResponse(request.name, homeResults)
     }
 
-    // Forza il recupero del poster da TMDB per i risultati di Ricerca
     override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
         val url = "$mainUrl/?s=$query"
@@ -106,7 +119,6 @@ class OnlineSerieTvProvider : MainAPI() {
             val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
             val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
             
-            // Chiamata TMDB per avere il poster corretto nella Ricerca
             val titleOnly = title.replace(" SUB ITA", "").trim()
             val year = extractYear(rawTitle)
             val tmdbPoster = if (type == TvType.Movie) {
@@ -138,7 +150,7 @@ class OnlineSerieTvProvider : MainAPI() {
             var epCount = 1
             
             val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
-            val cachedStagioniSizes = mutableMapOf<Int, Int>() // Mappa per tracciare quanti episodi ha davvero ogni stagione su TMDB
+            val cachedStagioniSizes = mutableMapOf<Int, Int>()
 
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
@@ -149,11 +161,9 @@ class OnlineSerieTvProvider : MainAPI() {
                     var season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     var episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-                    // SISTEMA DI RE-INDICIZZAZIONE AUTOMATICA DELLE STAGIONI
                     if (tmdbData != null) {
                         var checkSeason = season
                         while (true) {
-                            // Scarica le info della stagione se non sono in cache
                             if (!cachedStagioni.containsKey(checkSeason)) {
                                 val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
                                 cachedStagioni[checkSeason] = epsMap
@@ -162,12 +172,10 @@ class OnlineSerieTvProvider : MainAPI() {
 
                             val maxEpisodesInSeason = cachedStagioniSizes[checkSeason] ?: 0
 
-                            // Se il sito dice che l'episodio è ad esempio il 14, ma la stagione su TMDB si ferma a 13
                             if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
-                                episode -= maxEpisodesInSeason // Scala l'episodio (es. 14 - 13 = 1)
-                                checkSeason++                  // Passa alla stagione successiva (es. Stagione 2)
+                                episode -= maxEpisodesInSeason
+                                checkSeason++
                             } else {
-                                // Trovata la stagione corretta su TMDB!
                                 season = checkSeason
                                 break
                             }
@@ -226,7 +234,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // ==========================================
-    // METODI API THE MOVIE DATABASE (TMDB)
+    // METODI API THE MOVIE DATABASE (TMDB) AGGIORNATI
     // ==========================================
 
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
@@ -234,7 +242,10 @@ class OnlineSerieTvProvider : MainAPI() {
             val yearParam = if (year != null) "&year=$year" else ""
             val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
             val response = app.get(url).parsed<TmdbMovieResponse>()
-            response.results?.firstOrNull()
+            
+            // Cerca il primo risultato che rispetti la validazione del titolo
+            response.results?.firstOrNull { isTitleMatching(query, it.title) } 
+                ?: response.results?.firstOrNull() // Fallback sul primo assoluto se nessuno passa il filtro
         } catch (e: Exception) { null }
     }
 
@@ -243,7 +254,10 @@ class OnlineSerieTvProvider : MainAPI() {
             val yearParam = if (year != null) "&first_air_date_year=$year" else ""
             val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
             val response = app.get(url).parsed<TmdbTvResponse>()
-            response.results?.firstOrNull()
+            
+            // Cerca il primo risultato coerente con il nome della serie
+            response.results?.firstOrNull { isTitleMatching(query, it.name) } 
+                ?: response.results?.firstOrNull() // Fallback
         } catch (e: Exception) { null }
     }
 
