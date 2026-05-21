@@ -25,10 +25,6 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
-    /**
-     * Rimuove l'anno, tag come STAGIONE e suffissi del sito,
-     * ma mantiene e formatta la dicitura SUB ITA alla fine del titolo.
-     */
     private fun cleanTitle(title: String): String {
         val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
         var cleaned = title
@@ -45,14 +41,12 @@ class OnlineSerieTvProvider : MainAPI() {
         return cleaned
     }
 
-    /**
-     * Estrae l'anno dal titolo originale del sito (utile per migliorare l'accuratezza di TMDB)
-     */
     private fun extractYear(title: String): Int? {
         val match = """(19|20)\d{2}""".toRegex().find(title)
         return match?.value?.toIntOrNull()
     }
 
+    // Forza il recupero del poster da TMDB per la Home Page
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
@@ -62,8 +56,17 @@ class OnlineSerieTvProvider : MainAPI() {
             val rawTitle = titleEl?.text() ?: return@forEach
             val title = cleanTitle(rawTitle)
             val url = titleEl.attr("href")
-            val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+            
+            // Chiamata TMDB per avere il poster corretto in Home
+            val titleOnly = title.replace(" SUB ITA", "").trim()
+            val year = extractYear(rawTitle)
+            val tmdbPoster = if (type == TvType.Movie) {
+                getTmdbMovieMetadata(titleOnly, year)?.posterPath
+            } else {
+                getTmdbTvMetadata(titleOnly, year)?.posterPath
+            }
+            val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst(".uagb-post__image img")?.attr("src")
 
             homeResults.add(newMovieSearchResponse(title, url, type) { this.posterUrl = poster })
         }
@@ -73,8 +76,17 @@ class OnlineSerieTvProvider : MainAPI() {
             val title = cleanTitle(rawTitle)
             val linkEl = element.selectFirst(".imagen a") ?: element.selectFirst("a")
             val url = linkEl?.attr("href") ?: return@forEach
-            val poster = element.selectFirst("img")?.attr("src")
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+            
+            // Chiamata TMDB per avere il poster corretto in Home
+            val titleOnly = title.replace(" SUB ITA", "").trim()
+            val year = extractYear(rawTitle)
+            val tmdbPoster = if (type == TvType.Movie) {
+                getTmdbMovieMetadata(titleOnly, year)?.posterPath
+            } else {
+                getTmdbTvMetadata(titleOnly, year)?.posterPath
+            }
+            val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst("img")?.attr("src")
 
             homeResults.add(newMovieSearchResponse(title, url, type) { this.posterUrl = poster })
         }
@@ -82,6 +94,7 @@ class OnlineSerieTvProvider : MainAPI() {
         return newHomePageResponse(request.name, homeResults)
     }
 
+    // Forza il recupero del poster da TMDB per i risultati di Ricerca
     override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
         val url = "$mainUrl/?s=$query"
@@ -91,8 +104,17 @@ class OnlineSerieTvProvider : MainAPI() {
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
             val title = cleanTitle(rawTitle)
             val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
-            val poster = element.selectFirst("img")?.attr("src")
             val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
+            
+            // Chiamata TMDB per avere il poster corretto nella Ricerca
+            val titleOnly = title.replace(" SUB ITA", "").trim()
+            val year = extractYear(rawTitle)
+            val tmdbPoster = if (type == TvType.Movie) {
+                getTmdbMovieMetadata(titleOnly, year)?.posterPath
+            } else {
+                getTmdbTvMetadata(titleOnly, year)?.posterPath
+            }
+            val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst("img")?.attr("src")
 
             results.add(newMovieSearchResponse(title, targetUrl, type) { this.posterUrl = poster })
         }
@@ -111,13 +133,12 @@ class OnlineSerieTvProvider : MainAPI() {
             ?: document.selectFirst(".imagen img")?.attr("src")
 
         if (url.contains("/serietv/")) {
-            // Sincronizzazione Serie TV con TMDB
             val tmdbData = getTmdbTvMetadata(titleOnly, year)
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
             
-            // Cache per ridurre al minimo le richieste HTTP delle stagioni
             val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
+            val cachedStagioniSizes = mutableMapOf<Int, Int>() // Mappa per tracciare quanti episodi ha davvero ogni stagione su TMDB
 
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
@@ -125,11 +146,32 @@ class OnlineSerieTvProvider : MainAPI() {
                     val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
                     
                     val match = "(\\d+)x(\\d+)".toRegex().find(rowText)
-                    val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
+                    var season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    var episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-                    if (tmdbData != null && !cachedStagioni.containsKey(season)) {
-                        cachedStagioni[season] = getTmdbSeasonEpisodes(tmdbData.id, season)
+                    // SISTEMA DI RE-INDICIZZAZIONE AUTOMATICA DELLE STAGIONI
+                    if (tmdbData != null) {
+                        var checkSeason = season
+                        while (true) {
+                            // Scarica le info della stagione se non sono in cache
+                            if (!cachedStagioni.containsKey(checkSeason)) {
+                                val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
+                                cachedStagioni[checkSeason] = epsMap
+                                cachedStagioniSizes[checkSeason] = epsMap?.size ?: 0
+                            }
+
+                            val maxEpisodesInSeason = cachedStagioniSizes[checkSeason] ?: 0
+
+                            // Se il sito dice che l'episodio è ad esempio il 14, ma la stagione su TMDB si ferma a 13
+                            if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
+                                episode -= maxEpisodesInSeason // Scala l'episodio (es. 14 - 13 = 1)
+                                checkSeason++                  // Passa alla stagione successiva (es. Stagione 2)
+                            } else {
+                                // Trovata la stagione corretta su TMDB!
+                                season = checkSeason
+                                break
+                            }
+                        }
                     }
 
                     val tmdbEp = cachedStagioni[season]?.get(episode)
@@ -139,7 +181,7 @@ class OnlineSerieTvProvider : MainAPI() {
                             this.name = tmdbEp?.name ?: "Episodio $episode"
                             this.season = season
                             this.episode = episode
-                            this.description = tmdbEp?.overview // Corretto da 'this.plot' a 'this.description'
+                            this.description = tmdbEp?.overview
                             this.posterUrl = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: (tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster)
                         }
                     )
@@ -153,7 +195,6 @@ class OnlineSerieTvProvider : MainAPI() {
                 this.plot = tmdbData?.overview ?: document.selectFirst("meta[property=og:description]")?.attr("content")
             }
         } else {
-            // Sincronizzazione Film con TMDB
             val tmdbMovie = getTmdbMovieMetadata(titleOnly, year)
             val finalTitle = (tmdbMovie?.title ?: titleOnly) + if (isSubIta) " SUB ITA" else ""
 
@@ -218,7 +259,6 @@ class OnlineSerieTvProvider : MainAPI() {
         return java.net.URLEncoder.encode(string, "UTF-8")
     }
 
-    // Classi di data-mapping JSON per l'SDK di Cloudstream
     data class TmdbMovieResponse(val results: List<TmdbMovieResult>?)
     data class TmdbMovieResult(val title: String, val overview: String?, @JsonProperty("poster_path") val posterPath: String?)
 
