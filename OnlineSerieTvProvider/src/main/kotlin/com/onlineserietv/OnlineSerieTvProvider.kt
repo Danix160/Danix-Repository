@@ -58,14 +58,29 @@ class OnlineSerieTvProvider : MainAPI() {
     private fun base64UrlEncode(string: String) = URLEncoder.encode(string, "UTF-8")
 
     private fun isTitleMatching(query: String, tmdbTitle: String): Boolean {
-        val q = query.lowercase().replace("""[^a-z0-9]""".toRegex(), "")
-        val t = tmdbTitle.lowercase().replace("""[^a-z0-9]""".toRegex(), "")
-        if (q.contains(t) || t.contains(q)) return true
-        
-        val queryWords = query.lowercase().split(" ").filter { it.length > 3 }
-        val tmdbWords = tmdbTitle.lowercase().split(" ").filter { it.length > 3 }
-        return queryWords.any { tmdbWords.contains(it) }
+    // Funzione locale per normalizzare il testo (rimuove accenti e caratteri speciali)
+    fun normalize(text: String): String {
+        return text.lowercase()
+            .replace("é", "e")
+            .replace("è", "e")
+            .replace("á", "a")
+            .replace("ó", "o")
+            .replace("í", "i")
+            .replace("ú", "u")
+            .replace("""[^a-z0-9]""".toRegex(), "")
     }
+
+    val q = normalize(query)
+    val t = normalize(tmdbTitle)
+    
+    // Se una stringa contiene l'altra (es. "pokemon" e "pokemoniz"), o viceversa, è un match
+    if (q.contains(t) || t.contains(q)) return true
+    
+    // Controllo secondario sulle parole singole lunghe
+    val queryWords = query.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
+    val tmdbWords = tmdbTitle.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
+    return queryWords.any { tmdbWords.contains(it) }
+}
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
