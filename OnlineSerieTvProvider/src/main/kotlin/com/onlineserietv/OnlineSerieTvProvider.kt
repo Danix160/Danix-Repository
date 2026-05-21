@@ -184,49 +184,74 @@ class OnlineSerieTvProvider : MainAPI() {
             val globalPoster = tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
             val episodesList = mutableListOf<Episode>()
             
-            // MAPPATURA INTEGRATA PREVENTIVA: Scarica la struttura dello show fuori dal ciclo in 1 sola richiesta HTTP
-            val tmdbEpisodeMapping = if (tmdbData != null) getTmdbEpisodeMapping(tmdbData.id) else null
+            // Scarica lo schema strutturale delle stagioni da TMDB (Es: Stagione 1 = 24 ep, Stagione 2 = 12 ep)
+            val tmdbSeasonsSizes = if (tmdbData != null) getTmdbSeasonsSizes(tmdbData.id) else null
             
-            var absoluteIndex = 1
+            var fallbackEpCount = 1
 
-            // CICLO OTTIMIZZATO SENZA PARENTS() PER SERIE LUNGHE: Nessuna chiamata HTTP nidificata
+            // Ciclo ottimizzato: zero chiamate di rete dentro e niente .parents()
             document.select("table tr td a, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
                 if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
                     
-                    var season = 1
-                    var episode = absoluteIndex
+                    val rowText = element.text()
+                    // Cerchiamo formati standard come "1x05", "01x05", o semplicemente un numero progressivo nel testo
+                    val matchXxX = """(\d+)[xX](\d+)""".toRegex().find(rowText)
+                    val matchSoloNumero = """(?i)(?:episodio|ep)?\s*(\d+)""".toRegex().find(rowText)
 
-                    // Ricalcolo istantaneo in RAM sfruttando lo schema TMDB per evitare sfasamenti tra stagioni
-                    if (tmdbEpisodeMapping != null && tmdbEpisodeMapping.containsKey(absoluteIndex)) {
-                        val pair = tmdbEpisodeMapping[absoluteIndex]
-                        if (pair != null) {
-                            season = pair.first
-                            episode = pair.second
-                        }
-                    } else {
-                        // Fallback Regex leggero sul testo visibile del tag a se TMDB manca
-                        val rowText = element.text()
-                        val match = "(\\d+)x(\\d+)".toRegex().find(rowText)
-                        if (match != null) {
-                            season = match.groupValues[1].toIntOrNull() ?: 1
-                            episode = match.groupValues[2].toIntOrNull() ?: absoluteIndex
+                    var parsedSeason = 1
+                    var parsedEpisode = fallbackEpCount
+
+                    if (matchXxX != null) {
+                        parsedSeason = matchXxX.groupValues[1].toIntOrNull() ?: 1
+                        parsedEpisode = matchXxX.groupValues[2].toIntOrNull() ?: fallbackEpCount
+                    } else if (matchSoloNumero != null) {
+                        parsedEpisode = matchSoloNumero.groupValues[1].toIntOrNull() ?: fallbackEpCount
+                    }
+
+                    var finalSeason = parsedSeason
+                    var finalEpisode = parsedEpisode
+
+                    // Se abbiamo i dati strutturali di TMDB, ricalcoliamo dinamicamente basandoci sul numero reale letto dal sito
+                    if (tmdbSeasonsSizes != null) {
+                        // Se il sito usa il conteggio assoluto (es: "Episodio 35" invece di "2x11")
+                        if (parsedSeason == 1 && parsedEpisode > (tmdbSeasonsSizes[1] ?: 0)) {
+                            var currentEp = parsedEpisode
+                            var currentSeason = 1
+                            while (true) {
+                                val maxInCurrent = tmdbSeasonsSizes[currentSeason] ?: 0
+                                if (maxInCurrent > 0 && currentEp > maxInCurrent) {
+                                    currentEp -= maxInCurrent
+                                    currentSeason++
+                                } else {
+                                    finalSeason = currentSeason
+                                    finalEpisode = currentEp
+                                    break
+                                }
+                            }
+                        } else {
+                            // Se il sito dichiarava già "2x11", lo teniamo valido verificando che esista su TMDB
+                            finalSeason = parsedSeason
+                            finalEpisode = parsedEpisode
                         }
                     }
 
                     episodesList.add(
                         newEpisode(link) {
-                            this.name = "Episodio $episode"
-                            this.season = season
-                            this.episode = episode
+                            this.name = "Episodio $finalEpisode"
+                            this.season = finalSeason
+                            this.episode = finalEpisode
                             this.posterUrl = globalPoster
                         }
                     )
-                    absoluteIndex++
+                    fallbackEpCount++
                 }
             }
+            // Evita duplicati identici causati da doppi link HTML (stesso URL nello stesso blocco)
+            val finalEpisodes = episodesList.distinctBy { "${it.season}-${it.episode}-${it.data}" }
+            
             val finalTitle = (tmdbData?.name ?: titleClean) + if (isSubIta) " SUB ITA" else ""
-            return newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, episodesList) {
+            return newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, finalEpisodes) {
                 this.posterUrl = globalPoster
                 this.plot = tmdbData?.overview ?: finalSitePlot
             }
@@ -240,6 +265,22 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 
+    // Cambiato il vecchio mapping rigido con una mappa flessibile delle sole dimensioni delle stagioni
+    private suspend fun getTmdbSeasonsSizes(tmdbId: Int): Map<Int, Int>? {
+        val url = "$tmdbBaseUrl/tv/$tmdbId?api_key=$tmdbApiKey"
+        return try {
+            val response = app.get(url).parsed<TmdbTvDetails>()
+            val sizes = mutableMapOf<Int, Int>()
+            response.seasons?.forEach { season ->
+                val sNum = season.seasonNumber ?: return@forEach
+                val count = season.episodeCount ?: return@forEach
+                if (sNum > 0) { // Ignora la stagione 0 degli speciali
+                    sizes[sNum] = count
+                }
+            }
+            sizes
+        } catch (e: Exception) { null }
+    }
     override suspend fun loadLinks(
         data: String, 
         isCasting: Boolean, 
