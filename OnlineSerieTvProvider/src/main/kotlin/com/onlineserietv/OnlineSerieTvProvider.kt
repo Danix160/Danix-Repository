@@ -208,13 +208,11 @@ class OnlineSerieTvProvider : MainAPI() {
             val tmdbData = getTmdbTvMetadata(titleClean, siteYear)
             val episodesList = mutableListOf<Episode>()
             
-            // Mappatura preliminare rapida dei nodi per evitare di ciclare pesantemente sul DOM
             val validElements = document.select("table tr, div.data-content a, td a").filter { element ->
                 val link = element.attr("href")
                 link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))
             }
 
-            // PRE-FETCH DELLE STAGIONI: Estraiamo tutte le stagioni uniche richieste dalla pagina
             val detectedSeasons = mutableSetOf<Int>()
             var backupEpCount = 1
             
@@ -228,7 +226,6 @@ class OnlineSerieTvProvider : MainAPI() {
                 Triple(link, season, episode)
             }
 
-            // Scarichiamo i dati TMDB di tutte le stagioni rilevate in PARALLELO
             val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
             val cachedStagioniSizes = mutableMapOf<Int, Int>()
 
@@ -245,7 +242,6 @@ class OnlineSerieTvProvider : MainAPI() {
                 }
             }
 
-            // Costruzione finale della lista episodi velocizzata (tutto in-memory)
             parsedElementsData.forEach { (link, initialSeason, initialEpisode) ->
                 var season = initialSeason
                 var episode = initialEpisode
@@ -257,7 +253,6 @@ class OnlineSerieTvProvider : MainAPI() {
                         if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
                             episode -= maxEpisodesInSeason
                             checkSeason++
-                            // Se la nuova stagione calcolata dinamicamente non è in cache, la recuperiamo al volo
                             if (!cachedStagioni.containsKey(checkSeason)) {
                                 val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
                                 cachedStagioni[checkSeason] = epsMap
@@ -267,6 +262,7 @@ class OnlineSerieTvProvider : MainAPI() {
                             season = checkSeason
                             break
                         }
+                        if (maxEpisodesInSeason == 0) break
                     }
                 }
 
