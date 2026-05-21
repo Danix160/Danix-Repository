@@ -153,8 +153,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
-                    // Impacchettiamo le informazioni dell'episodio nel parametro `data`
-                    // Struttura: URL_ESTRATTUTORE|ID_TMDB|STAGIONE|EPISODIO
                     val tmdbIdStr = tmdbData?.id?.toString() ?: ""
                     val episodeData = "$link|$tmdbIdStr|$season|$episode"
 
@@ -182,53 +180,48 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        // Se la stringa contiene i token del nostro pacchetto personalizzato, separiamo i dati
         val parts = data.split("|")
         val videoUrl = parts[0]
 
-        // Carica normalmente i flussi video tramite l'extractor
-        loadExtractor(videoUrl, mainUrl, subtitleCallback, callback)
+        // Intercettiamo gli ExtractorLink generati per inserire i metadati di salto direttamente dentro l'oggetto Link
+        loadExtractor(videoUrl, mainUrl, subtitleCallback) { link ->
+            if (parts.size >= 4) {
+                val tmdbId = parts[1].toIntOrNull()
+                val season = parts[2].toIntOrNull()
+                val episode = parts[3].toIntOrNull()
 
-        // Se abbiamo i metadati della serie TV (ID TMDB, Stagione, Episodio), iniettiamo Aniskip
-        if (parts.size >= 4) {
-            val tmdbId = parts[1].toIntOrNull()
-            val season = parts[2].toIntOrNull()
-            val episode = parts[3].toIntOrNull()
+                if (tmdbId != null && season != null && episode != null) {
+                    try {
+                        val aniSkipUrl = "https://api.aniskip.com/v2/skip-times/$tmdbId/$season/$episode?types=op&types=ed&episodeLength=0"
+                        // Chiamata sincrona all'interno della lambda coroutine di intercettazione
+                        val syncResponse = app.get(aniSkipUrl)
+                        if (syncResponse.code == 200) {
+                            val skipData = syncResponse.parsed<AniSkipResponse>()
+                            skipData.results?.forEach { result ->
+                                val start = result.interval?.startTime ?: return@forEach
+                                val end = result.interval?.endTime ?: return@forEach
+                                
+                                val startMs = (start * 1000).toLong()
+                                val endMs = (end * 1000).toLong()
 
-            if (tmdbId != null && season != null && episode != null) {
-                try {
-                    // Otteniamo la durata stimata del file video (se l'app ce la fornisce nel lettore)
-                    // Aniskip richiede la richiesta dei timestamp per Skip Intro ed Ending
-                    val aniSkipUrl = "https://api.aniskip.com/v2/skip-times/$tmdbId/$season/$episode?types=op&types=ed&episodeLength=0"
-                    val aniSkipResponse = app.get(aniSkipUrl)
-                    
-                    if (aniSkipResponse.code == 200) {
-                        val skipData = aniSkipResponse.parsed<AniSkipResponse>()
-                        skipData.results?.forEach { result ->
-                            val start = result.interval?.startTime ?: return@forEach
-                            val end = result.interval?.endTime ?: return@forEach
-                            val type = result.skipType
-
-                            // Mappiamo i tipi di skip riconosciuti nativamente da Cloudstream
-                            val uiType = when (type) {
-                                "op" -> SkipTime.Type.OPENING // Skip Intro / Sigla iniziale
-                                "ed" -> SkipTime.Type.ENDING  // Skip Outro / Titoli di coda
-                                else -> return@forEach
+                                // Metodo alternativo universale e sicuro: Cloudstream inserisce i timestamp
+                                // direttamente nell'extra dell'ExtractorLink senza dipendere dalla classe SkipTime
+                                when (result.skipType) {
+                                    "op" -> {
+                                        link.extra["op_start"] = startMs.toString()
+                                        link.extra["op_end"] = endMs.toString()
+                                    }
+                                    "ed" -> {
+                                        link.extra["ed_start"] = startMs.toString()
+                                        link.extra["ed_end"] = endMs.toString()
+                                    }
+                                }
                             }
-
-                            // Registriamo i timestamp nel lettore video di Cloudstream
-                            // Moltiplicato per 1000 perché Cloudstream ragiona in millisecondi
-                            val startMs = (start * 1000).toLong()
-                            val endMs = (end * 1000).toLong()
-
-                            // Passiamo il timestamp corretto all'applicazione
-                            // Nota: la disponibilità visiva del tasto dipende dal lettore nativo dell'app (ExoPlayer)
                         }
-                    }
-                } catch (e: Exception) {
-                    // Ignora silenziosamente se Aniskip non ha i dati per questo episodio
+                    } catch (e: Exception) { /* Ignora errori di Aniskip */ }
                 }
             }
+            callback(link)
         }
         return true
     }
@@ -257,7 +250,6 @@ class OnlineSerieTvProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // Classi Dati AniSkip
     data class AniSkipResponse(val results: List<AniSkipResult>?)
     data class AniSkipResult(
         @JsonProperty("skipType") val skipType: String,
@@ -273,14 +265,4 @@ class OnlineSerieTvProvider : MainAPI() {
         val title: String, 
         val overview: String?, 
         @JsonProperty("poster_path") val posterPath: String?,
-        @JsonProperty("release_date") val releaseDate: String?
-    )
-    data class TmdbTvResponse(val results: List<TmdbTvResult>?)
-    data class TmdbTvResult(
-        val id: Int, 
-        val name: String, 
-        val overview: String?, 
-        @JsonProperty("poster_path") val posterPath: String?,
-        @JsonProperty("first_air_date") val firstAirDate: String?
-    )
-}
+        @JsonProperty("release_date") val releaseDate
