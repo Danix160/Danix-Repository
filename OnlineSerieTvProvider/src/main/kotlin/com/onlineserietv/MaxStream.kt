@@ -3,6 +3,7 @@ package com.onlineserietv
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink // Utilizziamo l'helper consigliato dall'errore
 import com.lagradost.cloudstream3.app
 
 class MaxStream : ExtractorApi() {
@@ -25,14 +26,15 @@ class MaxStream : ExtractorApi() {
         if (match != null) {
             val videoUrl = match.groupValues[1].replace("\"", "").trim()
 
-            // Utilizziamo il costruttore base senza i parametri opzionali bloccati
+            // Utilizziamo newExtractorLink per mappare correttamente la sorgente video
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = this.name,
                     name = this.name,
                     url = videoUrl,
-                    referer = url ?: "",
-                    quality = Qualities.Unknown.value
+                    referer = url,
+                    quality = Qualities.Unknown.value,
+                    isM3u8 = videoUrl.contains(".m3u8")
                 )
             )
         }
