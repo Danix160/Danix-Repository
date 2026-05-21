@@ -3,8 +3,6 @@ package com.onlineserietv
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.TvType
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.net.URLEncoder
 
@@ -16,13 +14,17 @@ class OnlineSerieTvProvider : MainAPI() {
     override val hasChromecastSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    private val tmdbApiKey = "e541cb159df14ce70fc51ab75703a1a2" 
+    private val tmdbApiKey = "e541cb159df14ce70fc51ab75703a1a2"
     private val tmdbBaseUrl = "https://api.themoviedb.org/3"
 
     override val mainPage = mainPageOf(
         "$mainUrl/movies" to "Film",
         "$mainUrl/serie-tv/" to "Serie TV"
     )
+
+    // -----------------------------
+    // UTILITIES
+    // -----------------------------
 
     private fun cleanTitle(title: String): String {
         var cleaned = title
@@ -31,15 +33,20 @@ class OnlineSerieTvProvider : MainAPI() {
             .replace("L uomo ragno", "L'uomo ragno", ignoreCase = true)
             .replace("Pokemon", "Pokémon", ignoreCase = true)
             .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
-            
-        val regexDaRimuovere = """(?i)\b(serie animata|serie tv|animazione|in streaming|online|hdtv|web-dl)\b""".toRegex()
-        
+
+        val regexDaRimuovere =
+            """(?i)\b(serie animata|serie tv|animazione|in streaming|online|hdtv|web-dl)\b""".toRegex()
+
         cleaned = cleaned
             .replace(regexDaRimuovere, "")
             .replace("""(?i)\bSUB[- ]?ITA\b""".toRegex(), "")
             .replace("""(?i)\b(ITA|STAGIONE \d+|STAGIONE)\b""".toRegex(), "")
-            .replace("""\s*[\(\[-]?\s*(19|20)\d{2}\s*[\)\]-]?\s*""".toRegex(), " ")
-            .replace("""\s*[-–—:|]+\s*$""".toRegex(), "") 
+            .replace("""\s*[\(
+
+\[-]?\s*(19|20)\d{2}\s*[\)\]
+
+-]?\s*""".toRegex(), " ")
+            .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
             .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
             .replace("""\s+""".toRegex(), " ")
             .replace("'", "")
@@ -48,12 +55,9 @@ class OnlineSerieTvProvider : MainAPI() {
         return cleaned
     }
 
-    private fun extractYear(title: String): Int? {
-        val match = """(19|20)\d{2}""".toRegex().find(title)
-        return match?.value?.toIntOrNull()
+    private fun extractYearFallback(text: String): Int? {
+        return """(19|20)\d{2}""".toRegex().find(text)?.value?.toIntOrNull()
     }
-
-    private fun base64UrlEncode(string: String): String = URLEncoder.encode(string, "UTF-8")
 
     private fun normalizeText(text: String): String {
         return text.lowercase()
@@ -70,192 +74,312 @@ class OnlineSerieTvProvider : MainAPI() {
         val q = normalizeText(query)
         val t = normalizeText(tmdbTitle)
         if (q.contains(t) || t.contains(q)) return true
-        
+
         val queryWords = query.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
         val tmdbWords = tmdbTitle.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
         return queryWords.any { tmdbWords.contains(it) }
     }
+
+    private fun isSubIta(rawTitle: String): Boolean {
+        return rawTitle.contains("""(?i)\bSUB[- ]?ITA\b""".toRegex())
+    }
+
+    private fun extractYearFromDocument(document: org.jsoup.nodes.Document): Int? {
+        // Estrazione precisa dal blocco:
+        // <span>Anno: <i>1997</i></span>
+        val directYear = document.select("span:contains(Anno:) i")
+            .firstOrNull()
+            ?.text()
+            ?.trim()
+            ?.toIntOrNull()
+
+        if (directYear != null) return directYear
+
+        // Fallback generico se il sito cambia
+        val genericText = document.text()
+        return extractYearFallback(genericText)
+    }
+
+    // -----------------------------
+    // MAIN PAGE
+    // -----------------------------
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
         val homeResults = mutableListOf<SearchResponse>()
 
         document.select(".uagb-post__inner-wrap").forEach { element ->
-            val titleEl = element.selectFirst(".uagb-post__title a")
-            val rawTitle = titleEl?.text() ?: return@forEach
+            val titleEl = element.selectFirst(".uagb-post__title a") ?: return@forEach
+            val rawTitle = titleEl.text()
             val title = cleanTitle(rawTitle)
             val url = titleEl.attr("href")
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
-            
-            val year = extractYear(rawTitle)
-            val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath else getTmdbTvMetadata(title, year)?.posterPath
-            val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst(".uagb-post__image img")?.attr("src")
 
-            homeResults.add(newMovieSearchResponse(title, url, type) { this.posterUrl = poster })
+            val year = extractYearFallback(rawTitle)
+            val tmdbPoster =
+                if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath
+                else getTmdbTvMetadata(title, year)?.posterPath
+
+            val poster =
+                tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" }
+                    ?: element.selectFirst(".uagb-post__image img")?.attr("src")
+
+            homeResults.add(
+                newMovieSearchResponse(title, url, type) {
+                    this.posterUrl = poster
+                }
+            )
         }
+
         return newHomePageResponse(request.name, homeResults)
     }
 
+    // -----------------------------
+    // SEARCH
+    // -----------------------------
+
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/?s=${base64UrlEncode(query)}"
+        val url = "$mainUrl/?s=${URLEncoder.encode(query, "UTF-8")}"
         val document = app.get(url).document
         val results = mutableListOf<SearchResponse>()
 
         document.select(".movie").forEach { element ->
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
             val title = cleanTitle(rawTitle)
-            val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
-            val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
-            
-            val year = extractYear(rawTitle)
-            val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath else getTmdbTvMetadata(title, year)?.posterPath
-            val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst("img")?.attr("src")
+            val targetUrl =
+                element.selectFirst(".imagen a")?.attr("href")
+                    ?: element.selectFirst("a")?.attr("href")
+                    ?: return@forEach
 
-            results.add(newMovieSearchResponse(title, targetUrl, type) { this.posterUrl = poster })
+            val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
+
+            val year = extractYearFallback(rawTitle)
+            val tmdbPoster =
+                if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath
+                else getTmdbTvMetadata(title, year)?.posterPath
+
+            val poster =
+                tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" }
+                    ?: element.selectFirst("img")?.attr("src")
+
+            results.add(
+                newMovieSearchResponse(title, targetUrl, type) {
+                    this.posterUrl = poster
+                }
+            )
         }
+
         return results.distinctBy { it.url }
     }
+
+    // -----------------------------
+    // LOAD (MOVIE / TV)
+    // -----------------------------
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
         val rawTitle = document.selectFirst("h1")?.text() ?: "Senza Titolo"
         val titleClean = cleanTitle(rawTitle)
-        val isSubIta = rawTitle.contains("""(?i)\bSUB[- ]?ITA\b""".toRegex())
-        
-        // Estrazione chirurgica dell'anno dal box dei dettagli HTML
-        var year: Int? = null
-        document.select(".score .stars span").forEach { element ->
-            if (element.text().contains("Anno:", ignoreCase = true)) {
-                val yearText = element.selectFirst("i")?.text()
-                year = yearText?.toIntOrNull()
-            }
-        }
-        
+        val subIta = isSubIta(rawTitle)
+
+        var year: Int? = extractYearFromDocument(document)
         if (year == null) {
-            val genericText = document.select(".score, .stars, .info").text()
-            year = """(19|20)\d{2}""".toRegex().find(genericText)?.value?.toIntOrNull() ?: extractYear(rawTitle)
+            year = extractYearFallback(rawTitle)
         }
 
-        val sitePoster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: document.selectFirst(".imagen img")?.attr("src")
+        val sitePoster =
+            document.selectFirst("meta[property=og:image]")?.attr("content")
+                ?: document.selectFirst(".imagen img")?.attr("src")
+
         val isMovie = url.contains("/film/") || url.contains("/movies")
 
-        if (!isMovie) {
+        return if (!isMovie) {
+            // ---------------- TV SERIES ----------------
             val tmdbData = getTmdbTvMetadata(titleClean, year)
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
-            
-            val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
-            val cachedStagioniSizes = mutableMapOf<Int, Int>()
+
+            val cachedSeasons = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
+            val cachedSeasonSizes = mutableMapOf<Int, Int>()
 
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
-                if (link.isNotBlank() && (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
-                    val rowText = element.parents().select("tr").first()?.selectFirst("td")?.text() ?: element.text()
-                    val match = """(\d+)x(\d+)""".toRegex().find(rowText)
-                    var season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    var episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
+                if (link.isNullOrBlank()) return@forEach
+                if (!(link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy"))) {
+                    return@forEach
+                }
 
-                    if (tmdbData != null) {
-                        var checkSeason = season
-                        while (true) {
-                            if (!cachedStagioni.containsKey(checkSeason)) {
-                                val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
-                                cachedStagioni[checkSeason] = epsMap
-                                cachedStagioniSizes[checkSeason] = epsMap?.size ?: 0
-                            }
-                            val maxEpisodesInSeason = cachedStagioniSizes[checkSeason] ?: 0
-                            if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
-                                episode -= maxEpisodesInSeason
-                                checkSeason++
-                            } else {
-                                season = checkSeason
-                                break
-                            }
+                val rowText =
+                    element.parents().select("tr").first()?.selectFirst("td")?.text()
+                        ?: element.text()
+
+                val match = """(\d+)x(\d+)""".toRegex().find(rowText)
+                var season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                var episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
+
+                if (tmdbData != null) {
+                    var checkSeason = season
+                    while (true) {
+                        if (!cachedSeasons.containsKey(checkSeason)) {
+                            val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
+                            cachedSeasons[checkSeason] = epsMap
+                            cachedSeasonSizes[checkSeason] = epsMap?.size ?: 0
+                        }
+                        val maxEpisodesInSeason = cachedSeasonSizes[checkSeason] ?: 0
+                        if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
+                            episode -= maxEpisodesInSeason
+                            checkSeason++
+                        } else {
+                            season = checkSeason
+                            break
                         }
                     }
-                    
-                    val tmdbEp = if (tmdbData != null) cachedStagioni[season]?.get(episode) else null
-                    
-                    val episodePoster = tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+                }
+
+                val tmdbEp = if (tmdbData != null) cachedSeasons[season]?.get(episode) else null
+
+                val episodePoster =
+                    tmdbEp?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" }
                         ?: tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
                         ?: sitePoster
 
-                    episodesList.add(newEpisode(link) {
+                episodesList.add(
+                    newEpisode(link) {
                         this.name = tmdbEp?.name ?: "Episodio $episode"
                         this.season = season
                         this.episode = episode
                         this.description = tmdbEp?.overview
                         this.posterUrl = episodePoster
-                    })
-                }
+                    }
+                )
             }
-            val finalTitle = (tmdbData?.name ?: titleClean) + if (isSubIta) " SUB ITA" else ""
-            return newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, episodesList) {
-                this.posterUrl = tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
-                this.plot = tmdbData?.overview ?: document.selectFirst("meta[property=og:description]")?.attr("content")
+
+            val finalTitle = (tmdbData?.name ?: titleClean) + if (subIta) " SUB ITA" else ""
+            newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, episodesList) {
+                this.posterUrl =
+                    tmdbData?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+                        ?: sitePoster
+                this.plot =
+                    tmdbData?.overview
+                        ?: document.selectFirst("meta[property=og:description]")?.attr("content")
             }
         } else {
+            // ---------------- MOVIE ----------------
             val tmdbMovie = getTmdbMovieMetadata(titleClean, year)
-            val finalTitle = (tmdbMovie?.title ?: titleClean) + if (isSubIta) " SUB ITA" else ""
-            return newMovieLoadResponse(finalTitle, url, TvType.Movie, url) {
-                this.posterUrl = tmdbMovie?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: sitePoster
-                this.plot = tmdbMovie?.overview ?: document.selectFirst("meta[property=og:description]")?.attr("content")
+            val finalTitle = (tmdbMovie?.title ?: titleClean) + if (subIta) " SUB ITA" else ""
+
+            newMovieLoadResponse(finalTitle, url, TvType.Movie, url) {
+                this.posterUrl =
+                    tmdbMovie?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+                        ?: sitePoster
+                this.plot =
+                    tmdbMovie?.overview
+                        ?: document.selectFirst("meta[property=og:description]")?.attr("content")
             }
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    // -----------------------------
+    // LINKS
+    // -----------------------------
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         loadExtractor(data, mainUrl, subtitleCallback, callback)
         return true
     }
 
+    // -----------------------------
+    // TMDB HELPERS
+    // -----------------------------
+
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
-        val encodedQuery = base64UrlEncode(query)
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val yearParam = if (year != null) "&year=$year" else ""
-        val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
+        val url =
+            "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
+
         return try {
-            val results = app.get(url).parsed<TmdbMovieResponse>().results
-            // Cerca prima il film che ha l'anno corrispondente e il titolo valido
-            results?.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
-                ?: results?.firstOrNull { isTitleMatching(query, it.title) }
-                ?: app.get("$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT").parsed<TmdbMovieResponse>().results?.firstOrNull()
-        } catch (e: Exception) { null }
+            val results = app.get(url).parsed<TmdbMovieResponse>().results ?: emptyList()
+
+            results.firstOrNull {
+                isTitleMatching(query, it.title) &&
+                        (year == null || it.releaseDate?.startsWith(year.toString()) == true)
+            }
+                ?: results.firstOrNull { isTitleMatching(query, it.title) }
+                ?: app.get(
+                    "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT"
+                ).parsed<TmdbMovieResponse>().results?.firstOrNull()
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private suspend fun getTmdbTvMetadata(query: String, year: Int?): TmdbTvResult? {
-        val encodedQuery = base64UrlEncode(query)
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
         val yearParam = if (year != null) "&first_air_date_year=$year" else ""
-        val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
+        val url =
+            "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
+
         return try {
-            val results = app.get(url).parsed<TmdbTvResponse>().results
-            // FUNZIONE DI CONVALIDA SICURA: Scorre i risultati e seleziona la serie il cui 'first_air_date' contiene l'anno esatto del sito (es. 1997)
-            results?.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
-                ?: results?.firstOrNull { isTitleMatching(query, it.name) }
-                ?: app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull()
-        } catch (e: Exception) { null }
+            val results = app.get(url).parsed<TmdbTvResponse>().results ?: emptyList()
+
+            results.firstOrNull {
+                isTitleMatching(query, it.name) &&
+                        (year == null || it.firstAirDate?.startsWith(year.toString()) == true)
+            }
+                ?: results.firstOrNull { isTitleMatching(query, it.name) }
+                ?: app.get(
+                    "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT"
+                ).parsed<TmdbTvResponse>().results?.firstOrNull()
+        } catch (e: Exception) {
+            null
+        }
     }
 
-    private suspend fun getTmdbSeasonEpisodes(tvId: Int, season: Int): Map<Int, TmdbEpisode>? {
+    private suspend fun getTmdbSeasonEpisodes(
+        tvId: Int,
+        season: Int
+    ): Map<Int, TmdbEpisode>? {
         return try {
-            app.get("$tmdbBaseUrl/tv/$tvId/season/$season?api_key=$tmdbApiKey&language=it-IT").parsed<TmdbSeasonResponse>().episodes?.associateBy { it.episodeNumber }
-        } catch (e: Exception) { null }
+            app.get(
+                "$tmdbBaseUrl/tv/$tvId/season/$season?api_key=$tmdbApiKey&language=it-IT"
+            ).parsed<TmdbSeasonResponse>().episodes?.associateBy { it.episodeNumber }
+        } catch (e: Exception) {
+            null
+        }
     }
+
+    // -----------------------------
+    // TMDB DATA CLASSES
+    // -----------------------------
 
     data class TmdbMovieResponse(val results: List<TmdbMovieResult>?)
     data class TmdbMovieResult(
-        val title: String, 
-        val overview: String?, 
+        val title: String,
+        val overview: String?,
         @JsonProperty("poster_path") val posterPath: String?,
         @JsonProperty("release_date") val releaseDate: String?
     )
+
     data class TmdbTvResponse(val results: List<TmdbTvResult>?)
     data class TmdbTvResult(
-        val id: Int, 
-        val name: String, 
-        val overview: String?, 
+        val id: Int,
+        val name: String,
+        val overview: String?,
         @JsonProperty("poster_path") val posterPath: String?,
         @JsonProperty("first_air_date") val firstAirDate: String?
     )
+
     data class TmdbSeasonResponse(val episodes: List<TmdbEpisode>?)
-    data class TmdbEpisode(val name: String, val overview: String?, @JsonProperty("episode_number") val episodeNumber: Int, @JsonProperty("still_path") val stillPath: String?)
+    data class TmdbEpisode(
+        val name: String,
+        val overview: String?,
+        @JsonProperty("episode_number") val episodeNumber: Int,
+        @JsonProperty("still_path") val stillPath: String?
+    )
 }
