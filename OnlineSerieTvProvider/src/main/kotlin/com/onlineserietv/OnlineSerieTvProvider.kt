@@ -122,6 +122,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
                     
                     val year = extractYear(rawTitle)
+                    // Se l'anno non coincide, getTmdb restituirà null e userà il poster originale del sito (img)
                     val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath else getTmdbTvMetadata(title, year)?.posterPath
                     val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst("img")?.attr("src")
 
@@ -269,17 +270,20 @@ class OnlineSerieTvProvider : MainAPI() {
         val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
         return try {
             val results = app.get(url).parsed<TmdbMovieResponse>().results ?: return null
-            // 1. Cerca corrispondenza esatta di titolo E anno
+            
+            // 1. Cerca corrispondenza di titolo E anno
             val exactMatch = results.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
             if (exactMatch != null) return exactMatch
             
-            // 2. Se non c'è l'anno ma il titolo è quasi perfetto, verifica che non appartenga a un anno completamente diverso
+            // 2. Se non c'è match esatto con l'anno, prendiamo il primo titolo simile MA verifichiamo tassativamente che l'anno coincida
             val partialMatch = results.firstOrNull { isTitleMatching(query, it.title) }
             if (partialMatch != null && year != null) {
                 val tmdbYear = partialMatch.releaseDate?.take(4)?.toIntOrNull()
-                if (tmdbYear == year) return partialMatch else return null // Rigetta se l'anno è sballato
+                if (tmdbYear == year) return partialMatch
             }
-            partialMatch
+            
+            // Se l'anno differisce o non c'è corrispondenza sicura, restituisce null per forzare l'uso del poster del sito
+            null
         } catch (e: Exception) { null }
     }
 
@@ -289,17 +293,19 @@ class OnlineSerieTvProvider : MainAPI() {
         val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
         return try {
             val results = app.get(url).parsed<TmdbTvResponse>().results ?: return null
-            // 1. Cerca corrispondenza esatta di titolo E anno di inizio trasmissione
+            
+            // 1. Cerca corrispondenza di titolo E anno di inizio
             val exactMatch = results.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
             if (exactMatch != null) return exactMatch
             
-            // 2. Controllo incrociato sul titolo: se l'anno trovato differisce da quello del sito, blocca l'associazione errata
+            // 2. Controllo incrociato stringente: se l'anno differisce da quello del sito, restituisce null ed evita l'associazione errata
             val partialMatch = results.firstOrNull { isTitleMatching(query, it.name) }
             if (partialMatch != null && year != null) {
                 val tmdbYear = partialMatch.firstAirDate?.take(4)?.toIntOrNull()
-                if (tmdbYear == year) return partialMatch else return null // Ritorna null anziché associare una serie omonima di un altro anno
+                if (tmdbYear == year) return partialMatch
             }
-            partialMatch
+            
+            null
         } catch (e: Exception) { null }
     }
 
