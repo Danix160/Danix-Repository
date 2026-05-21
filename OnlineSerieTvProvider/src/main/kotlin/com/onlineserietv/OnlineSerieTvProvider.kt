@@ -21,10 +21,17 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
+    /**
+     * Funzione di pulizia potenziata e aggressiva per rimuovere l'anno in qualsiasi formato
+     */
     private fun cleanTitle(title: String): String {
         return title
-            .replace("""\s*[\(\[-]\s*\d{4}\s*[\)\]-]""".toRegex(), "") // Rimuove (2024) o [2024]
-            .replace("""\s+\d{4}\s*$""".toRegex(), "")                // Rimuove l'anno isolato alla fine
+            // 1. Rimuove l'anno dentro parentesi tonde o quadre: (2024), [2025], ecc.
+            .replace("""\s*[\(\[-]\s*(19|20)\d{2}\s*[\)\]-]\s*""".toRegex(), " ")
+            // 2. Rimuove l'anno isolato alla fine del testo: "Titolo Film 2024"
+            .replace("""\s*(19|20)\d{2}\s*$""".toRegex(), "")
+            // 3. Rimuove eventuali trattini o spazi orfani rimasti alla fine dopo la rimozione
+            .replace("""\s*-\s*$""".toRegex(), "")
             .trim()
     }
 
@@ -35,7 +42,8 @@ class OnlineSerieTvProvider : MainAPI() {
         // Selettore 1: Struttura dei blocchi in Home (uagb-post)
         document.select(".uagb-post__inner-wrap").forEach { element ->
             val titleEl = element.selectFirst(".uagb-post__title a")
-            val title = titleEl?.text() ?: return@forEach
+            val rawTitle = titleEl?.text() ?: return@forEach
+            val title = cleanTitle(rawTitle) // Titolo Pulito
             val url = titleEl.attr("href")
             val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
             
@@ -51,7 +59,8 @@ class OnlineSerieTvProvider : MainAPI() {
 
         // Selettore 2: Struttura classica dei blocchi standard (.movie)
         document.select(".movie").forEach { element ->
-            val title = element.selectFirst("h2")?.text() ?: return@forEach
+            val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
+            val title = cleanTitle(rawTitle) // Titolo Pulito
             val linkEl = element.selectFirst(".imagen a") ?: element.selectFirst("a")
             val url = linkEl?.attr("href") ?: return@forEach
             val poster = element.selectFirst("img")?.attr("src")
@@ -71,15 +80,13 @@ class OnlineSerieTvProvider : MainAPI() {
 
    override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 10 // Puoi aumentare o diminuire questo limite a piacimento
+        val maxPagesToSearch = 10 
 
         for (page in 1..maxPagesToSearch) {
             try {
-                // Costruiamo l'URL per la pagina corrente. Esempio: https://onlineserietv.lol/page/2/?s=query
                 val url = if (page == 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
                 val response = app.get(url)
                 
-                // Se la pagina non esiste (es. 404), ci fermiamo
                 if (response.code != 200) break
                 
                 val document = response.document
@@ -87,7 +94,8 @@ class OnlineSerieTvProvider : MainAPI() {
 
                 // 1. Parsing dei risultati di ricerca (struttura .movie)
                 document.select(".movie").forEach { element ->
-                    val title = element.selectFirst("h2")?.text() ?: return@forEach
+                    val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
+                    val title = cleanTitle(rawTitle) // Titolo Pulito
                     val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
                     val poster = element.selectFirst("img")?.attr("src")
 
@@ -104,7 +112,8 @@ class OnlineSerieTvProvider : MainAPI() {
                 // 2. Fallback per risultati strutturati come uagb-post
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
-                    val title = titleEl?.text() ?: return@forEach
+                    val rawTitle = titleEl?.text() ?: return@forEach
+                    val title = cleanTitle(rawTitle) // Titolo Pulito
                     val targetUrl = titleEl.attr("href")
                     val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
                     
@@ -118,28 +127,28 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
 
-                // Se in questa pagina non abbiamo trovato alcun elemento nuovo, 
-                // significa che siamo andati oltre l'ultima pagina disponibile. Interrompiamo il ciclo.
                 if (results.size == initialCount) {
                     break
                 }
 
             } catch (e: Exception) {
-                // In caso di errore di rete su una pagina successiva, interrompiamo il ciclo 
-                // per salvare i risultati ottenuti fino a quel momento
                 break
             }
         }
 
-        // Ritorna la lista combinata di tutte le pagine scansionate, ripulita da eventuali duplicati
         return results.distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-        val title = document.selectFirst("h1")?.text() 
-            ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.replace(" in streaming - OnlineSerieTv", "") 
+        
+        // Estraggo il titolo grezzo rimuovendo già la parte fissa del sito
+        val rawTitle = document.selectFirst("h1")?.text() 
+            ?: document.selectFirst("meta[property=og:title]")?.attr("content")
             ?: "Senza Titolo"
+            
+        val baseTitle = rawTitle.replace(" in streaming - OnlineSerieTv", "").trim()
+        val title = cleanTitle(baseTitle) // Titolo Pulito e privo di anno
         
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
@@ -161,11 +170,12 @@ class OnlineSerieTvProvider : MainAPI() {
                     val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
                     episodesList.add(
-                        newEpisode(link) {
-                            this.name = "Episodio $episode"
-                            this.season = season
-                            this.episode = episode
-                        }
+                        Episode(
+                            data = link,
+                            name = "Episodio $episode",
+                            season = season,
+                            episode = episode
+                        )
                     )
                 }
             }
@@ -193,12 +203,10 @@ class OnlineSerieTvProvider : MainAPI() {
             document.select("a").forEach { element ->
                 val link = element.attr("href")
                 if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
-                    // Rimosso ExtractorApi. e invocato direttamente il metodo globale
                     loadExtractor(link, mainUrl, subtitleCallback, callback)
                 }
             }
         } else {
-            // Rimosso ExtractorApi. e invocato direttamente il metodo globale
             loadExtractor(data, mainUrl, subtitleCallback, callback)
         }
         return true
