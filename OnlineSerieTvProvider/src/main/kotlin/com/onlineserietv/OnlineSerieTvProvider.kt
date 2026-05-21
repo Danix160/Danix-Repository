@@ -3,7 +3,7 @@ package com.onlineserietv
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.ExtractorApiKt.loadExtractor
+import com.lagradost.cloudstream3.utils.ExtractorApi.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
@@ -22,7 +22,7 @@ class OnlineSerieTvProvider : MainAPI() {
         val videoLinks: List<String>
     )
 
-    // 1. GESTIONE HOME PAGE (Corretto MainPageRequest e l'helper di risposta)
+    // 1. GESTIONE HOME PAGE
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(mainUrl).document
         val homePages = mutableListOf<HomePageList>()
@@ -88,7 +88,7 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 
-    // 3. CARICAMENTO DEI METADATI (Corretto TvSeriesLoadResponse e MovieLoadResponse con i nuovi costruttori helper)
+    // 3. CARICAMENTO DEI METADATI
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
         
@@ -165,7 +165,7 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 
-    // 4. ESTRAZIONE FINALE DEI LINK VIDEO (Corretto il puntamento a loadExtractor)
+    // 4. ESTRAZIONE FINALE DEI LINK VIDEO
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
