@@ -3,6 +3,7 @@ package com.onlineserietv
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor // Import corretto del metodo di estensione
+import com.lagradost.cloudstream3.utils.ExtractorApiKt
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Document
@@ -16,8 +17,8 @@ class OnlineSerieTvProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
     init {
-        addExtractor(Uprot())
-        addExtractor(MaxStream())
+        ExtractorApiKt.addExtractor(Uprot())
+        ExtractorApiKt.addExtractor(MaxStream())
     }
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Ultime Serie e Film",
