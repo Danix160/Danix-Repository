@@ -2,7 +2,7 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor 
+import com.lagradost.cloudstream3.utils.loadExtractor // Import corretto del metodo di estensione
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Document
@@ -16,17 +16,18 @@ class OnlineSerieTvProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "$mainUrl/" to "Film",
+        "$mainUrl/movies" to "Film",
         "$mainUrl/serie-tv/" to "Serie TV",
+        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
     /**
-     * Helper per rimuovere l'anno dai titoli (es: "Il Gladiatore (2024)" -> "Il Gladiatore")
+     * Rimuove l'anno (es. "(2024)", "[2025]" o " 2026") dal titolo per renderlo pulito
      */
     private fun cleanTitle(title: String): String {
         return title
-            .replace("""\s*[\(\[-]\s*\d{4}\s*[\)\]-]""".toRegex(), "") // Rimuove (2024), [2024], - 2024 -
-            .replace("""\s+\d{4}\s*$""".toRegex(), "")                // Rimuove l'anno isolato alla fine (es: "Film 2024")
+            .replace("""\s*[\(\[-]\s*\d{4}\s*[\)\]-]""".toRegex(), "") // Rimuove (2024) o [2024] o -2024-
+            .replace("""\s+\d{4}\s*$""".toRegex(), "")                // Rimuove l'anno isolato alla fine
             .trim()
     }
 
@@ -42,6 +43,7 @@ class OnlineSerieTvProvider : MainAPI() {
             val url = titleEl.attr("href")
             val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
 
+            // Logica originale basata sull'URL dell'elemento
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
 
             homeResults.add(
@@ -74,60 +76,43 @@ class OnlineSerieTvProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 3 
+        val url = "$mainUrl/?s=$query"
+        val response = app.get(url)
+        val document = response.document
 
-        for (page in 1..maxPagesToSearch) {
-            try {
-                val url = if (page == 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
-                val response = app.get(url)
-                
-                if (response.code != 200) break
-                
-                val document = response.document
-                val initialCount = results.size
+        // 1. Parsing dei risultati di ricerca (struttura .movie)
+        document.select(".movie").forEach { element ->
+            val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
+            val title = cleanTitle(rawTitle)
+            val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
+            val poster = element.selectFirst("img")?.attr("src")
 
-                // 1. Parsing dei risultati di ricerca (struttura .movie)
-                document.select(".movie").forEach { element ->
-                    val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle)
-                    val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
-                    val poster = element.selectFirst("img")?.attr("src")
+            val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
 
-                    val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
-
-                    results.add(
-                        newMovieSearchResponse(title, targetUrl, TvType.Movie) {
-                            this.posterUrl = poster
-                            this.type = type
-                        }
-                    )
+            results.add(
+                newMovieSearchResponse(title, targetUrl, TvType.Movie) {
+                    this.posterUrl = poster
+                    this.type = type
                 }
-                
-                // 2. Fallback per risultati strutturati come uagb-post
-                document.select(".uagb-post__inner-wrap").forEach { element ->
-                    val titleEl = element.selectFirst(".uagb-post__title a")
-                    val rawTitle = titleEl?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle)
-                    val targetUrl = titleEl.attr("href")
-                    val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
-                    
-                    val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
+            )
+        }
 
-                    results.add(
-                        newMovieSearchResponse(title, targetUrl, TvType.Movie) {
-                            this.posterUrl = poster
-                            this.type = type
-                        }
-                    )
+        // 2. Fallback per risultati strutturati come uagb-post
+        document.select(".uagb-post__inner-wrap").forEach { element ->
+            val titleEl = element.selectFirst(".uagb-post__title a")
+            val rawTitle = titleEl?.text() ?: return@forEach
+            val title = cleanTitle(rawTitle)
+            val targetUrl = titleEl.attr("href")
+            val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
+
+            val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
+
+            results.add(
+                newMovieSearchResponse(title, targetUrl, TvType.Movie) {
+                    this.posterUrl = poster
+                    this.type = type
                 }
-
-                if (results.size == initialCount) {
-                    break
-                }
-
-            } catch (e: Exception) {
-                break
-            }
+            )
         }
 
         return results.distinctBy { it.url }
@@ -135,31 +120,31 @@ class OnlineSerieTvProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-        
+
         val rawTitle = document.selectFirst("h1")?.text() ?: document.selectFirst(".uagb-post__title")?.text() ?: "Nessun Titolo"
         val title = cleanTitle(rawTitle)
-        
+
         val poster = document.selectFirst(".imagen img")?.attr("src") ?: document.selectFirst(".uagb-post__image img")?.attr("src")
         val description = document.selectFirst(".wp-block-post-content p")?.text() ?: document.selectFirst(".entry-content p")?.text()
 
+        // Logica originale intatta per caricare le puntate
         return if (!url.contains("/film/")) {
             val episodesList = mutableListOf<Episode>()
-            
+
             document.select(".wp-block-columns").forEach { column ->
                 val seasonTitle = column.selectFirst("h3")?.text() ?: "Stagione 1"
                 val season = seasonTitle.filter { it.isDigit() }.toIntOrNull() ?: 1
 
                 column.select("a").forEachIndexed { index, element ->
                     val episodeUrl = element.attr("href")
-                    val episodeNumber = index + 1
-                    
-                    // Corretto l'uso del costruttore deprecato con newEpisode
+                    val episode = index + 1
                     episodesList.add(
-                        newEpisode(episodeUrl) {
-                            this.name = "Episodio $episodeNumber"
-                            this.season = season
-                            this.episode = episodeNumber
-                        }
+                        Episode(
+                            data = episodeUrl,
+                            name = "Episodio $episode",
+                            season = season,
+                            episode = episode
+                        )
                     )
                 }
             }
