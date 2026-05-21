@@ -13,7 +13,7 @@ class OnlineSerieTvProvider : MainAPI() {
     override val hasMainPage = true
     override var lang = "it"
     override val hasChromecastSupport = true
-    override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
+    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Ultime Serie e Film",
