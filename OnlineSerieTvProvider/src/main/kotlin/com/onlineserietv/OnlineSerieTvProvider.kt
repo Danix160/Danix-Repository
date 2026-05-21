@@ -64,17 +64,17 @@ class OnlineSerieTvProvider : MainAPI() {
             .replace("ò", "o")
             .replace("ì", "i")
             .replace("ù", "u")
+            .replace("'", "")
+            .replace("-", "")
+            .replace(" ", "")
             .replace("""[^a-z0-9]""".toRegex(), "")
     }
 
     private fun isTitleMatching(query: String, tmdbTitle: String): Boolean {
         val q = normalizeText(query)
         val t = normalizeText(tmdbTitle)
-        if (q.contains(t) || t.contains(q)) return true
-        
-        val queryWords = query.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
-        val tmdbWords = tmdbTitle.lowercase().replace("é", "e").split(" ").filter { it.length > 3 }
-        return queryWords.any { tmdbWords.contains(it) }
+        // Controllo di uguaglianza esatta dei caratteri normalizzati per evitare falsi positivi (es. "thescoobydooshow")
+        return q == t || q.contains(t) || t.contains(q)
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
@@ -89,8 +89,8 @@ class OnlineSerieTvProvider : MainAPI() {
             val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
             
             val year = extractYear(rawTitle)
-            val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath else getTmdbTvMetadata(title, year)?.posterPath
-            val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst(".uagb-post__image img")?.attr("src")
+            val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year) else getTmdbTvMetadata(title, year)
+            val poster = tmdbPoster?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst(".uagb-post__image img")?.attr("src")
 
             homeResults.add(newMovieSearchResponse(title, url, type) { this.posterUrl = poster })
         }
@@ -122,9 +122,8 @@ class OnlineSerieTvProvider : MainAPI() {
                     val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
                     
                     val year = extractYear(rawTitle)
-                    // Se l'anno non coincide, getTmdb restituirà null e userà il poster originale del sito (img)
-                    val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath else getTmdbTvMetadata(title, year)?.posterPath
-                    val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst("img")?.attr("src")
+                    val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year) else getTmdbTvMetadata(title, year)
+                    val poster = tmdbPoster?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst("img")?.attr("src")
 
                     results.add(newMovieSearchResponse(title, targetUrl, type) { this.posterUrl = poster })
                 }
@@ -137,7 +136,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
                     
                     val year = extractYear(rawTitle)
-                    val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year)?.posterPath else getTmdbTvMetadata(title, year)?.posterPath
+                    val tmdbPoster = if (type == TvType.Movie) getTmdbMovieMetadata(title, year) else getTmdbTvMetadata(title, year)
                     val poster = tmdbPoster?.let { "https://image.tmdb.org/t/p/w500$it" } ?: element.selectFirst(".uagb-post__image img")?.attr("src")
 
                     results.add(newMovieSearchResponse(title, targetUrl, type) { this.posterUrl = poster })
@@ -271,18 +270,18 @@ class OnlineSerieTvProvider : MainAPI() {
         return try {
             val results = app.get(url).parsed<TmdbMovieResponse>().results ?: return null
             
-            // 1. Cerca corrispondenza di titolo E anno
+            // 1. Cerca corrispondenza di titolo E anno (Se l'anno c'è)
             val exactMatch = results.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
             if (exactMatch != null) return exactMatch
             
-            // 2. Se non c'è match esatto con l'anno, prendiamo il primo titolo simile MA verifichiamo tassativamente che l'anno coincida
+            // 2. Se l'anno estratto è nullo o non ha dato frutti, convalida rigorosamente il titolo testuale del primo risultato
             val partialMatch = results.firstOrNull { isTitleMatching(query, it.title) }
-            if (partialMatch != null && year != null) {
+            if (partialMatch != null) {
                 val tmdbYear = partialMatch.releaseDate?.take(4)?.toIntOrNull()
-                if (tmdbYear == year) return partialMatch
+                // Se abbiamo un anno sul sito e differisce, scarta. Se non l'abbiamo (ricerca esterna), accetta SOLO se la stringa normalizzata è coerente
+                if (year != null && tmdbYear != year) return null
+                return partialMatch
             }
-            
-            // Se l'anno differisce o non c'è corrispondenza sicura, restituisce null per forzare l'uso del poster del sito
             null
         } catch (e: Exception) { null }
     }
@@ -298,13 +297,17 @@ class OnlineSerieTvProvider : MainAPI() {
             val exactMatch = results.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
             if (exactMatch != null) return exactMatch
             
-            // 2. Controllo incrociato stringente: se l'anno differisce da quello del sito, restituisce null ed evita l'associazione errata
+            // 2. Controllo incrociato stringente sia per anno mancante che per titoli simili ma non corretti
             val partialMatch = results.firstOrNull { isTitleMatching(query, it.name) }
-            if (partialMatch != null && year != null) {
+            if (partialMatch != null) {
                 val tmdbYear = partialMatch.firstAirDate?.take(4)?.toIntOrNull()
-                if (tmdbYear == year) return partialMatch
+                if (year != null && tmdbYear != year) return null
+                
+                // Controllo cruciale per i titoli senza anno nel search: la normalizzazione testuale deve combaciare (evita Scrappy-Doo)
+                val qNorm = normalizeText(query)
+                val tNorm = normalizeText(partialMatch.name)
+                if (qNorm == tNorm || tNorm.startsWith(qNorm)) return partialMatch
             }
-            
             null
         } catch (e: Exception) { null }
     }
