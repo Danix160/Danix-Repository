@@ -46,9 +46,10 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     private fun extractYear(title: String): Int? {
-        val match = """(19|20)\d{2}""".toRegex().find(title)
-        return match?.value?.toIntOrNull()
-    }
+    // Cerca qualsiasi sequenza di 4 cifre che inizi per 19 o 20
+    val match = """(19|20)\d{2}""".toRegex().find(title)
+    return match?.value?.toIntOrNull()
+}
 
     private fun isTitleMatching(query: String, tmdbTitle: String): Boolean {
         val q = query.lowercase().replace("""[^a-z0-9]""".toRegex(), "")
@@ -186,23 +187,32 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
-        return try {
-            val yearParam = if (year != null) "&year=$year" else ""
-            val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${java.net.URLEncoder.encode(query, "UTF-8")}&language=it-IT$yearParam"
-            app.get(url).parsed<TmdbMovieResponse>().results?.firstOrNull { isTitleMatching(query, it.title) } ?: app.get(url).parsed<TmdbMovieResponse>().results?.firstOrNull()
-        } catch (e: Exception) { null }
-    }
+    return try {
+        // Usiamo l'anno nel parametro di ricerca per restringere drasticamente il campo
+        val yearParam = if (year != null) "&year=$year" else ""
+        val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=${base64UrlEncode(query)}&language=it-IT$yearParam"
+        
+        val response = app.get(url).parsed<TmdbMovieResponse>()
+        
+        // Prima cerchiamo una corrispondenza esatta, poi ci accontentiamo del primo risultato
+        response.results?.firstOrNull { isTitleMatching(query, it.title) } 
+            ?: response.results?.firstOrNull()
+    } catch (e: Exception) { null }
+}
 
-    private suspend fun getTmdbTvMetadata(query: String, year: Int?): TmdbTvResult? {
-        val baseQuery = java.net.URLEncoder.encode(query, "UTF-8")
+private suspend fun getTmdbTvMetadata(query: String, year: Int?): TmdbTvResult? {
+    return try {
+        val baseQuery = base64UrlEncode(query)
+        // Per le serie, usiamo first_air_date_year
         val yearParam = if (year != null) "&first_air_date_year=$year" else ""
         val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$baseQuery&language=it-IT$yearParam"
+        
         val response = app.get(url).parsed<TmdbTvResponse>()
-        return response.results?.firstOrNull { isTitleMatching(query, it.name) }
-            ?: if (year != null) {
-                app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$baseQuery&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull { isTitleMatching(query, it.name) }
-            } else null
-    }
+        
+        response.results?.firstOrNull { isTitleMatching(query, it.name) }
+            ?: response.results?.firstOrNull()
+    } catch (e: Exception) { null }
+}
 
     private suspend fun getTmdbSeasonEpisodes(tvId: Int, season: Int): Map<Int, TmdbEpisode>? {
         return try {
