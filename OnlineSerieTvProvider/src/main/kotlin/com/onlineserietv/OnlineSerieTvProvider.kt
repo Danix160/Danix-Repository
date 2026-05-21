@@ -2,7 +2,7 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.loadExtractor 
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Document
@@ -16,9 +16,9 @@ class OnlineSerieTvProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "$mainUrl/movies/" to "Film",
+        "$mainUrl/movies" to "Film",
         "$mainUrl/serie-tv/" to "Serie TV",
-        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
+        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni Animati"
     )
 
     /**
@@ -39,7 +39,7 @@ class OnlineSerieTvProvider : MainAPI() {
         document.select(".uagb-post__inner-wrap").forEach { element ->
             val titleEl = element.selectFirst(".uagb-post__title a")
             val rawTitle = titleEl?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle) // Pulizia Estetica Titolo
+            val title = cleanTitle(rawTitle)
             val url = titleEl.attr("href")
             val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
 
@@ -56,7 +56,7 @@ class OnlineSerieTvProvider : MainAPI() {
         // Selettore 2: Fallback struttura classica film (.movie)
         document.select(".movie").forEach { element ->
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle) // Pulizia Estetica Titolo
+            val title = cleanTitle(rawTitle)
             val url = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
             val poster = element.selectFirst("img")?.attr("src")
 
@@ -90,7 +90,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 // 1. Parsing dei risultati di ricerca (struttura .movie)
                 document.select(".movie").forEach { element ->
                     val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle) // Pulizia Estetica Titolo
+                    val title = cleanTitle(rawTitle)
                     val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
                     val poster = element.selectFirst("img")?.attr("src")
 
@@ -108,7 +108,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
                     val rawTitle = titleEl?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle) // Pulizia Estetica Titolo
+                    val title = cleanTitle(rawTitle)
                     val targetUrl = titleEl.attr("href")
                     val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
                     
@@ -137,7 +137,6 @@ class OnlineSerieTvProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
         
-        // Puliamo l'anno anche dal titolo principale della scheda dettagli
         val rawTitle = document.selectFirst("h1")?.text() ?: document.selectFirst(".uagb-post__title")?.text() ?: "Nessun Titolo"
         val title = cleanTitle(rawTitle)
         
@@ -153,14 +152,15 @@ class OnlineSerieTvProvider : MainAPI() {
 
                 column.select("a").forEachIndexed { index, element ->
                     val episodeUrl = element.attr("href")
-                    val episode = index + 1
+                    val episodeNumber = index + 1
+                    
+                    // Corretto l'uso del costruttore deprecato con newEpisode
                     episodesList.add(
-                        Episode(
-                            data = episodeUrl,
-                            name = "Episodio $episode",
-                            season = season,
-                            episode = episode
-                        )
+                        newEpisode(episodeUrl) {
+                            this.name = "Episodio $episodeNumber"
+                            this.season = season
+                            this.episode = episodeNumber
+                        }
                     )
                 }
             }
