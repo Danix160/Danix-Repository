@@ -99,11 +99,10 @@ class OnlineSerieTvProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 10 // Limite di sicurezza per evitare loop infiniti
+        val maxPagesToSearch = 10 
 
         for (page in 1..maxPagesToSearch) {
             try {
-                // Gestione corretta della paginazione del sito: /?s=query per pagina 1, /page/X/?s=query per le successive
                 val url = if (page == 1) {
                     "$mainUrl/?s=${base64UrlEncode(query)}"
                 } else {
@@ -111,12 +110,11 @@ class OnlineSerieTvProvider : MainAPI() {
                 }
                 
                 val response = app.get(url)
-                if (response.code != 200) break // Se la pagina non esiste, interrompe il ciclo delle pagine
+                if (response.code != 200) break 
                 
                 val document = response.document
                 val initialCount = results.size
 
-                // 1. Parsing struttura .movie (Griglia standard dei risultati del sito)
                 document.select(".movie").forEach { element ->
                     val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
                     val title = cleanTitle(rawTitle)
@@ -130,7 +128,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     results.add(newMovieSearchResponse(title, targetUrl, type) { this.posterUrl = poster })
                 }
 
-                // 2. Fallback struttura .uagb-post__inner-wrap (Se usata in alcune sezioni di ricerca)
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
                     val rawTitle = titleEl?.text() ?: return@forEach
@@ -145,13 +142,12 @@ class OnlineSerieTvProvider : MainAPI() {
                     results.add(newMovieSearchResponse(title, targetUrl, type) { this.posterUrl = poster })
                 }
 
-                // Se in questa pagina non sono stati trovati nuovi elementi rispetto a prima, significa che le pagine sono finite
                 if (results.size == initialCount) {
                     break
                 }
 
             } catch (e: Exception) {
-                break // Esce in caso di errore di connessione o parsing della pagina corrente
+                break 
             }
         }
         return results.distinctBy { it.url }
@@ -196,14 +192,7 @@ class OnlineSerieTvProvider : MainAPI() {
         val finalSitePlot = siteDescription?.replace("(?i)^Trama:\\s*".toRegex(), "")?.trim()
 
         if (!isMovie) {
-            var tmdbData = getTmdbTvMetadata(titleClean, siteYear)
-            
-            if (tmdbData != null && siteYear != null) {
-                val tmdbYear = tmdbData.firstAirDate?.take(4)?.toIntOrNull()
-                if (tmdbYear != siteYear) {
-                    tmdbData = null 
-                }
-            }
+            val tmdbData = getTmdbTvMetadata(titleClean, siteYear)
 
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
@@ -223,7 +212,7 @@ class OnlineSerieTvProvider : MainAPI() {
                         var checkSeason = season
                         while (true) {
                             if (!cachedStagioni.containsKey(checkSeason)) {
-                                val epsMap = getTmdbSeasonEpisodes(tmdbData!!.id, checkSeason)
+                                val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
                                 cachedStagioni[checkSeason] = epsMap
                                 cachedStagioniSizes[checkSeason] = epsMap?.size ?: 0
                             }
@@ -259,14 +248,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 this.plot = tmdbData?.overview ?: finalSitePlot
             }
         } else {
-            var tmdbMovie = getTmdbMovieMetadata(titleClean, siteYear)
-            
-            if (tmdbMovie != null && siteYear != null) {
-                val tmdbYear = tmdbMovie.releaseDate?.take(4)?.toIntOrNull()
-                if (tmdbYear != siteYear) {
-                    tmdbMovie = null 
-                }
-            }
+            val tmdbMovie = getTmdbMovieMetadata(titleClean, siteYear)
 
             val finalTitle = (tmdbMovie?.title ?: titleClean) + if (isSubIta) " SUB ITA" else ""
             return newMovieLoadResponse(finalTitle, url, TvType.Movie, url) {
@@ -286,10 +268,18 @@ class OnlineSerieTvProvider : MainAPI() {
         val yearParam = if (year != null) "&year=$year" else ""
         val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
         return try {
-            val results = app.get(url).parsed<TmdbMovieResponse>().results
-            results?.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
-                ?: results?.firstOrNull { isTitleMatching(query, it.title) }
-                ?: app.get("$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT").parsed<TmdbMovieResponse>().results?.firstOrNull()
+            val results = app.get(url).parsed<TmdbMovieResponse>().results ?: return null
+            // 1. Cerca corrispondenza esatta di titolo E anno
+            val exactMatch = results.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
+            if (exactMatch != null) return exactMatch
+            
+            // 2. Se non c'è l'anno ma il titolo è quasi perfetto, verifica che non appartenga a un anno completamente diverso
+            val partialMatch = results.firstOrNull { isTitleMatching(query, it.title) }
+            if (partialMatch != null && year != null) {
+                val tmdbYear = partialMatch.releaseDate?.take(4)?.toIntOrNull()
+                if (tmdbYear == year) return partialMatch else return null // Rigetta se l'anno è sballato
+            }
+            partialMatch
         } catch (e: Exception) { null }
     }
 
@@ -298,10 +288,18 @@ class OnlineSerieTvProvider : MainAPI() {
         val yearParam = if (year != null) "&first_air_date_year=$year" else ""
         val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
         return try {
-            val results = app.get(url).parsed<TmdbTvResponse>().results
-            results?.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
-                ?: results?.firstOrNull { isTitleMatching(query, it.name) }
-                ?: app.get("$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT").parsed<TmdbTvResponse>().results?.firstOrNull()
+            val results = app.get(url).parsed<TmdbTvResponse>().results ?: return null
+            // 1. Cerca corrispondenza esatta di titolo E anno di inizio trasmissione
+            val exactMatch = results.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
+            if (exactMatch != null) return exactMatch
+            
+            // 2. Controllo incrociato sul titolo: se l'anno trovato differisce da quello del sito, blocca l'associazione errata
+            val partialMatch = results.firstOrNull { isTitleMatching(query, it.name) }
+            if (partialMatch != null && year != null) {
+                val tmdbYear = partialMatch.firstAirDate?.take(4)?.toIntOrNull()
+                if (tmdbYear == year) return partialMatch else return null // Ritorna null anziché associare una serie omonima di un altro anno
+            }
+            partialMatch
         } catch (e: Exception) { null }
     }
 
