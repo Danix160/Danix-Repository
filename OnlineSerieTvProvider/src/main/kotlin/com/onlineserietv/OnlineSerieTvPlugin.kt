@@ -9,5 +9,7 @@ class OnlineSerieTvPlugin: Plugin() {
     override fun load(context: Context) {
         // Registra il provider definito sopra nella classe ToonItaliaProvider
         registerMainAPI(OnlineSerieTvProvider())
+        registerExtractorAPI(Uprot())
+        registerExtractorAPI(MaxStream())
     }
 }
