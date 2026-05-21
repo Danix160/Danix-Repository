@@ -62,43 +62,69 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("$mainUrl/?s=$query").document
         val results = mutableListOf<SearchResponse>()
+        val maxPagesToSearch = 10 // Puoi aumentare o diminuire questo limite a piacimento
 
-        // Parsing dei risultati di ricerca (struttura .movie)
-        document.select(".movie").forEach { element ->
-            val title = element.selectFirst("h2")?.text() ?: return@forEach
-            val url = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
-            val poster = element.selectFirst("img")?.attr("src")
+        for (page in 1..maxPagesToSearch) {
+            try {
+                // Costruiamo l'URL per la pagina corrente. Esempio: https://onlineserietv.lol/page/2/?s=query
+                val url = if (page == 1) "$mainUrl/?s=$query" else "$mainUrl/page/$page/?s=$query"
+                val response = app.get(url)
+                
+                // Se la pagina non esiste (es. 404), ci fermiamo
+                if (response.code != 200) break
+                
+                val document = response.document
+                val initialCount = results.size
 
-            val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+                // 1. Parsing dei risultati di ricerca (struttura .movie)
+                document.select(".movie").forEach { element ->
+                    val title = element.selectFirst("h2")?.text() ?: return@forEach
+                    val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
+                    val poster = element.selectFirst("img")?.attr("src")
 
-            results.add(
-                newMovieSearchResponse(title, url, TvType.Movie) {
-                    this.posterUrl = poster
-                    this.type = type
+                    val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
+
+                    results.add(
+                        newMovieSearchResponse(title, targetUrl, TvType.Movie) {
+                            this.posterUrl = poster
+                            this.type = type
+                        }
+                    )
                 }
-            )
-        }
-        
-        // Fallback per risultati strutturati come uagb-post
-        document.select(".uagb-post__inner-wrap").forEach { element ->
-            val titleEl = element.selectFirst(".uagb-post__title a")
-            val title = titleEl?.text() ?: return@forEach
-            val url = titleEl.attr("href")
-            val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
-            
-            val type = if (url.contains("/film/")) TvType.Movie else TvType.TvSeries
+                
+                // 2. Fallback per risultati strutturati come uagb-post
+                document.select(".uagb-post__inner-wrap").forEach { element ->
+                    val titleEl = element.selectFirst(".uagb-post__title a")
+                    val title = titleEl?.text() ?: return@forEach
+                    val targetUrl = titleEl.attr("href")
+                    val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
+                    
+                    val type = if (targetUrl.contains("/film/")) TvType.Movie else TvType.TvSeries
 
-            results.add(
-                newMovieSearchResponse(title, url, TvType.Movie) {
-                    this.posterUrl = poster
-                    this.type = type
+                    results.add(
+                        newMovieSearchResponse(title, targetUrl, TvType.Movie) {
+                            this.posterUrl = poster
+                            this.type = type
+                        }
+                    )
                 }
-            )
+
+                // Se in questa pagina non abbiamo trovato alcun elemento nuovo, 
+                // significa che siamo andati oltre l'ultima pagina disponibile. Interrompiamo il ciclo.
+                if (results.size == initialCount) {
+                    break
+                }
+
+            } catch (e: Exception) {
+                // In caso di errore di rete su una pagina successiva, interrompiamo il ciclo 
+                // per salvare i risultati ottenuti fino a quel momento
+                break
+            }
         }
 
-        return results
+        // Ritorna la lista combinata di tutte le pagine scansionate, ripulita da eventuali duplicati
+        return results.distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
