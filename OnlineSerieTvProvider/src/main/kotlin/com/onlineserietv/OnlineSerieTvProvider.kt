@@ -277,4 +277,67 @@ class OnlineSerieTvProvider : MainAPI() {
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
         val encodedQuery = base64UrlEncode(query)
         val yearParam = if (year != null) "&year=$year" else ""
-        val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery
+        val url = "$tmdbBaseUrl/search/movie?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
+        return try {
+            val results = app.get(url).parsed<TmdbMovieResponse>().results ?: return null
+            
+            val exactMatch = results.firstOrNull { isTitleMatching(query, it.title) && (year == null || it.releaseDate?.contains(year.toString()) == true) }
+            if (exactMatch != null) return exactMatch
+            
+            val partialMatch = results.firstOrNull { isTitleMatching(query, it.title) }
+            if (partialMatch != null) {
+                val tmdbYear = partialMatch.releaseDate?.take(4)?.toIntOrNull()
+                if (year != null && tmdbYear != year) return null
+                return partialMatch
+            }
+            null
+        } catch (e: Exception) { null }
+    }
+
+    private suspend fun getTmdbTvMetadata(query: String, year: Int?): TmdbTvResult? {
+        val encodedQuery = base64UrlEncode(query)
+        val yearParam = if (year != null) "&first_air_date_year=$year" else ""
+        val url = "$tmdbBaseUrl/search/tv?api_key=$tmdbApiKey&query=$encodedQuery&language=it-IT$yearParam"
+        return try {
+            val results = app.get(url).parsed<TmdbTvResponse>().results ?: return null
+            
+            val exactMatch = results.firstOrNull { isTitleMatching(query, it.name) && (year == null || it.firstAirDate?.contains(year.toString()) == true) }
+            if (exactMatch != null) return exactMatch
+            
+            val partialMatch = results.firstOrNull { isTitleMatching(query, it.name) }
+            if (partialMatch != null) {
+                val tmdbYear = partialMatch.firstAirDate?.take(4)?.toIntOrNull()
+                if (year != null && tmdbYear != year) return null
+                
+                val qNorm = normalizeText(query)
+                val tNorm = normalizeText(partialMatch.name)
+                if (qNorm == tNorm || tNorm.startsWith(qNorm)) return partialMatch
+            }
+            null
+        } catch (e: Exception) { null }
+    }
+
+    private suspend fun getTmdbSeasonEpisodes(tvId: Int, season: Int): Map<Int, TmdbEpisode>? {
+        return try {
+            app.get("$tmdbBaseUrl/tv/$tvId/season/$season?api_key=$tmdbApiKey&language=it-IT").parsed<TmdbSeasonResponse>().episodes?.associateBy { it.episodeNumber }
+        } catch (e: Exception) { null }
+    }
+
+    data class TmdbMovieResponse(val results: List<TmdbMovieResult>?)
+    data class TmdbMovieResult(
+        val title: String, 
+        val overview: String?, 
+        @JsonProperty("poster_path") val posterPath: String?,
+        @JsonProperty("release_date") val releaseDate: String?
+    )
+    data class TmdbTvResponse(val results: List<TmdbTvResult>?)
+    data class TmdbTvResult(
+        val id: Int, 
+        val name: String, 
+        val overview: String?, 
+        @JsonProperty("poster_path") val posterPath: String?,
+        @JsonProperty("first_air_date") val firstAirDate: String?
+    )
+    data class TmdbSeasonResponse(val episodes: List<TmdbEpisode>?)
+    data class TmdbEpisode(val name: String, val overview: String?, @JsonProperty("episode_number") val episodeNumber: Int, @JsonProperty("still_path") val stillPath: String?)
+}
