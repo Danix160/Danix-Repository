@@ -2,7 +2,7 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor // Import corretto del metodo di estensione
+import com.lagradost.cloudstream3.utils.loadExtractor 
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Document
@@ -21,30 +21,68 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
+    private val omdbApiKey = "d6f266ee"
+    private val omdbBaseUrl = "https://www.omdbapi.com/"
+
+    /**
+     * Cerca l'opera su OMDb tramite titolo e restituisce l'ID IMDb (ttXXXXXXX) se trovato.
+     */
+    private suspend fun getImdbIdViaOmdb(title: String, isTv: Boolean): String? {
+        val type = if (isTv) "series" else "movie"
+        val url = "$omdbBaseUrl?apikey=$omdbApiKey&s=${java.net.URLEncoder.encode(title, "UTF-8")}&type=$type"
+        
+        return try {
+            val response = app.get(url).text
+            "\"imdbID\":\"(tt\\d+)\"".toRegex().find(response)?.groupValues?.get(1)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Scarica l'intero JSON di una specifica stagione per estrarre le locandine in blocco.
+     */
+    private suspend fun getSeasonEpisodesPosters(imdbId: String?, seriesTitle: String, season: Int): Map<Int, String> {
+        val postersMap = mutableMapOf<Int, String>()
+        val queryParam = if (imdbId != null) "i=$imdbId" else "t=${java.net.URLEncoder.encode(seriesTitle, "UTF-8")}"
+        val url = "$omdbBaseUrl?apikey=$omdbApiKey&$queryParam&Season=$season"
+
+        try {
+            val response = app.get(url).text
+            // Trova tutti i blocchi degli episodi nel JSON della stagione
+            val episodeBlocks = """\{"Title"[^}]+""".toRegex().findAll(response)
+            
+            episodeBlocks.forEach { block ->
+                val epText = block.value
+                val epNum = "\"Episode\":\"(\\d+)\"".toRegex().find(epText)?.groupValues?.get(1)?.toIntOrNull()
+                val posterLink = "\"Poster\":\"([^\"]+)\"".toRegex().find(epText)?.groupValues?.get(1)
+                
+                if (epNum != null && posterLink != null && posterLink != "N/A" && posterLink.startsWith("http")) {
+                    postersMap[epNum] = posterLink
+                }
+            }
+        } catch (_: Exception) {}
+        
+        return postersMap
+    }
+
     /**
      * Rimuove l'anno, tag come STAGIONE e suffissi del sito,
      * ma mantiene e formatta la dicitura SUB ITA alla fine del titolo.
      */
     private fun cleanTitle(title: String): String {
-        // Controlla se il titolo originale contiene "SUB ITA" o "SUB-ITA"
         val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
 
         var cleaned = title
             .replace(" in streaming - OnlineSerieTv", "")
-            // Rimuove esplicitamente SUB ITA temporaneamente per non incasinare la pulizia dell'anno
             .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
-            // Rimuove scritte inutili come ITA, STAGIONE 1, STAGIONE, ecc.
             .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
-            // Rimuove l'anno (es. 2024, (2025), [2026]) ovunque si trovi
             .replace("""\s*[\(\[-]?\s*(19|20)\d{2}\s*[\)\]-]?\s*""".toRegex(), " ")
-            // Rimuove trattini o simboli rimasti isolati prima o dopo
             .replace("""\s*[-–—:|]+\s*$""".toRegex(), "") 
             .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
-            // Sostituisce spazi multipli con uno singolo
             .replace("""\s+""".toRegex(), " ")
             .trim()
 
-        // Se originariamente c'era SUB ITA, lo riaggiunge formattato bene in coda
         if (isSubIta) {
             cleaned = "$cleaned SUB ITA"
         }
@@ -60,7 +98,7 @@ class OnlineSerieTvProvider : MainAPI() {
         document.select(".uagb-post__inner-wrap").forEach { element ->
             val titleEl = element.selectFirst(".uagb-post__title a")
             val rawTitle = titleEl?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle) // Titolo Pulito
+            val title = cleanTitle(rawTitle)
             val url = titleEl.attr("href")
             val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
             
@@ -77,7 +115,7 @@ class OnlineSerieTvProvider : MainAPI() {
         // Selettore 2: Struttura classica dei blocchi standard (.movie)
         document.select(".movie").forEach { element ->
             val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-            val title = cleanTitle(rawTitle) // Titolo Pulito
+            val title = cleanTitle(rawTitle)
             val linkEl = element.selectFirst(".imagen a") ?: element.selectFirst("a")
             val url = linkEl?.attr("href") ?: return@forEach
             val poster = element.selectFirst("img")?.attr("src")
@@ -97,7 +135,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
    override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
-        val maxPagesToSearch = 10
+        val maxPagesToSearch = 5
 
         for (page in 1..maxPagesToSearch) {
             try {
@@ -112,7 +150,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 // 1. Parsing dei risultati di ricerca (struttura .movie)
                 document.select(".movie").forEach { element ->
                     val rawTitle = element.selectFirst("h2")?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle) // Titolo Pulito
+                    val title = cleanTitle(rawTitle)
                     val targetUrl = element.selectFirst(".imagen a")?.attr("href") ?: element.selectFirst("a")?.attr("href") ?: return@forEach
                     val poster = element.selectFirst("img")?.attr("src")
 
@@ -130,7 +168,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 document.select(".uagb-post__inner-wrap").forEach { element ->
                     val titleEl = element.selectFirst(".uagb-post__title a")
                     val rawTitle = titleEl?.text() ?: return@forEach
-                    val title = cleanTitle(rawTitle) // Titolo Pulito
+                    val title = cleanTitle(rawTitle)
                     val targetUrl = titleEl.attr("href")
                     val poster = element.selectFirst(".uagb-post__image img")?.attr("src")
                     
@@ -162,12 +200,11 @@ class OnlineSerieTvProvider : MainAPI() {
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")
             ?: "Senza Titolo"
         
-        val title = cleanTitle(rawTitle) // Titolo Pulito
+        val title = cleanTitle(rawTitle)
         
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?: document.selectFirst(".imagen img")?.attr("src")
 
-        // Sistema di estrazione trama multi-livello
         var description: String? = null
         
         val tramaElement = document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
@@ -188,9 +225,14 @@ class OnlineSerieTvProvider : MainAPI() {
 
         val finalDescription = description?.replace("(?i)^Trama:\\s*".toRegex(), "")?.trim()
 
-        return if (url.contains("/serietv/")) {
+        return if (url.contains("/serietv/") || url.contains("/serie-tv/")) {
             val episodesList = mutableListOf<Episode>()
             var epCount = 1
+            
+            val imdbId = getImdbIdViaOmdb(title, isTv = true)
+            
+            // Mappa per salvare le locandine delle stagioni già scaricate ed evitare chiamate doppie
+            val seasonsCache = mutableMapOf<Int, Map<Int, String>>()
             
             document.select("table tr, div.data-content a, td a").forEach { element ->
                 val link = element.attr("href")
@@ -201,12 +243,19 @@ class OnlineSerieTvProvider : MainAPI() {
                     val season = match?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     val episode = match?.groupValues?.get(2)?.toIntOrNull() ?: epCount++
 
+                    // Se la stagione non è in cache, scarica tutti i suoi poster in una volta sola
+                    if (!seasonsCache.containsKey(season)) {
+                        seasonsCache[season] = getSeasonEpisodesPosters(imdbId, title, season)
+                    }
+                    
+                    val episodePoster = seasonsCache[season]?.get(episode) ?: poster
+
                     episodesList.add(
                         newEpisode(link) {
                             this.name = "Episodio $episode"
                             this.season = season
                             this.episode = episode
-                            this.posterUrl = poster
+                            this.posterUrl = episodePoster
                         }
                     )
                 }
@@ -215,11 +264,14 @@ class OnlineSerieTvProvider : MainAPI() {
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
                 this.posterUrl = poster
                 this.plot = finalDescription
+                if (imdbId != null) this.syncId = imdbId
             }
         } else {
+            val imdbId = getImdbIdViaOmdb(title, isTv = false)
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = finalDescription
+                if (imdbId != null) this.syncId = imdbId
             }
         }
     }
