@@ -95,15 +95,12 @@ class OnlineSerieTvProvider : MainAPI() {
             val poster = if (type == TvType.Movie) {
                 getTmdbMovieMetadata(titleOnly, year)?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
             } else {
-                if (titleOnly.contains("scooby", ignoreCase = true)) {
-                    getTvMazeMetadata(titleOnly)?.image?.medium
+                // Se la query riguarda Scooby, bypassa TMDB per evitare locandine errate
+                val tmdb = if (titleOnly.contains("scooby", ignoreCase = true)) null else getTmdbTvMetadata(titleOnly, year)
+                if (tmdb != null) {
+                    "https://image.tmdb.org/t/p/w500${tmdb.posterPath}"
                 } else {
-                    val tmdb = getTmdbTvMetadata(titleOnly, year)
-                    if (tmdb != null) {
-                        "https://image.tmdb.org/t/p/w500${tmdb.posterPath}"
-                    } else {
-                        getTvMazeMetadata(titleOnly)?.image?.medium
-                    }
+                    getTvMazeMetadata(titleOnly, year)?.image?.medium
                 }
             } ?: element.selectFirst(".uagb-post__image img")?.attr("src")
 
@@ -129,15 +126,11 @@ class OnlineSerieTvProvider : MainAPI() {
             val poster = if (type == TvType.Movie) {
                 getTmdbMovieMetadata(titleOnly, year)?.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
             } else {
-                if (titleOnly.contains("scooby", ignoreCase = true)) {
-                    getTvMazeMetadata(titleOnly)?.image?.medium
+                val tmdb = if (titleOnly.contains("scooby", ignoreCase = true)) null else getTmdbTvMetadata(titleOnly, year)
+                if (tmdb != null) {
+                    "https://image.tmdb.org/t/p/w500${tmdb.posterPath}"
                 } else {
-                    val tmdb = getTmdbTvMetadata(titleOnly, year)
-                    if (tmdb != null) {
-                        "https://image.tmdb.org/t/p/w500${tmdb.posterPath}"
-                    } else {
-                        getTvMazeMetadata(titleOnly)?.image?.medium
-                    }
+                    getTvMazeMetadata(titleOnly, year)?.image?.medium
                 }
             } ?: element.selectFirst("img")?.attr("src")
 
@@ -169,12 +162,12 @@ class OnlineSerieTvProvider : MainAPI() {
         val sitePoster = document.selectFirst("meta[property=og:image]")?.attr("content") ?: document.selectFirst(".imagen img")?.attr("src")
 
         if (url.contains("/serietv/") || !url.contains("/film/")) {
-            // Se è Scooby Doo, forziamo l'esclusione di TMDB per non prendere i metadati sballati
+            // Se è Scooby Doo, forziamo il fallimento di TMDB impostando tmdbData direttamente a null
             val tmdbData = if (titleOnly.contains("scooby", ignoreCase = true)) null else getTmdbTvMetadata(titleOnly, year)
             var tvMazeData: TvMazeShow? = null
             
             if (tmdbData == null) {
-                tvMazeData = getTvMazeMetadata(titleOnly)
+                tvMazeData = getTvMazeMetadata(titleOnly, year)
             }
 
             val episodesList = mutableListOf<Episode>()
@@ -196,7 +189,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     var epPlot: String? = null
                     var epPoster = sitePoster
 
-                    // 1. Gestione con API TMDB
+                    // Flusso Metadati TMDB
                     if (tmdbData != null) {
                         var checkSeason = season
                         while (true) {
@@ -222,7 +215,7 @@ class OnlineSerieTvProvider : MainAPI() {
                                 ?: "https://image.tmdb.org/t/p/w500${tmdbData.posterPath}"
                         }
                     } 
-                    // 2. Gestione corretta con API TVMaze (es. per Scooby-Doo)
+                    // Flusso Metadati TVMaze (Attivo per Scooby o serie non trovate su TMDB)
                     else if (tvMazeData != null) {
                         if (cachedTvMazeEpisodes == null) {
                             cachedTvMazeEpisodes = getTvMazeEpisodes(tvMazeData.id)
@@ -268,6 +261,9 @@ class OnlineSerieTvProvider : MainAPI() {
         return true
     }
 
+    // ==============================================
+    // STRATO DI RECUPERO METADATI TMDB
+    // ==============================================
     private suspend fun getTmdbMovieMetadata(query: String, year: Int?): TmdbMovieResult? {
         val encodedQuery = base64UrlEncode(query)
         val yearParam = if (year != null) "&year=$year" else ""
@@ -299,13 +295,15 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // ==============================================
-    // STRATO DI RECUPERO CORRETTO TVMAZE
+    // STRATO DI RECUPERO METADATI TVMAZE
     // ==============================================
-    private suspend fun getTvMazeMetadata(query: String): TvMazeShow? {
-        // Usiamo l'endpoint singlesearch che è perfetto per accoppiare titoli esatti puliti
-        val url = "$tvMazeBaseUrl/singlesearch/shows?q=${base64UrlEncode(query)}"
+    private suspend fun getTvMazeMetadata(query: String, year: Int?): TvMazeShow? {
+        val url = "$tvMazeBaseUrl/search/shows?q=${base64UrlEncode(query)}"
         return try {
-            app.get(url).parsed<TvMazeShow>()
+            val response = app.get(url).parsed<List<TvMazeSearchResponse>>()
+            response.firstOrNull { 
+                isTitleMatching(query, it.show.name) && (year == null || it.show.premiered?.contains(year.toString()) == true)
+            }?.show ?: response.firstOrNull { isTitleMatching(query, it.show.name) }?.show
         } catch (e: Exception) { null }
     }
 
@@ -315,7 +313,7 @@ class OnlineSerieTvProvider : MainAPI() {
         } catch (e: Exception) { null }
     }
 
-    // CLASSI TMDB
+    // DATA CLASSES TMDB
     data class TmdbMovieResponse(val results: List<TmdbMovieResult>?)
     data class TmdbMovieResult(val title: String, val overview: String?, @JsonProperty("poster_path") val posterPath: String?, @JsonProperty("release_date") val releaseDate: String?)
     data class TmdbTvResponse(val results: List<TmdbTvResult>?)
@@ -323,8 +321,9 @@ class OnlineSerieTvProvider : MainAPI() {
     data class TmdbSeasonResponse(val episodes: List<TmdbEpisode>?)
     data class TmdbEpisode(val name: String, val overview: String?, @JsonProperty("episode_number") val episodeNumber: Int, @JsonProperty("still_path") val stillPath: String?)
 
-    // CLASSI TVMAZE CORRETTE PER SINGLESEARCH
-    data class TvMazeShow(val id: Int, val name: String, val summary: String?, val image: TvMazeImage?)
+    // DATA CLASSES TVMAZE
+    data class TvMazeSearchResponse(val show: TvMazeShow)
+    data class TvMazeShow(val id: Int, val name: String, val summary: String?, val premiered: String?, val image: TvMazeImage?)
     data class TvMazeImage(val medium: String?, val original: String?)
     data class TvMazeEpisode(val name: String?, val season: Int, val number: Int, val summary: String?, val image: TvMazeImage?)
 }
