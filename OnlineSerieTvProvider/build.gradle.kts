@@ -16,7 +16,7 @@ cloudstream {
     authors = listOf("Danix")
     
     status = 1
-    tvTypes = listOf("Movie", "TvSeries", "Anime", "Cartoon")
+    tvTypes = listOf("Movie", "TvSeries")
     requiresResources = false
     language = "it"
     iconUrl = "https://onlineserietv.lol/images/logo.svg"
