@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.mvvm.parallelMap // Utilizza il parallelMap interno di Cloudstream
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.net.URLEncoder
 
@@ -227,10 +228,12 @@ class OnlineSerieTvProvider : MainAPI() {
             val cachedStagioni = mutableMapOf<Int, Map<Int, TmdbEpisode>?>()
             val cachedStagioniSizes = mutableMapOf<Int, Int>()
 
-            // Eseguiamo il fetch unico e sequenziale per ogni stagione rilevata
+            // OTTIMIZZAZIONE FULMINEA: Scarica i dati di tutte le stagioni in PARALLELO usando parallelMap di Cloudstream
             if (tmdbData != null && detectedSeasons.isNotEmpty()) {
-                detectedSeasons.forEach { season ->
+                detectedSeasons.toList().parallelMap { season ->
                     val epsMap = getTmdbSeasonEpisodes(tmdbData.id, season)
+                    Pair(season, epsMap)
+                }.forEach { (season, epsMap) ->
                     cachedStagioni[season] = epsMap
                     cachedStagioniSizes[season] = epsMap?.size ?: 0
                 }
@@ -247,6 +250,8 @@ class OnlineSerieTvProvider : MainAPI() {
                         if (maxEpisodesInSeason > 0 && episode > maxEpisodesInSeason) {
                             episode -= maxEpisodesInSeason
                             checkSeason++
+                            
+                            // Se mancano dati della stagione successiva (es. sforamento), la recuperiamo al volo in sicurezza
                             if (!cachedStagioni.containsKey(checkSeason)) {
                                 val epsMap = getTmdbSeasonEpisodes(tmdbData.id, checkSeason)
                                 cachedStagioni[checkSeason] = epsMap
