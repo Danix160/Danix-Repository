@@ -27,7 +27,6 @@ class OnlineSerieTvProvider : MainAPI() {
 
     private fun cleanTitle(title: String): String {
         var cleaned = title
-            .replace("Uomo Ragno", "Spider-Man", ignoreCase = true)
             .replace(" in streaming - OnlineSerieTv", "", ignoreCase = true)
             
         val regexDaRimuovere = """(?i)\b(serie animata|serie tv|animazione|in streaming|online|hdtv|web-dl)\b""".toRegex()
