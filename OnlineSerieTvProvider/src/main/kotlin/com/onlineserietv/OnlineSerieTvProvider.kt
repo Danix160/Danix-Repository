@@ -1,11 +1,10 @@
 package com.onlineserietv
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.LoadResponse.Companion.addEpisodes
 import com.lagradost.cloudstream3.metaproviders.TmdbProvider
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.*
+import org.jsoup.nodes.Element
 
 class OnlineSerieTvProvider : MainAPI() {
 
@@ -17,8 +16,6 @@ class OnlineSerieTvProvider : MainAPI() {
 
     override var lang = "it"
 
-    override val hasChromecastSupport = true
-
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries
@@ -27,355 +24,132 @@ class OnlineSerieTvProvider : MainAPI() {
     private val tmdb = TmdbProvider()
 
     override val mainPage = mainPageOf(
-        "$mainUrl/movies" to "Film",
-        "$mainUrl/serie-tv/" to "Serie TV",
-        "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
+        "$mainUrl/film/" to "Film",
+        "$mainUrl/serietv/" to "Serie TV"
     )
 
-    /**
-     * CLEAN TITLE
-     */
     private fun cleanTitle(title: String): String {
-
-        val isSubIta =
-            title.contains(
-                "(?i)\\bSUB[- ]?ITA\\b".toRegex()
-            )
-
-        var cleaned = title
-            .replace(
-                " in streaming - OnlineSerieTv",
-                ""
-            )
-            .replace(
-                "(?i)\\bSUB[- ]?ITA\\b".toRegex(),
-                ""
-            )
-            .replace(
-                "(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(),
-                ""
-            )
-            .replace(
-                """\s*[\(\[-]?\s*(19|20)\d{2}\s*[\)\]-]?\s*""".toRegex(),
-                " "
-            )
-            .replace(
-                """\s*[-–—:|]+\s*$""".toRegex(),
-                ""
-            )
-            .replace(
-                """^\s*[-–—:|]+\s*""".toRegex(),
-                ""
-            )
-            .replace(
-                """\s+""".toRegex(),
-                " "
-            )
+        return title
+            .replace("Streaming", "", true)
+            .replace("Gratis", "", true)
+            .replace("ITA", "", true)
+            .replace("HD", "", true)
+            .replace("\\(.*?\\)".toRegex(), "")
             .trim()
-
-        if (isSubIta) {
-            cleaned = "$cleaned SUB ITA"
-        }
-
-        return cleaned
     }
 
-    /**
-     * MAIN PAGE
-     */
+    private fun Element.toSearchResult(): SearchResponse? {
+
+        val href = fixUrl(
+            this.selectFirst("a")?.attr("href")
+                ?: return null
+        )
+
+        val title = cleanTitle(
+            this.selectFirst("img")?.attr("alt")
+                ?: this.selectFirst(".title")
+                    ?.text()
+                ?: this.selectFirst("h2")
+                    ?.text()
+                ?: return null
+        )
+
+        val poster = this.selectFirst("img")
+            ?.let {
+                it.attr("data-src")
+                    .ifBlank {
+                        it.attr("src")
+                    }
+            }
+
+        val isTv =
+            href.contains("/serietv/")
+                    || href.contains("/serie-tv/")
+
+        return if (isTv) {
+
+            newTvSeriesSearchResponse(
+                title,
+                href,
+                TvType.TvSeries
+            ) {
+                this.posterUrl = poster
+            }
+
+        } else {
+
+            newMovieSearchResponse(
+                title,
+                href,
+                TvType.Movie
+            ) {
+                this.posterUrl = poster
+            }
+        }
+    }
+
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
-    ): HomePageResponse? {
+    ): HomePageResponse {
 
-        val document =
-            app.get(request.data).document
-
-        val homeResults =
-            mutableListOf<SearchResponse>()
-
-        /**
-         * UAGB POSTS
-         */
-        document.select(
-            ".uagb-post__inner-wrap"
-        ).forEach { element ->
-
-            val titleEl =
-                element.selectFirst(
-                    ".uagb-post__title a"
-                )
-
-            val rawTitle =
-                titleEl?.text()
-                    ?: return@forEach
-
-            val title = cleanTitle(rawTitle)
-
-            val url =
-                titleEl.attr("href")
-
-            val poster =
-                element.selectFirst(
-                    ".uagb-post__image img"
-                )?.attr("src")
-
-            val type =
-                if (url.contains("/film/")) {
-                    TvType.Movie
-                } else {
-                    TvType.TvSeries
-                }
-
-            homeResults.add(
-                newMovieSearchResponse(
-                    title,
-                    url,
-                    TvType.Movie
-                ) {
-
-                    this.posterUrl = poster
-
-                    this.type = type
-                }
-            )
-        }
-
-        /**
-         * CLASSIC POSTS
-         */
-        document.select(".movie")
-            .forEach { element ->
-
-                val rawTitle =
-                    element.selectFirst("h2")
-                        ?.text()
-                        ?: return@forEach
-
-                val title =
-                    cleanTitle(rawTitle)
-
-                val linkEl =
-                    element.selectFirst(
-                        ".imagen a"
-                    )
-                        ?: element.selectFirst("a")
-
-                val url =
-                    linkEl?.attr("href")
-                        ?: return@forEach
-
-                val poster =
-                    element.selectFirst("img")
-                        ?.attr("src")
-
-                val type =
-                    if (url.contains("/film/")) {
-                        TvType.Movie
-                    } else {
-                        TvType.TvSeries
-                    }
-
-                homeResults.add(
-                    newMovieSearchResponse(
-                        title,
-                        url,
-                        TvType.Movie
-                    ) {
-
-                        this.posterUrl = poster
-
-                        this.type = type
-                    }
-                )
+        val url =
+            if (page == 1) {
+                request.data
+            } else {
+                "${request.data}page/$page/"
             }
+
+        val document = app.get(url).document
+
+        val home = document.select(
+            "article, .post, .items article, .ml-item"
+        ).mapNotNull {
+            it.toSearchResult()
+        }.distinctBy {
+            it.url
+        }
 
         return newHomePageResponse(
             request.name,
-            homeResults
+            home
         )
     }
 
-    /**
-     * SEARCH
-     */
     override suspend fun search(
         query: String
     ): List<SearchResponse> {
 
-        val results =
-            mutableListOf<SearchResponse>()
+        val document = app.get(
+            "$mainUrl/?s=${query}"
+        ).document
 
-        val maxPagesToSearch = 10
-
-        for (page in 1..maxPagesToSearch) {
-
-            try {
-
-                val url =
-                    if (page == 1) {
-                        "$mainUrl/?s=$query"
-                    } else {
-                        "$mainUrl/page/$page/?s=$query"
-                    }
-
-                val response =
-                    app.get(url)
-
-                if (response.code != 200) {
-                    break
-                }
-
-                val document =
-                    response.document
-
-                val initialCount =
-                    results.size
-
-                /**
-                 * MOVIES
-                 */
-                document.select(".movie")
-                    .forEach { element ->
-
-                        val rawTitle =
-                            element.selectFirst("h2")
-                                ?.text()
-                                ?: return@forEach
-
-                        val title =
-                            cleanTitle(rawTitle)
-
-                        val targetUrl =
-                            element.selectFirst(
-                                ".imagen a"
-                            )?.attr("href")
-                                ?: element.selectFirst("a")
-                                    ?.attr("href")
-                                ?: return@forEach
-
-                        val poster =
-                            element.selectFirst("img")
-                                ?.attr("src")
-
-                        val type =
-                            if (
-                                targetUrl.contains("/film/")
-                            ) {
-                                TvType.Movie
-                            } else {
-                                TvType.TvSeries
-                            }
-
-                        results.add(
-                            newMovieSearchResponse(
-                                title,
-                                targetUrl,
-                                TvType.Movie
-                            ) {
-
-                                this.posterUrl = poster
-
-                                this.type = type
-                            }
-                        )
-                    }
-
-                /**
-                 * UAGB POSTS
-                 */
-                document.select(
-                    ".uagb-post__inner-wrap"
-                ).forEach { element ->
-
-                    val titleEl =
-                        element.selectFirst(
-                            ".uagb-post__title a"
-                        )
-
-                    val rawTitle =
-                        titleEl?.text()
-                            ?: return@forEach
-
-                    val title =
-                        cleanTitle(rawTitle)
-
-                    val targetUrl =
-                        titleEl.attr("href")
-
-                    val poster =
-                        element.selectFirst(
-                            ".uagb-post__image img"
-                        )?.attr("src")
-
-                    val type =
-                        if (
-                            targetUrl.contains("/film/")
-                        ) {
-                            TvType.Movie
-                        } else {
-                            TvType.TvSeries
-                        }
-
-                    results.add(
-                        newMovieSearchResponse(
-                            title,
-                            targetUrl,
-                            TvType.Movie
-                        ) {
-
-                            this.posterUrl = poster
-
-                            this.type = type
-                        }
-                    )
-                }
-
-                if (results.size == initialCount) {
-                    break
-                }
-
-            } catch (_: Exception) {
-                break
-            }
-        }
-
-        return results.distinctBy {
+        return document.select(
+            "article, .post, .items article, .ml-item"
+        ).mapNotNull {
+            it.toSearchResult()
+        }.distinctBy {
             it.url
         }
     }
 
-    /**
-     * LOAD
-     */
-    override suspend fun load(
-        url: String
-    ): LoadResponse {
+    override suspend fun load(url: String): LoadResponse {
 
-        val document =
-            app.get(url).document
+        val document = app.get(url).document
 
-        val rawTitle =
-            document.selectFirst("h1")
-                ?.text()
-                ?: document.selectFirst(
-                    "meta[property=og:title]"
-                )?.attr("content")
-                ?: "Senza Titolo"
+        val rawTitle = document.selectFirst("h1")
+            ?.text()
+            ?: document.selectFirst(
+                "meta[property=og:title]"
+            )?.attr("content")
+            ?: "Senza Titolo"
 
-        val title =
-            cleanTitle(rawTitle)
+        val title = cleanTitle(rawTitle)
 
-        /**
-         * TMDB
-         */
         val tmdbData =
             tmdb.search(title)
                 ?.firstOrNull()
 
-        /**
-         * POSTER
-         */
         val poster =
             tmdbData?.posterUrl
                 ?: document.selectFirst(
@@ -385,15 +159,11 @@ class OnlineSerieTvProvider : MainAPI() {
                     ".imagen img"
                 )?.attr("src")
 
-        /**
-         * DESCRIPTION
-         */
         var description: String? = null
 
-        val tramaElement =
-            document.select(
-                "b:contains(Trama), strong:contains(Trama)"
-            ).firstOrNull()
+        val tramaElement = document.select(
+            "b:contains(Trama), strong:contains(Trama)"
+        ).firstOrNull()
 
         if (tramaElement != null) {
 
@@ -401,8 +171,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 tramaElement.nextElementSibling()
                     ?.selectFirst("p")
                     ?.text()
-                    ?: tramaElement
-                        .nextElementSiblings()
+                    ?: tramaElement.nextElementSiblings()
                         .firstOrNull {
                             it.tagName() == "p"
                         }
@@ -411,41 +180,33 @@ class OnlineSerieTvProvider : MainAPI() {
 
         if (description.isNullOrBlank()) {
 
-            description =
-                document.select(
-                    "div.tsll p, .entry-content p, .post-content p"
-                )
-                    .map {
-                        it.text().trim()
-                    }
-                    .firstOrNull {
-                        it.length > 30
-                    }
+            description = document.select(
+                "div.tsll p, .entry-content p, .post-content p"
+            )
+                .map {
+                    it.text().trim()
+                }
+                .firstOrNull {
+                    it.length > 30
+                }
         }
 
         val finalDescription =
-            tmdbData?.plot
+            tmdbData?.overview
                 ?: description
                 ?: document.selectFirst(
                     "meta[property=og:description]"
                 )?.attr("content")
 
         /**
-         * SCORE
-         */
-        val score =
-            tmdbData?.rating?.toFloat()
-
-        /**
-         * SERIES
+         * SERIE TV
          */
         if (
             url.contains("/serietv/")
             || url.contains("/serie-tv/")
         ) {
 
-            val episodesList =
-                mutableListOf<Episode>()
+            val episodes = mutableListOf<Episode>()
 
             var epCount = 1
 
@@ -453,24 +214,24 @@ class OnlineSerieTvProvider : MainAPI() {
                 "table tr, div.data-content a, td a"
             ).forEach { element ->
 
-                val link =
-                    element.attr("href")
+                val link = element.attr("href")
 
                 if (
-                    link.isNotBlank()
-                    && (
-                        link.contains("uprot")
-                                || link.contains("stream")
-                                || link.contains("tape")
-                                || link.contains("flexy")
-                        )
+                    link.isNotBlank() &&
+                    (
+                        link.contains("uprot") ||
+                        link.contains("stream") ||
+                        link.contains("tape") ||
+                        link.contains("mixdrop") ||
+                        link.contains("vidoza") ||
+                        link.contains("streamwish")
+                    )
                 ) {
 
                     val rowText =
                         element.parents()
                             .select("tr")
                             .first()
-                            ?.selectFirst("td")
                             ?.text()
                             ?: element.text()
 
@@ -491,8 +252,7 @@ class OnlineSerieTvProvider : MainAPI() {
                             ?.toIntOrNull()
                             ?: epCount++
 
-                    episodesList.add(
-
+                    episodes.add(
                         newEpisode(link) {
 
                             this.name =
@@ -515,24 +275,19 @@ class OnlineSerieTvProvider : MainAPI() {
                 title,
                 url,
                 TvType.TvSeries,
-                episodesList.distinctBy {
+                episodes.distinctBy {
                     "${it.season}-${it.episode}"
                 }
             ) {
 
-                this.posterUrl =
-                    poster
+                this.posterUrl = poster
 
-                this.plot =
-                    finalDescription
-
-                this.score =
-                    score
+                this.plot = finalDescription
             }
         }
 
         /**
-         * MOVIE
+         * FILM
          */
         return newMovieLoadResponse(
             title,
@@ -541,59 +296,59 @@ class OnlineSerieTvProvider : MainAPI() {
             url
         ) {
 
-            this.posterUrl =
-                poster
+            this.posterUrl = poster
 
-            this.plot =
-                finalDescription
-
-            this.score =
-                score
+            this.plot = finalDescription
         }
     }
 
-    /**
-     * LOAD LINKS
-     */
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+        subtitleCallback: SubtitleFileCallback,
+        callback: ExtractorLinkCallback
     ): Boolean {
 
-        if (data.contains("/film/")) {
+        val document = app.get(data).document
 
-            val document =
-                app.get(data).document
+        val links = mutableSetOf<String>()
 
-            document.select("a")
-                .forEach { element ->
+        document.select("iframe").forEach {
 
-                    val link =
-                        element.attr("href")
+            val src = fixUrl(
+                it.attr("src")
+            )
 
-                    if (
-                        link.contains("uprot")
-                        || link.contains("stream")
-                        || link.contains("tape")
-                        || link.contains("flexy")
-                    ) {
+            if (src.isNotBlank()) {
+                links.add(src)
+            }
+        }
 
-                        loadExtractor(
-                            link,
-                            mainUrl,
-                            subtitleCallback,
-                            callback
-                        )
-                    }
-                }
+        document.select("a").forEach {
 
-        } else {
+            val href = fixUrl(
+                it.attr("href")
+            )
+
+            if (
+                href.contains("mixdrop")
+                || href.contains("streamwish")
+                || href.contains("vidoza")
+                || href.contains("dood")
+                || href.contains("streamtape")
+                || href.contains("filelions")
+                || href.contains("uqload")
+            ) {
+
+                links.add(href)
+            }
+        }
+
+        links.distinct().forEach { link ->
 
             loadExtractor(
+                link,
                 data,
-                mainUrl,
                 subtitleCallback,
                 callback
             )
