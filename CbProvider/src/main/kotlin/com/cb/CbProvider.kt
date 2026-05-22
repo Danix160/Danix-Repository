@@ -75,87 +75,93 @@ class CbProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url, headers = commonHeaders).document
-        val isSeries = url.contains("/serietv/") || url.contains("/serie/")
-        val title = fixTitle(document.selectFirst("h1")?.text() ?: "", !isSeries)
-        val poster = document.selectFirst("meta[property=\"og:image\"]")?.attr("content")
-        val plot = document.select("div.ignore-css p, .entry-content p").firstOrNull { it.text().length > 50 }?.text()
+    val document = app.get(url, headers = commonHeaders).document
+    val isSeries = url.contains("/serietv/") || url.contains("/serie/")
 
-        val episodes = mutableListOf<Episode>()
+    val title = fixTitle(document.selectFirst("h1")?.text() ?: "", !isSeries)
+    val poster = document.selectFirst("meta[property=\"og:image\"]")?.attr("content")
+    val plot = document.select("div.ignore-css p, .entry-content p")
+        .firstOrNull { it.text().length > 50 }
+        ?.text()
 
-        if (!isSeries) {
-            val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
-                .map { it.attr("href").ifBlank { it.attr("src") } }
-                .filter { link -> supportedHosts.any { link.contains(it) } }
-            
-            if (links.isNotEmpty()) {
-                episodes.add(newEpisode(links.joinToString("###")) { this.name = "Film - Streaming" })
-            }
-        } else {
-            // Analisi Serie TV resiliente all'HTML rotto
-            document.select("div.sp-wrap").forEachIndexed { index, wrap ->
-                val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
-                var currentSeason = index + 1
-                
-                val seasonMatch = "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)
-                if (seasonMatch != null) {
-                    currentSeason = seasonMatch.groupValues[1].toIntOrNull() ?: currentSeason
+    val episodes = mutableListOf<Episode>()
+
+    // ============================
+    //          FILM
+    // ============================
+    if (!isSeries) {
+        val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
+            .map { it.attr("href").ifBlank { it.attr("src") } }
+            .filter { link -> supportedHosts.any { link.contains(it) } }
+
+        if (links.isNotEmpty()) {
+            episodes.add(
+                newEpisode(links.joinToString("###")) {
+                    this.name = "Film - Streaming"
                 }
-
-                // Usiamo l'asterisco per scendere su qualsiasi elemento figlio dentro sp-body
-                wrap.select(".sp-body *").forEach { row ->
-                    val anchors = row.select("a")
-                    if (anchors.isNotEmpty()) {
-                        val rowText = row.text().trim()
-                        
-                        // Saltiamo i nodi duplicati o contenitori vuoti valutando il testo utile
-                        if (rowText.isBlank() || rowText == "[riduci]") return@forEach
-
-                        if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE"))) {
-                            val folderLinks = anchors.map { it.attr("href") }.filter { link -> supportedHosts.any { link.contains(it) } }
-                            if (folderLinks.isNotEmpty()) {
-                                episodes.add(newEpisode(folderLinks.joinToString("###")) {
-                                    this.name = "Lista Completa Episodi"
-                                    this.season = currentSeason
-                                    this.episode = 1
-                                })
-                            }
-                        } else {
-                            // Match flessibile per intercettare l'episodio (es: "1×01" o "1x01")
-                            val epMatch = "(\\d+)\\s*[x×]\\s*(\\d+)".toRegex().find(rowText)
-                            
-                            val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodes.size + 1)
-                            val seasonNumber = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
-                            val baseEpName = if (epMatch != null) "${epMatch.groupValues[1]}x${epMatch.groupValues[2]}" else "Episodio $episodeNumber"
-
-                            anchors.forEach { a ->
-                                val link = a.attr("href")
-                                if (supportedHosts.any { link.contains(it) }) {
-                                    val serverName = a.text().trim()
-                                    
-                                    // Evitiamo duplicati identici sulla stessa riga causati dalla selezione ricorsiva delle strutture annidate
-                                    val isDuplicate = episodes.any { it.data == link && it.season == seasonNumber && it.episode == episodeNumber }
-                                    if (!isDuplicate) {
-                                        episodes.add(newEpisode(link) {
-                                            this.name = "$baseEpName - $serverName"
-                                            this.season = seasonNumber
-                                            this.episode = episodeNumber
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            )
         }
 
-        return if (isSeries) {
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) { this.posterUrl = poster; this.plot = plot }
-        } else {
-            newMovieLoadResponse(title, url, TvType.Movie, episodes.firstOrNull()?.data ?: "") { this.posterUrl = poster; this.plot = plot }
+        return newMovieLoadResponse(
+            title,
+            url,
+            TvType.Movie,
+            episodes.firstOrNull()?.data ?: ""
+        ) {
+            this.posterUrl = poster
+            this.plot = plot
         }
     }
+
+    // ============================
+    //        SERIE TV
+    // ============================
+    document.select("div.sp-wrap").forEachIndexed { index, wrap ->
+        val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
+        var currentSeason = index + 1
+
+        // Estrai numero stagione se presente
+        "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)?.let {
+            currentSeason = it.groupValues[1].toIntOrNull() ?: currentSeason
+        }
+
+        // Ogni episodio è in un <p>
+        wrap.select(".sp-body p").forEach { row ->
+            val rowText = row.text().trim()
+            val anchors = row.select("a")
+
+            if (anchors.isEmpty()) return@forEach
+            if (rowText.contains("[riduci]", ignoreCase = true)) return@forEach
+
+            // Match episodio tipo 1×01 o 1x01
+            val epMatch = "(\\d+)\\s*[x×]\\s*(\\d+)".toRegex().find(rowText)
+            if (epMatch == null) return@forEach
+
+            val seasonNumber = epMatch.groupValues[1].toInt()
+            val episodeNumber = epMatch.groupValues[2].toInt()
+            val baseEpName = "${seasonNumber}x${episodeNumber}"
+
+            anchors.forEach { a ->
+                val link = a.attr("href")
+                if (supportedHosts.any { link.contains(it) }) {
+
+                    episodes.add(
+                        newEpisode(link) {
+                            this.name = "$baseEpName - ${a.text().trim()}"
+                            this.season = seasonNumber
+                            this.episode = episodeNumber
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+        this.posterUrl = poster
+        this.plot = plot
+    }
+}
 
     override suspend fun loadLinks(
         data: String,
