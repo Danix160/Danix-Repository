@@ -1,4 +1,4 @@
-package com.onlineserietv
+package com.cb
 
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
