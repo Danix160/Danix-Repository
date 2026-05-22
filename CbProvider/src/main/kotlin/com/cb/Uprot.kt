@@ -18,7 +18,7 @@ class Uprot : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         var targetLink = url
-        var maxStreamUrl: String? = null
+        var finalUrl: String? = null
 
         val baseHeaders = mapOf(
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -28,19 +28,22 @@ class Uprot : ExtractorApi() {
             "Sec-GPC" to "1"
         )
 
+        // --- NORMAL FLOW (msf → mse) ---
         if (!targetLink.contains("msfi")) {
-            if (targetLink.contains("msf")) {
+
+            if (targetLink.contains("msf"))
                 targetLink = targetLink.replace("msf", "mse")
-            }
 
             val response = app.get(targetLink, headers = baseHeaders, referer = referer)
+
             if (response.code != 403) {
-                maxStreamUrl = findLinkInHtml(response.text)
+                finalUrl = findMaxstreamLink(response.text)
             }
+
         } else {
-            if (targetLink.contains("mse")) {
+            // --- CAPTCHA FLOW (msfi → msf) ---
+            if (targetLink.contains("mse"))
                 targetLink = targetLink.replace("mse", "msf")
-            }
 
             val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
             val cookies = initResponse.cookies
@@ -52,42 +55,50 @@ class Uprot : ExtractorApi() {
             val postResponse = app.post(
                 targetLink,
                 cookies = cookies,
-                headers = baseHeaders.plus("Content-Type" to "application/x-www-form-urlencoded"),
+                headers = baseHeaders + ("Content-Type" to "application/x-www-form-urlencoded"),
                 data = mapOf("captcha" to captchaNumber),
                 referer = targetLink
             )
 
             if (postResponse.code != 403) {
-                maxStreamUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
+                finalUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
             }
         }
 
-        if (!maxStreamUrl.isNullOrEmpty()) {
-            loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
+        // --- FINAL EXTRACTION ---
+        if (!finalUrl.isNullOrEmpty()) {
+            loadExtractor(finalUrl, url, subtitleCallback, callback)
         }
     }
 
-    private fun findLinkInHtml(html: String): String? {
-    val doc = Jsoup.parse(html)
+    // ============================
+    //   PRIORITÀ ASSOLUTA MAXSTREAM
+    // ============================
+    private fun findMaxstreamLink(html: String): String? {
+        val doc = Jsoup.parse(html)
 
-    // Prendi TUTTI i CONTINUE
-    val continues = doc.select("a")
-        .filter { it.text().contains("CONTINUE", ignoreCase = true) }
-        .map { it.attr("href") }
+        val continues = doc.select("a")
+            .filter { it.text().contains("CONTINUE", ignoreCase = true) }
+            .map { it.attr("href") }
 
-    if (continues.isEmpty()) return null
+        if (continues.isEmpty()) return null
 
-    // PRIORITÀ: Maxstream prima di Mixdrop
-    continues.forEach { link ->
-        if (link.contains("maxstream", ignoreCase = true)) return link
+        // 1️⃣ PRIORITÀ: MAXSTREAM
+        continues.forEach { link ->
+            if (link.contains("maxstream", ignoreCase = true)) return link
+        }
+
+        // 2️⃣ ESCLUDI MIXDROP
+        continues.forEach { link ->
+            if (!link.contains("mixdrop", ignoreCase = true)) return link
+        }
+
+        // 3️⃣ Se proprio non c'è altro, ritorna null (NO MIXDROP)
+        return null
     }
 
-    // Se non c’è Maxstream, prendi il primo disponibile
-    return continues.first()
-}
-
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-        var redirectUrl = findLinkInHtml(html) ?: return null
+        var redirectUrl = findMaxstreamLink(html) ?: return null
         var time = 0
 
         while (redirectUrl.contains("uprots")) {
@@ -97,15 +108,12 @@ class Uprot : ExtractorApi() {
             if (time == 10) return null
         }
 
+        // Conversione link Maxstream
         return if (redirectUrl.contains("watchfree/")) {
             val parts = redirectUrl.split("watchfree/")[1].split("/")
             if (parts.size > 1) {
                 "https://maxstream.video/emvvv/${parts[1]}"
-            } else {
-                redirectUrl
-            }
-        } else {
-            redirectUrl
-        }
+            } else redirectUrl
+        } else redirectUrl
     }
 }
