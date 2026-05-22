@@ -114,56 +114,58 @@ class CbProvider : MainAPI() {
     }
 
     // ============================
-    //        SERIE TV
-    // ============================
-    document.select("div.sp-wrap").forEachIndexed { index, wrap ->
-        val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
-        var currentSeason = index + 1
+//        SERIE TV
+// ============================
+document.select("div.sp-wrap").forEachIndexed { index, wrap ->
+    val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
+    var currentSeason = index + 1
 
-        // Estrai numero stagione se presente
-        "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)?.let {
-            currentSeason = it.groupValues[1].toIntOrNull() ?: currentSeason
-        }
-
-        // Ogni episodio è in un <p>
-        wrap.select(".sp-body p").forEach { row ->
-            var rowText = row.text().trim()
-            val anchors = row.select("a")
-
-            if (anchors.isEmpty()) return@forEach
-            if (rowText.contains("[riduci]", ignoreCase = true)) return@forEach
-
-            // Normalizzazione caratteri sporchi
-            rowText = rowText
-                .replace(Regex("[×✕✖✗✘]"), "x")   // tutte le varianti di "×"
-                .replace("–", "-")
-                .replace("—", "-")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-
-            // Regex robusta: 1x01
-            val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
-                ?: return@forEach
-
-            val seasonNumber = epMatch.groupValues[1].toInt()
-            val episodeNumber = epMatch.groupValues[2].toInt()
-            val baseEpName = "${seasonNumber}x${episodeNumber}"
-
-            anchors.forEach { a ->
-                val link = a.attr("href")
-                if (supportedHosts.any { link.contains(it) }) {
-                    episodes.add(
-                        newEpisode(link) {
-                            this.name = "$baseEpName - ${a.text().trim()}"
-                            this.season = seasonNumber
-                            this.episode = episodeNumber
-                        }
-                    )
-                }
-            }
-        }
+    // Estrai numero stagione se presente
+    "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)?.let {
+        currentSeason = it.groupValues[1].toIntOrNull() ?: currentSeason
     }
 
+    // Ogni episodio è in un <p>
+    wrap.select(".sp-body p").forEach { row ->
+        var rowText = row.text().trim()
+        val anchors = row.select("a")
+
+        if (anchors.isEmpty()) return@forEach
+        if (rowText.contains("[riduci]", ignoreCase = true)) return@forEach
+
+        // Normalizzazione caratteri sporchi
+        rowText = rowText
+            .replace(Regex("[×✕✖✗✘]"), "x")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        // Regex robusta: 1x01
+        val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
+            ?: return@forEach
+
+        val seasonNumber = epMatch.groupValues[1].toInt()
+        val episodeNumber = epMatch.groupValues[2].toInt()
+        val baseEpName = "${seasonNumber}x${episodeNumber}"
+
+        // Tutti i link validi (Maxstream + Mixdrop, ecc.) in un solo episodio
+        val linksForEpisode = anchors.mapNotNull { a ->
+            val link = a.attr("href")
+            if (supportedHosts.any { host -> link.contains(host) }) link else null
+        }
+
+        if (linksForEpisode.isNotEmpty()) {
+            episodes.add(
+                newEpisode(linksForEpisode.joinToString("###")) {
+                    this.name = baseEpName
+                    this.season = seasonNumber
+                    this.episode = episodeNumber
+                }
+            )
+        }
+    }
+}
     return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
         this.posterUrl = poster
         this.plot = plot
