@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
 import org.jsoup.Jsoup
+import android.util.Log // Importato per far funzionare il Log.d
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
@@ -59,7 +60,7 @@ class Uprot : ExtractorApi() {
         // Gestione e Smistamento del link finale ottenuto
         // =========================================================================
         if (maxStreamUrl.contains("watchfree") || maxStreamUrl.contains("maxstream") || maxStreamUrl.contains("maxf")) {
-            // Forza il passaggio diretto all'estrattore MaxStream che gestisce i domini specchio
+            // Forza il passaggio directo all'estrattore MaxStream che gestisce i domini specchio
             MaxStream().getUrl(maxStreamUrl, url, subtitleCallback, callback)
         } else {
             // Altrimenti (es. se la catena ha restituito Mixdrop), si affida al core di Cloudstream
@@ -92,6 +93,9 @@ class Uprot : ExtractorApi() {
 
         // Insegue la catena di redirect dei domini uprots/uprot
         while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
+            // LOG INSERITO QUI:
+            Log.d("CB01_DEBUG", "Inseguendo redirect (Tentativo ${time + 1}): $redirectUrl")
+
             if (!redirectUrl.startsWith("http")) {
                 redirectUrl = "https://" + redirectUrl.removePrefix("//")
             }
@@ -104,7 +108,7 @@ class Uprot : ExtractorApi() {
                 break
             }
             
-            // Se rimaniam bloccati sulla stessa pagina, proviamo a cercare un nuovo pulsante CONTINUE nell'HTML intermedio
+            // Se rimaniamo bloccati sulla stessa pagina, proviamo a cercare un nuovo pulsante CONTINUE nell'HTML intermedio
             val nextLink = findLinkInHtml(headResponse.text)
             if (nextLink != null && nextLink != redirectUrl) {
                 redirectUrl = nextLink
