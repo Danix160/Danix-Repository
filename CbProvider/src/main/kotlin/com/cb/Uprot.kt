@@ -1,186 +1,174 @@
 package com.cb
 
-import android.util.Log
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.app
+import com.lagradost.api.Log
 import org.jsoup.Jsoup
 
 class Uprot : ExtractorApi() {
-
     override val name = "Uprot"
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
 
-    private val TAG = "UprotExtractor"
-
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (SubtitleFile) -> Unit,
+        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
+        Log.d("UPROT", "=== UPROT 2026 START ===")
+        Log.d("UPROT", "Input URL: $url")
 
-        Log.d(TAG, "Avvio estrazione per URL: $url")
+        var current = normalize(url)
+        Log.d("UPROT", "Normalized URL: $current")
 
         val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1"
+            "User-Agent" to "Mozilla/5.0",
+            "Accept" to "*/*",
+            "Referer" to (referer ?: url)
         )
 
-        try {
+        // 1️⃣ GET iniziale
+        val res = app.get(current, headers = headers)
+        val html = res.text
+        Log.d("UPROT", "Initial GET status: ${res.code}")
 
-            // STEP 1: Apriamo la pagina Uprot
-            val response = app.get(
-                url,
-                headers = headers,
-                referer = referer
-            )
+        // 2️⃣ CONTINUE diretto → Maxstream
+        findContinue(html)?.let { continueUrl ->
+            Log.d("UPROT", "Found CONTINUE → $continueUrl")
+            loadExtractor(continueUrl, url, subtitleCallback, callback)
+            return
+        }
 
-            Log.d(TAG, "Pagina Uprot caricata: ${response.url}")
+        // 3️⃣ Meta refresh
+        extractMetaRefresh(html)?.let { metaUrl ->
+            Log.d("UPROT", "Found META refresh → $metaUrl")
+            loadExtractor(metaUrl, url, subtitleCallback, callback)
+            return
+        }
 
-            // STEP 2: Cerchiamo il bottone CONTINUE
-            val continueLink = findContinueLink(response.text)
+        // 4️⃣ Form hidden
+        extractFormRedirect(html, headers)?.let { formUrl ->
+            Log.d("UPROT", "Found FORM redirect → $formUrl")
+            loadExtractor(formUrl, url, subtitleCallback, callback)
+            return
+        }
 
-            if (continueLink.isNullOrBlank()) {
-                Log.e(TAG, "CONTINUE link non trovato")
-                Log.d(TAG, response.text.take(1000))
-                return
+        // 5️⃣ JS redirect
+        extractJsRedirect(html)?.let { jsUrl ->
+            Log.d("UPROT", "Found JS redirect → $jsUrl")
+            loadExtractor(jsUrl, url, subtitleCallback, callback)
+            return
+        }
+
+        // 6️⃣ Redirect multipli uprots → maxstream
+        followRedirects(current, headers)?.let { finalUrl ->
+            Log.d("UPROT", "Final redirect chain → $finalUrl")
+            loadExtractor(finalUrl, url, subtitleCallback, callback)
+            return
+        }
+
+        Log.e("UPROT", "❌ No valid link found")
+    }
+
+    // ============================
+    //   NORMALIZZAZIONE UPROT
+    // ============================
+    private fun normalize(url: String): String {
+        return when {
+            url.contains("/msfi/") -> {
+                Log.d("UPROT", "Normalizing /msfi/ → /mse/")
+                url.replace("/msfi/", "/mse/")
             }
-
-            val absoluteContinue = if (continueLink.startsWith("http")) {
-                continueLink
-            } else {
-                "https://uprot.net$continueLink"
+            url.contains("/msf/") -> {
+                Log.d("UPROT", "Normalizing /msf/ → /mse/")
+                url.replace("/msf/", "/mse/")
             }
-
-            Log.d(TAG, "Continue link trovato: $absoluteContinue")
-
-            // STEP 3: Risoluzione redirect finali
-            val finalUrl = resolveFinalLink(
-                absoluteContinue,
-                headers
-            )
-
-            if (finalUrl.isNullOrBlank()) {
-                Log.e(TAG, "Impossibile ottenere URL finale")
-                return
-            }
-
-            Log.d(TAG, "URL finale ottenuto: $finalUrl")
-
-            // STEP 4: Passiamo a MaxStream / altri extractor
-            loadExtractor(
-                finalUrl,
-                url,
-                subtitleCallback,
-                callback
-            )
-
-        } catch (e: Exception) {
-
-            Log.e(TAG, "Errore estrazione: ${e.message}", e)
-
+            else -> url
         }
     }
 
-    private fun findContinueLink(html: String): String? {
-
+    // ============================
+    //   CONTINUE LINK
+    // ============================
+    private fun findContinue(html: String): String? {
         val doc = Jsoup.parse(html)
 
-        // Cerchiamo tutti gli anchor
-        val anchors = doc.select("a[href]")
-
-        // Priorità al bottone CONTINUE
-        val continueAnchor = anchors.firstOrNull {
-            it.text().contains("CONTINUE", ignoreCase = true)
+        // CONTINUE normale
+        doc.select("a").forEach { a ->
+            val text = a.text().trim().uppercase()
+            if (text.contains("CONTINUE")) {
+                return a.attr("href")
+            }
         }
 
-        if (continueAnchor != null) {
-            return continueAnchor.attr("href")
-        }
+        // JS redirect
+        Regex("""window\.location\.href\s*=\s*['"](.*?)['"]""")
+            .find(html)?.groupValues?.get(1)?.let { return it }
 
-        // Fallback: cerchiamo direttamente watchfree
-        val watchfreeAnchor = anchors.firstOrNull {
-            val href = it.attr("href")
-            href.contains("/watchfree/")
-        }
-
-        return watchfreeAnchor?.attr("href")
+        return null
     }
 
-    private suspend fun resolveFinalLink(
-        startUrl: String,
-        headers: Map<String, String>
-    ): String? {
+    // ============================
+    //   META REFRESH
+    // ============================
+    private fun extractMetaRefresh(html: String): String? {
+        val doc = Jsoup.parse(html)
+        val meta = doc.selectFirst("meta[http-equiv=refresh]")?.attr("content") ?: return null
+        return meta.substringAfter("url=", "")
+    }
 
-        var currentUrl = startUrl
-        var attempts = 0
+    // ============================
+    //   FORM HIDDEN
+    // ============================
+    private suspend fun extractFormRedirect(html: String, headers: Map<String, String>): String? {
+        val doc = Jsoup.parse(html)
+        val form = doc.selectFirst("form[action]") ?: return null
 
-        while (attempts < 10) {
-
-            Log.d(TAG, "Redirect step [$attempts]: $currentUrl")
-
-            // Se siamo già su MaxStream/watchfree
-            if (
-                currentUrl.contains("/watchfree/") ||
-                currentUrl.contains("/emvvv/")
-            ) {
-                return currentUrl
-            }
-
-            try {
-
-                val response = app.get(
-                    currentUrl,
-                    headers = headers,
-                    allowRedirects = true
-                )
-
-                val finalResponseUrl = response.url
-
-                Log.d(TAG, "Response URL: $finalResponseUrl")
-
-                // Caso già risolto
-                if (
-                    finalResponseUrl.contains("/watchfree/") ||
-                    finalResponseUrl.contains("/emvvv/")
-                ) {
-                    return finalResponseUrl
-                }
-
-                // Cerchiamo eventuali link HTML
-                val htmlLink = findContinueLink(response.text)
-
-                if (!htmlLink.isNullOrBlank()) {
-
-                    currentUrl = if (htmlLink.startsWith("http")) {
-                        htmlLink
-                    } else {
-                        "https://uprot.net$htmlLink"
-                    }
-
-                } else {
-
-                    currentUrl = finalResponseUrl
-
-                }
-
-            } catch (e: Exception) {
-
-                Log.e(TAG, "Errore redirect: ${e.message}")
-
-                return null
-            }
-
-            attempts++
+        val action = form.attr("action")
+        val data = form.select("input[name]").associate {
+            it.attr("name") to it.attr("value")
         }
 
-        return currentUrl
+        Log.d("UPROT", "Submitting hidden form → $action")
+
+        val res = app.post(action, data = data, headers = headers)
+        return findContinue(res.text)
+    }
+
+    // ============================
+    //   JS REDIRECT
+    // ============================
+    private fun extractJsRedirect(html: String): String? {
+        val regex = Regex("window\\.location\\.href\\s*=\\s*['\"](.*?)['\"]")
+        return regex.find(html)?.groupValues?.get(1)
+    }
+
+    // ============================
+    //   REDIRECT MULTIPLI
+    // ============================
+    private suspend fun followRedirects(url: String, headers: Map<String, String>): String? {
+        var current = url
+        val visited = mutableSetOf<String>()
+
+        repeat(10) {
+            if (current in visited) return null
+            visited.add(current)
+
+            val res = app.get(current, headers = headers, allowRedirects = false)
+            val loc = res.headers["location"]
+
+            Log.d("UPROT", "Redirect step → $loc")
+
+            if (loc == null) {
+                return findContinue(res.text)
+            }
+
+            current = loc
+        }
+
+        return null
     }
 }
