@@ -68,15 +68,23 @@ class Uprot : ExtractorApi() {
     }
 
     private fun findLinkInHtml(html: String): String? {
-        val doc = Jsoup.parse(html)
-        doc.select("a").forEach { tag ->
-            val text = tag.text().uppercase()
-            if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
-                return tag.attr("href")
-            }
-        }
-        return null
+    val doc = Jsoup.parse(html)
+
+    // Prendi TUTTI i CONTINUE
+    val continues = doc.select("a")
+        .filter { it.text().contains("CONTINUE", ignoreCase = true) }
+        .map { it.attr("href") }
+
+    if (continues.isEmpty()) return null
+
+    // PRIORITÀ: Maxstream prima di Mixdrop
+    continues.forEach { link ->
+        if (link.contains("maxstream", ignoreCase = true)) return link
     }
+
+    // Se non c’è Maxstream, prendi il primo disponibile
+    return continues.first()
+}
 
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
         var redirectUrl = findLinkInHtml(html) ?: return null
