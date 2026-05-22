@@ -84,7 +84,6 @@ class CbProvider : MainAPI() {
         val episodes = mutableListOf<Episode>()
 
         if (!isSeries) {
-            // Logica Film (Inalterata perché funzionante con le tabelle)
             val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
                 .map { it.attr("href").ifBlank { it.attr("src") } }
                 .filter { link -> supportedHosts.any { link.contains(it) } }
@@ -93,46 +92,48 @@ class CbProvider : MainAPI() {
                 episodes.add(newEpisode(links.joinToString("###")) { this.name = "Film - Streaming" })
             }
         } else {
-            // Nuova Logica Serie TV basata sul blocco dei paragrafi degli spoiler
             document.select("div.sp-wrap").forEachIndexed { index, wrap ->
                 val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
                 var currentSeason = index + 1
                 
-                // Determina il numero di stagione dal titolo dello spoiler
                 val seasonMatch = "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)
                 if (seasonMatch != null) {
                     currentSeason = seasonMatch.groupValues[1].toIntOrNull() ?: currentSeason
                 }
 
-                // Cerca tutti i paragrafi <p> dentro la sezione sp-body (dove ci sono gli episodi)
                 wrap.select(".sp-body p").forEach { p ->
                     val rowText = p.text()
-                    
-                    // Trova tutti i link di streaming all'interno del paragrafo dell'episodio
-                    val pLinks = p.select("a").map { it.attr("href") }
-                        .filter { link -> supportedHosts.any { link.contains(it) } }
+                    val anchors = p.select("a")
 
-                    if (pLinks.isNotEmpty()) {
-                        // Verifica se si tratta di una cartella unica o di un elenco ad episodi
+                    if (anchors.isNotEmpty()) {
                         if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE"))) {
-                            episodes.add(newEpisode(pLinks.joinToString("###")) {
-                                this.name = "Lista Completa Episodi"
-                                this.season = currentSeason
-                                this.episode = 1
-                            })
+                            val folderLinks = anchors.map { it.attr("href") }.filter { link -> supportedHosts.any { link.contains(it) } }
+                            if (folderLinks.isNotEmpty()) {
+                                episodes.add(newEpisode(folderLinks.joinToString("###")) {
+                                    this.name = "Lista Completa Episodi"
+                                    this.season = currentSeason
+                                    this.episode = 1
+                                })
+                            }
                         } else {
-                            // Cerca la stringa dell'episodio (es: 1×01 o 1x01)
                             val epMatch = "(\\d+)[x×](\\d+)".toRegex().find(rowText)
-                            
                             val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodes.size + 1)
                             val seasonNumber = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
-                            val cleanEpName = if (epMatch != null) "${epMatch.groupValues[1]}x${epMatch.groupValues[2]}" else "Episodio $episodeNumber"
+                            val baseEpName = if (epMatch != null) "${epMatch.groupValues[1]}x${epMatch.groupValues[2]}" else "Episodio $episodeNumber"
 
-                            episodes.add(newEpisode(pLinks.joinToString("###")) {
-                                this.name = cleanEpName
-                                this.season = seasonNumber
-                                this.episode = episodeNumber
-                            })
+                            // Generiamo un episodio distinto per OGNI link di streaming trovato nella riga (Maxstream, Mixdrop, ecc.)
+                            anchors.forEach { a ->
+                                val link = a.attr("href")
+                                if (supportedHosts.any { link.contains(it) }) {
+                                    val serverName = a.text().trim() // "Maxstream", "Mixdrop", ecc.
+                                    
+                                    episodes.add(newEpisode(link) {
+                                        this.name = "$baseEpName - $serverName"
+                                        this.season = seasonNumber
+                                        this.episode = episodeNumber
+                                    })
+                                }
+                            }
                         }
                     }
                 }
@@ -152,21 +153,20 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val allLinks = data.split("###").map { it.trim() }.sortedByDescending { 
-            it.contains("stayonline") || it.contains("uprot") || it.contains("maxstream") 
-        }
+        val allLinks = data.split("###").map { it.trim() }
 
         allLinks.forEach { cleanLink ->
             try {
                 if (cleanLink.contains("stayonline.pro")) {
                     bypassStayOnline(cleanLink)?.let { bypassed ->
+                        // bypassed sarà "https://uprot.net/msf/..." o simili
                         loadExtractor(bypassed, subtitleCallback, callback) 
                     }
                 } else {
                     loadExtractor(cleanLink, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                // Passa al link successivo se uno fallisce
+                // Continua in caso di errore su un singolo host
             }
         }
         return true
