@@ -13,7 +13,7 @@ class CbProvider : MainAPI() {
     override val hasMainPage = true
 
     private val commonHeaders = mapOf(
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent" to "Mozilla/5.0",
         "Referer" to "$mainUrl/"
     )
 
@@ -29,17 +29,29 @@ class CbProvider : MainAPI() {
     )
 
     private fun fixTitle(title: String, isMovie: Boolean): String {
-        return if (isMovie) {
-            title.replace(
-                Regex("(?i)streaming|\
+        var t = title
 
-\[HD]|film gratis by cb01 official|\\(\\d{4}\\)")
-            ).trim()
-        } else {
-            title.replace(
-                Regex("(?i)streaming|serie tv gratis by cb01 official|stagione \\d+|completa|[-–] ITA|[-–] HD")
-            ).trim()
+        val removeList = listOf(
+            "streaming",
+            "[HD]",
+            "film gratis by cb01 official",
+            "serie tv gratis by cb01 official",
+            "completa",
+            "ITA",
+            "HD",
+            "Stagione",
+            "stagione",
+            "Serie",
+            "Episodio",
+            "(",
+            ")"
+        )
+
+        removeList.forEach { bad ->
+            t = t.replace(bad, "", ignoreCase = true)
         }
+
+        return t.trim()
     }
 
     private fun parseElement(element: Element, isTvSeriesSearch: Boolean = false): SearchResponse? {
@@ -53,7 +65,9 @@ class CbProvider : MainAPI() {
         val isSeries = isTvSeriesSearch ||
                 href.contains("/serietv/") ||
                 href.contains("/serie/") ||
-                rawTitle.contains(Regex("(?i)Stagion|Serie|Episodio"))
+                rawTitle.contains("Stagion", ignoreCase = true) ||
+                rawTitle.contains("Serie", ignoreCase = true) ||
+                rawTitle.contains("Episodio", ignoreCase = true)
 
         val title = fixTitle(rawTitle, !isSeries)
 
@@ -67,7 +81,6 @@ class CbProvider : MainAPI() {
             this.posterUrl = posterUrl
         }
     }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data.removeSuffix("/")}/page/$page/"
         val document = app.get(url, headers = commonHeaders).document
@@ -99,37 +112,40 @@ class CbProvider : MainAPI() {
             ?.text()
 
         val episodes = mutableListOf<Episode>()
-        // ============================
-        //        SERIE TV
-        // ============================
-        document.select("div.sp-wrap").forEachIndexed { index, wrap ->
-            val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
-            var currentSeason = index + 1
 
-            "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)?.let {
-                currentSeason = it.groupValues[1].toIntOrNull() ?: currentSeason
+        if (!isSeries) {
+            val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
+                .map { it.attr("href").ifBlank { it.attr("src") } }
+                .filter { link -> supportedHosts.any { link.contains(it) } }
+
+            if (links.isNotEmpty()) {
+                episodes.add(
+                    newEpisode(links.joinToString("###")) {
+                        this.name = "Film - Streaming"
+                    }
+                )
             }
 
+            return newMovieLoadResponse(
+                title,
+                url,
+                TvType.Movie,
+                episodes.firstOrNull()?.data ?: ""
+            ) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
+        }
+        document.select("div.sp-wrap").forEachIndexed { index, wrap ->
             wrap.select(".sp-body p, .sp-body li, .sp-body div, .sp-body span").forEach { row ->
-                var rowText = row.text().trim()
+                val rowText = row.text().trim()
                 val anchors = row.select("a[href]")
 
                 if (anchors.isEmpty()) return@forEach
-                if (rowText.contains("[riduci]", ignoreCase = true)) return@forEach
 
-                rowText = rowText
-                    .replace(Regex("[×✕✖✗✘]"), "x")
-                    .replace("–", "-")
-                    .replace("—", "-")
-                    .replace(Regex("\\s+"), " ")
-                    .trim()
-
-                val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
-                    ?: return@forEach
-
+                val epMatch = Regex("(\\d+)x(\\d+)").find(rowText) ?: return@forEach
                 val seasonNumber = epMatch.groupValues[1].toInt()
                 val episodeNumber = epMatch.groupValues[2].toInt()
-                val baseEpName = "${seasonNumber}x${episodeNumber}"
 
                 val linksForEpisode = anchors.mapNotNull { a ->
                     val link = a.attr("href")
@@ -139,7 +155,7 @@ class CbProvider : MainAPI() {
                 if (linksForEpisode.isNotEmpty()) {
                     episodes.add(
                         newEpisode(linksForEpisode.joinToString("###")) {
-                            this.name = baseEpName
+                            this.name = "${seasonNumber}x${episodeNumber}"
                             this.season = seasonNumber
                             this.episode = episodeNumber
                         }
@@ -153,10 +169,6 @@ class CbProvider : MainAPI() {
             this.plot = plot
         }
     }
-
-    // ============================
-    //        LOAD LINKS
-    // ============================
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -169,12 +181,10 @@ class CbProvider : MainAPI() {
         allLinks.forEach { cleanLink ->
             try {
                 if (cleanLink.contains("stayonline.pro")) {
-
                     val bypassed = bypassStayOnline(cleanLink)
                     if (bypassed != null) {
                         loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
                     }
-
                 } else {
                     loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
@@ -183,36 +193,16 @@ class CbProvider : MainAPI() {
         return true
     }
 
-    // ============================
-    //     BYPASS STAYONLINE
-    // ============================
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
             val id = link.substringAfterLast("/").trim('/')
 
-            val init = app.get(
-                link,
-                headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-                    "Accept" to "text/html,application/xhtml+xml",
-                    "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
-                )
-            )
-
-            val cookies = init.cookies
+            val init = app.get(link)
 
             val response = app.post(
                 "https://stayonline.pro/ajax/linkView.php",
-                headers = mapOf(
-                    "X-Requested-With" to "XMLHttpRequest",
-                    "Origin" to "https://stayonline.pro",
-                    "Referer" to link,
-                    "User-Agent" to "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-                    "Accept" to "application/json, text/javascript, */*; q=0.01",
-                    "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
-                ),
-                cookies = cookies,
-                data = mapOf("id" to id)
+                data = mapOf("id" to id),
+                cookies = init.cookies
             ).text
 
             JSONObject(response).getJSONObject("data").getString("value")
