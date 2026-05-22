@@ -17,103 +17,147 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        var targetLink = url
-        var finalUrl: String? = null
-
-        val baseHeaders = mapOf(
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "en-US,en;q=0.5",
-            "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1",
-            "Sec-GPC" to "1"
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0",
+            "Accept" to "*/*",
+            "Referer" to (referer ?: url)
         )
 
-        // --- NORMAL FLOW (msf → mse) ---
-        if (!targetLink.contains("msfi")) {
+        // Normalizzazione link
+        var current = normalize(url)
 
-            if (targetLink.contains("msf"))
-                targetLink = targetLink.replace("msf", "mse")
+        // 1️⃣ GET iniziale
+        val res = app.get(current, headers = headers)
+        var html = res.text
 
-            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
+        // 2️⃣ Prova estrazione diretta
+        var final = extractMaxstream(html)
 
-            if (response.code != 403) {
-                finalUrl = findMaxstreamLink(response.text)
-            }
-
-        } else {
-            // --- CAPTCHA FLOW (msfi → msf) ---
-            if (targetLink.contains("mse"))
-                targetLink = targetLink.replace("mse", "msf")
-
-            val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
-            val cookies = initResponse.cookies
-
-            val doc = Jsoup.parse(initResponse.text)
-            val imgCaptcha = doc.selectFirst("img")?.attr("src")
-            val captchaNumber = imgCaptcha?.substringAfter("captcha=", "")?.substringBefore("&") ?: ""
-
-            val postResponse = app.post(
-                targetLink,
-                cookies = cookies,
-                headers = baseHeaders + ("Content-Type" to "application/x-www-form-urlencoded"),
-                data = mapOf("captcha" to captchaNumber),
-                referer = targetLink
-            )
-
-            if (postResponse.code != 403) {
-                finalUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
-            }
+        // 3️⃣ Meta refresh
+        if (final == null) {
+            final = extractMetaRefresh(html)
         }
 
-        // --- FINAL EXTRACTION ---
-        if (!finalUrl.isNullOrEmpty()) {
-            loadExtractor(finalUrl, url, subtitleCallback, callback)
+        // 4️⃣ Form hidden
+        if (final == null) {
+            final = extractFormRedirect(html, headers)
+        }
+
+        // 5️⃣ Redirect JS
+        if (final == null) {
+            final = extractJsRedirect(html)
+        }
+
+        // 6️⃣ Segui redirect multipli uprots → maxstream
+        if (final == null) {
+            final = followRedirects(current, headers)
+        }
+
+        // 7️⃣ Conversione Maxstream
+        final = convertMaxstream(final)
+
+        if (!final.isNullOrEmpty()) {
+            loadExtractor(final, url, subtitleCallback, callback)
         }
     }
 
     // ============================
-    //   PRIORITÀ ASSOLUTA MAXSTREAM
+    //   NORMALIZZAZIONE LINK
     // ============================
-    private fun findMaxstreamLink(html: String): String? {
+    private fun normalize(url: String): String {
+        return url
+            .replace("/msf/", "/mse/")
+            .replace("/msfi/", "/msf/")
+            .replace("msef", "mse")
+    }
+
+    // ============================
+    //   ESTRAZIONE MAXSTREAM
+    // ============================
+    private fun extractMaxstream(html: String): String? {
         val doc = Jsoup.parse(html)
 
-        val continues = doc.select("a")
-            .filter { it.text().contains("CONTINUE", ignoreCase = true) }
-            .map { it.attr("href") }
-
-        if (continues.isEmpty()) return null
-
-        // 1️⃣ PRIORITÀ: MAXSTREAM
-        continues.forEach { link ->
-            if (link.contains("maxstream", ignoreCase = true)) return link
+        // Cerca link Maxstream diretto
+        doc.select("a[href]").forEach { a ->
+            val href = a.attr("href")
+            if (href.contains("maxstream", ignoreCase = true)) return href
         }
 
-        // 2️⃣ ESCLUDI MIXDROP
-        continues.forEach { link ->
-            if (!link.contains("mixdrop", ignoreCase = true)) return link
+        // Cerca link watchfree
+        doc.select("a[href]").forEach { a ->
+            val href = a.attr("href")
+            if (href.contains("watchfree")) return href
         }
 
-        // 3️⃣ Se proprio non c'è altro, ritorna null (NO MIXDROP)
         return null
     }
 
-    private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-        var redirectUrl = findMaxstreamLink(html) ?: return null
-        var time = 0
+    // ============================
+    //   META REFRESH
+    // ============================
+    private fun extractMetaRefresh(html: String): String? {
+        val doc = Jsoup.parse(html)
+        val meta = doc.selectFirst("meta[http-equiv=refresh]")?.attr("content") ?: return null
+        return meta.substringAfter("url=", "")
+    }
 
-        while (redirectUrl.contains("uprots")) {
-            val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
-            redirectUrl = headResponse.url
-            time++
-            if (time == 10) return null
+    // ============================
+    //   FORM HIDDEN
+    // ============================
+    private suspend fun extractFormRedirect(html: String, headers: Map<String, String>): String? {
+        val doc = Jsoup.parse(html)
+        val form = doc.selectFirst("form[action]") ?: return null
+
+        val action = form.attr("action")
+        val data = form.select("input[name]").associate {
+            it.attr("name") to it.attr("value")
         }
 
-        // Conversione link Maxstream
-        return if (redirectUrl.contains("watchfree/")) {
-            val parts = redirectUrl.split("watchfree/")[1].split("/")
-            if (parts.size > 1) {
-                "https://maxstream.video/emvvv/${parts[1]}"
-            } else redirectUrl
-        } else redirectUrl
+        val res = app.post(action, data = data, headers = headers)
+        return extractMaxstream(res.text)
+    }
+
+    // ============================
+    //   REDIRECT JS
+    // ============================
+    private fun extractJsRedirect(html: String): String? {
+        val regex = Regex("window\\.location\\.href\\s*=\\s*['\"](.*?)['\"]")
+        return regex.find(html)?.groupValues?.get(1)
+    }
+
+    // ============================
+    //   REDIRECT MULTIPLI
+    // ============================
+    private suspend fun followRedirects(url: String, headers: Map<String, String>): String? {
+        var current = url
+        val visited = mutableSetOf<String>()
+
+        repeat(10) {
+            if (current in visited) return null
+            visited.add(current)
+
+            val res = app.get(current, headers = headers, allowRedirects = false)
+            val loc = res.headers["location"]
+
+            if (loc == null) return extractMaxstream(res.text)
+
+            current = loc
+        }
+
+        return null
+    }
+
+    // ============================
+    //   CONVERSIONE MAXSTREAM
+    // ============================
+    private fun convertMaxstream(url: String?): String? {
+        if (url == null) return null
+
+        if (url.contains("watchfree/")) {
+            val id = url.substringAfter("watchfree/").substringBefore("/")
+            return "https://maxstream.video/emvvv/$id"
+        }
+
+        return url
     }
 }
