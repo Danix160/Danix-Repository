@@ -5,7 +5,7 @@ import com.lagradost.cloudstream3.utils.*
 import com.lagradost.api.Log
 import org.json.JSONObject
 import org.jsoup.nodes.Element
-import org.jsoup.nodes.Document
+import org.jsoup.Jsoup
 
 class CbProvider : MainAPI() {
     override var mainUrl = "https://cb01uno.bar"
@@ -15,7 +15,7 @@ class CbProvider : MainAPI() {
     override val hasMainPage = true
 
     private val commonHeaders = mapOf(
-        "User-Agent" to "Mozilla/5.0",
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer" to "$mainUrl/"
     )
 
@@ -32,35 +32,21 @@ class CbProvider : MainAPI() {
 
     private fun fixTitle(title: String, isMovie: Boolean): String {
         var t = title
-
         val removeList = listOf(
-            "streaming",
-            "[HD]",
-            "film gratis by cb01 official",
-            "serie tv gratis by cb01 official",
-            "completa",
-            "ITA",
-            "HD",
-            "Stagione",
-            "stagione",
-            "Serie",
-            "Episodio",
-            "(",
-            ")"
+            "streaming", "[HD]", "film gratis by cb01 official",
+            "serie tv gratis by cb01 official", "completa", "ITA", "HD",
+            "Stagione", "stagione", "Serie", "Episodio", "(", ")"
         )
-
-        removeList.forEach { bad ->
-            t = t.replace(bad, "", ignoreCase = true)
-        }
-
+        removeList.forEach { bad -> t = t.replace(bad, "", ignoreCase = true) }
+        
+        // Rimuove eventuali trattini, barre o spazi residui appesi alla fine del titolo
+        t = t.replace("""\s*[-/]\s*$""".toRegex(), "")
         return t.trim()
     }
 
     private fun parseElement(element: Element, isTvSeriesSearch: Boolean = false): SearchResponse? {
-        val titleElement = element.selectFirst("h2 a, h3 a, .card-title a, .post-title a, a[title]")
-            ?: return null
-
-        val href = titleElement.attr("href")
+        val titleElement = element.selectFirst("h2 a, h3 a, .card-title a, .post-title a, a[title]") ?: return null
+        val href = titleElement.attr("abs:href").ifBlank { titleElement.attr("href") }
         if (href.contains("/tag/") || href.contains("/category/") || href.length < 15) return null
 
         val rawTitle = titleElement.text()
@@ -72,10 +58,11 @@ class CbProvider : MainAPI() {
                 rawTitle.contains("Episodio", ignoreCase = true)
 
         val title = fixTitle(rawTitle, !isSeries)
-
+        
+        // Estrazione sicura usando URL assoluti per il lazy-loading delle immagini
         val posterUrl = element.selectFirst("img")?.let { img ->
-            img.attr("data-lazy-src").ifBlank {
-                img.attr("data-src").ifBlank { img.attr("src") }
+            img.attr("abs:data-lazy-src").ifBlank {
+                img.attr("abs:data-src").ifBlank { img.attr("abs:src") }
             }
         }
 
@@ -86,11 +73,10 @@ class CbProvider : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         Log.d("CB01", "Caricamento main page: ${request.data} pagina $page")
-
         val url = if (page <= 1) request.data else "${request.data.removeSuffix("/")}/page/$page/"
         val document = app.get(url, headers = commonHeaders).document
 
-        val items = document.select("div.card, div.post-video, article.post, div.mp-post")
+        val items = document.select("div.card, div.post-video, article.post, div.mp-post, article")
             .mapNotNull { parseElement(it, request.data.contains("serietv")) }
             .distinctBy { it.url }
 
@@ -99,26 +85,28 @@ class CbProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         Log.d("CB01", "Ricerca: $query")
-
         val searchUrl = "$mainUrl/?s=$query"
         val document = app.get(searchUrl, headers = commonHeaders).document
 
-        return document.select("div.card, div.post-video, article, div.mp-post, .result-item")
+        // Restringiamo il campo di ricerca per evitare i widget laterali di WordPress
+        return document.select("div.search-results article, #main article, div.card, div.post-video, .result-item")
             .mapNotNull { parseElement(it) }
             .distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
         Log.d("CB01", "Caricamento pagina: $url")
-
         val document = app.get(url, headers = commonHeaders).document
         val isSeries = url.contains("/serietv/") || url.contains("/serie/")
 
-        val title = fixTitle(document.selectFirst("h1")?.text() ?: "", !isSeries)
+        // 1. Estrazione metadati corazzata tramite Open Graph (immune a variazioni del tema HTML)
+        val title = fixTitle(document.selectFirst("meta[property=\"og:title\"]")?.attr("content") 
+            ?: document.selectFirst("h1")?.text() ?: "", !isSeries)
+        
         val poster = document.selectFirst("meta[property=\"og:image\"]")?.attr("content")
-        val plot = document.select("div.ignore-css p, .entry-content p")
-            .firstOrNull { it.text().length > 50 }
-            ?.text()
+        
+        val plot = document.selectFirst("meta[property=\"og:description\"]")?.attr("content")
+            ?: document.select("div.ignore-css p, .entry-content p").firstOrNull { it.text().length > 50 }?.text()
 
         val episodes = mutableListOf<Episode>()
 
@@ -127,12 +115,9 @@ class CbProvider : MainAPI() {
         // ============================
         if (!isSeries) {
             Log.d("CB01", "Rilevato FILM")
-
             val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
                 .map { it.attr("href").ifBlank { it.attr("src") } }
                 .filter { link -> supportedHosts.any { link.contains(it) } }
-
-            links.forEach { Log.d("CB01", "Link film trovato: $it") }
 
             if (links.isNotEmpty()) {
                 episodes.add(
@@ -142,12 +127,7 @@ class CbProvider : MainAPI() {
                 )
             }
 
-            return newMovieLoadResponse(
-                title,
-                url,
-                TvType.Movie,
-                episodes.firstOrNull()?.data ?: ""
-            ) {
+            return newMovieLoadResponse(title, url, TvType.Movie, episodes.firstOrNull()?.data ?: "") {
                 this.posterUrl = poster
                 this.plot = plot
             }
@@ -157,65 +137,79 @@ class CbProvider : MainAPI() {
         //          SERIE TV
         // ============================
         Log.d("CB01", "Rilevata SERIE TV")
-
         val seasonsData = mutableListOf<SeasonData>()
 
-        document.select("div.sp-wrap").forEachIndexed { index, wrap ->
-            Log.d("CB01", "Season block #$index trovato")
-
+        // Target accurato basato sul plugin 'bbspoiler' strutturato nell'HTML reale
+        document.select("div.sp-wrap, div.bb-spoiler").forEachIndexed { index, wrap ->
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
-            val seasonNumber = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
+            
+            // Determina l'indice di sicurezza della stagione dallo spoiler header
+            val currentSeason = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
 
             val seasonNameClean = seasonHead
                 .replace("- ITA", "", ignoreCase = true)
                 .replace("- HD", "", ignoreCase = true)
                 .trim()
 
-            seasonsData.add(SeasonData(seasonNumber, seasonNameClean))
+            seasonsData.add(SeasonData(currentSeason, seasonNameClean))
 
-            wrap.select(".sp-body p, .sp-body li, .sp-body div, .sp-body span").forEach { row ->
-                val rowText = row.text().trim()
+            // Iterazione resiliente: leggiamo linearmente tutti i nodi interni all'elemento sp-body
+            wrap.select(".sp-body *").forEach { row ->
                 val anchors = row.select("a[href]")
+                if (anchors.isEmpty()) return@forEach
 
-                if (anchors.isEmpty()) {
-                    Log.d("CB01", "Riga senza link: $rowText")
-                    return@forEach
-                }
+                val rowText = row.text().trim()
+                if (rowText.isBlank() || rowText.contains("[riduci]", ignoreCase = true)) return@forEach
 
-                Log.d("CB01", "Riga episodio trovata: $rowText")
-
-                val epMatch = Regex("(\\d+)x(\\d+)").find(rowText)
-                if (epMatch == null) {
-                    Log.d("CB01", "❌ Nessun match episodio in: $rowText")
-                    return@forEach
-                }
-
-                val sNum = epMatch.groupValues[1].toInt()
-                val eNum = epMatch.groupValues[2].toInt()
-
-                Log.d("CB01", "✔ Episodio rilevato: S$sNum E$eNum")
-
-                val linksForEpisode = anchors.mapNotNull { a ->
-                    val link = a.attr("href")
-                    if (supportedHosts.any { host -> link.contains(host) }) {
-                        Log.d("CB01", "   → Link valido: $link")
-                        link
-                    } else {
-                        Log.d("CB01", "   → Link ignorato: $link")
-                        null
+                // Gestione dei link cumulativi "Stagione Completa"
+                if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
+                    val folderLinks = anchors.map { it.attr("href") }.filter { l -> supportedHosts.any { l.contains(it) } }
+                    if (folderLinks.isNotEmpty()) {
+                        val linksData = folderLinks.joinToString("###")
+                        if (episodes.none { it.data == linksData }) {
+                            episodes.add(newEpisode(linksData) {
+                                this.name = "Stagione Completa"
+                                this.season = currentSeason
+                                this.episode = 1
+                            })
+                        }
                     }
+                    return@forEach
+                }
+
+                // REGEX OTTIMIZZATA: Supporta "2x01", "2×01" (carattere speciale Unicode) e spazi variabili
+                val epMatch = Regex("(\\d+)\\s*[x×\\u00D7]\\s*(\\d+)").find(rowText)
+                val fallbackMatch = Regex("(?i)(?:Episodio\\s*)?(\\d+)").find(rowText)
+
+                if (epMatch == null && fallbackMatch == null) return@forEach
+
+                val sNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
+                val eNum = epMatch?.groupValues?.get(2)?.toIntOrNull() 
+                    ?: fallbackMatch?.groupValues?.get(1)?.toIntOrNull() 
+                    ?: return@forEach
+
+                val baseEpName = "${sNum}x${String.format("%02d", eNum)}"
+
+                // Isola esclusivamente i link supportati validi di questa riga di testo
+                val linksForEpisode = anchors.map { it.attr("href") }.filter { link ->
+                    supportedHosts.any { host -> link.contains(host) }
                 }
 
                 if (linksForEpisode.isNotEmpty()) {
-                    episodes.add(
-                        newEpisode(linksForEpisode.joinToString("###")) {
-                            this.name = "${sNum}x${eNum}"
-                            this.season = sNum
-                            this.episode = eNum
-                        }
-                    )
-                } else {
-                    Log.d("CB01", "❌ Nessun link valido per episodio $sNum x $eNum")
+                    val linksData = linksForEpisode.joinToString("###")
+                    
+                    // Cruciale: previene la duplicazione dovuta all'annidamento ricorsivo di JSoup (*)
+                    val isDuplicate = episodes.any { it.season == sNum && it.episode == eNum }
+                    
+                    if (!isDuplicate) {
+                        episodes.add(
+                            newEpisode(linksData) {
+                                this.name = baseEpName
+                                this.season = sNum
+                                this.episode = eNum
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -233,34 +227,28 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-
         Log.d("CB01", "loadLinks() chiamato con data: $data")
-
-        val allLinks = data.split("###").map { it.trim() }
+        
+        // OTTIMIZZAZIONE USER EXPERIENCE: I link diretti nativi (senza stayonline) vanno in cima.
+        // Riduce a zero i tempi di attesa per l'utente quando sono disponibili host veloci.
+        val allLinks = data.split("###")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .sortedBy { it.contains("stayonline.pro") } 
 
         allLinks.forEach { cleanLink ->
-            Log.d("CB01", "→ Analizzo link: $cleanLink")
-
             try {
                 if (cleanLink.contains("stayonline.pro")) {
                     Log.d("CB01", "StayOnline rilevato → bypass in corso…")
-
                     val bypassed = bypassStayOnline(cleanLink)
-
                     if (bypassed != null) {
-                        Log.d("CB01", "✔ Bypass StayOnline OK → $bypassed")
                         loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
-                    } else {
-                        Log.e("CB01", "❌ Bypass StayOnline FALLITO per $cleanLink")
                     }
-
                 } else {
-                    Log.d("CB01", "Link diretto → uso loadExtractor")
                     loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
-
             } catch (e: Exception) {
-                Log.e("CB01", "❌ Errore loadLinks per $cleanLink → ${e.message}")
+                Log.e("CB01", "Errore nell'estrazione del link $cleanLink: ${e.message}")
             }
         }
         return true
@@ -268,58 +256,53 @@ class CbProvider : MainAPI() {
 
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
-            Log.d("CB01:StayOnline", "Bypass avviato per: $link")
+            // 1. Sanificazione e isolamento sicuro del LinkID dall'URL di partenza
+            val cleanUrl = link.substringBefore("?")
+            val urlParts = cleanUrl.removeSuffix("/").split("/")
+            val linkId = urlParts.lastOrNull { it.isNotBlank() } ?: return null
+            
+            // 2. Routing dinamico della richiesta AJAX basato sul tipo di risorsa (Embed vs Standard)
+            val ajaxEndpoint = if (link.contains("/e/")) {
+                "https://stayonline.pro/ajax/linkEmbedView.php"
+            } else {
+                "https://stayonline.pro/ajax/linkView.php"
+            }
 
             val headers = mapOf(
                 "Origin" to "https://stayonline.pro",
                 "Referer" to link,
-                "User-Agent" to "Mozilla/5.0",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "X-Requested-With" to "XMLHttpRequest",
                 "Accept" to "application/json, text/javascript, */*; q=0.01",
                 "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8"
             )
 
+            // 3. Persistenza dei Cookie: Memorizziamo la sessione generata dalla GET iniziale
             val pageResponse = app.get(link, headers = headers)
-            val pageHtml = pageResponse.text
+            val cookies = pageResponse.cookies
 
-            var linkId = link.substringAfterLast("/")
-            val idPattern = Regex("""var linkId\s*=\s*"([^"]+)";""")
-            val idMatch = idPattern.find(pageHtml)
-
-            if (idMatch != null) {
-                linkId = idMatch.groupValues[1]
-                Log.d("CB01:StayOnline", "✔ linkId trovato nello script: $linkId")
-            } else {
-                Log.d("CB01:StayOnline", "⚠ linkId NON trovato nello script, uso fallback: $linkId")
-            }
-
+            // 4. Invio della POST autorizzata con i cookie corretti
             val response = app.post(
-                "https://stayonline.pro/ajax/linkView.php",
+                ajaxEndpoint,
                 headers = headers,
+                cookies = cookies,
                 data = mapOf("id" to linkId, "ref" to "")
             ).text
-
-            Log.d("CB01:StayOnline", "Risposta JSON: $response")
 
             val json = JSONObject(response)
             if (json.optString("status") == "success") {
                 var realUrl = json.getJSONObject("data").getString("value")
-                Log.d("CB01:StayOnline", "✔ Link reale ottenuto: $realUrl")
 
-                if (realUrl.contains("m1xdrop.net/f/")) {
-                    val videoId = realUrl.substringAfterLast("/")
+                // Normalizzazione automatica dei flussi Mixdrop camuffati
+                if (realUrl.contains("m1xdrop.net/f/") || realUrl.contains("mixdrop.co/f/")) {
+                    val videoId = realUrl.removeSuffix("/").substringAfterLast("/")
                     realUrl = "https://mixdrop.top/e/$videoId"
-                    Log.d("CB01:StayOnline", "✔ Convertito in Mixdrop: $realUrl")
                 }
-
                 return realUrl
-            } else {
-                Log.e("CB01:StayOnline", "❌ JSON status != success")
-                null
             }
-
+            null
         } catch (e: Exception) {
-            Log.e("CB01:StayOnline", "❌ Errore bypass: ${e.message}")
+            Log.e("CB01:StayOnline", "Errore critico durante il bypass: ${e.message}")
             null
         }
     }
