@@ -203,49 +203,38 @@ document.select("div.sp-wrap").forEachIndexed { index, wrap ->
     return try {
         val id = link.substringAfterLast("/").trim('/')
 
-        // 1️⃣ Prima richiesta: serve per ottenere i cookie giusti
+        // 1️⃣ GET iniziale per ottenere i cookie reali
         val init = app.get(
             link,
             headers = mapOf(
-                "User-Agent" to "Mozilla/5.0",
+                "User-Agent" to "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
                 "Accept" to "text/html,application/xhtml+xml",
-                "Accept-Language" to "en-US,en;q=0.9"
+                "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
             )
         )
 
         val cookies = init.cookies
 
-        // 2️⃣ Richiesta AJAX corretta (come fa il browser)
+        // 2️⃣ POST identico al browser → linkView.php
         val response = app.post(
-            "https://stayonline.pro/ajax/getSources.php",
+            "https://stayonline.pro/ajax/linkView.php",
             headers = mapOf(
                 "X-Requested-With" to "XMLHttpRequest",
                 "Origin" to "https://stayonline.pro",
                 "Referer" to link,
-                "User-Agent" to "Mozilla/5.0",
-                "Accept" to "*/*",
-                "Accept-Language" to "en-US,en;q=0.9"
+                "User-Agent" to "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
             ),
             cookies = cookies,
             data = mapOf("id" to id)
         ).text
 
-        val arr = JSONObject(response).getJSONArray("data")
-
-        // 3️⃣ CERCHIAMO MAXSTREAM
-        for (i in 0 until arr.length()) {
-            val file = arr.getJSONObject(i).getString("file")
-            if (file.contains("maxstream", ignoreCase = true)) {
-                return file
-            }
-        }
-
-        // 4️⃣ fallback: Mixdrop (se Maxstream non esiste)
-        arr.getJSONObject(0).getString("file")
+        // 3️⃣ Estrarre il link finale
+        JSONObject(response).getJSONObject("data").getString("value")
 
     } catch (e: Exception) {
         null
     }
 }
-
 }
