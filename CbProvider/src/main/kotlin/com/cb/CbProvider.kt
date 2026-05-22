@@ -173,29 +173,31 @@ document.select("div.sp-wrap").forEachIndexed { index, wrap ->
 }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val allLinks = data.split("###").map { it.trim() }
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    val allLinks = data.split("###").map { it.trim() }
 
-        allLinks.forEach { cleanLink ->
-            try {
-                if (cleanLink.contains("stayonline.pro")) {
-                    bypassStayOnline(cleanLink)?.let { bypassed ->
-                        // bypassed fornirà l'URL di uprot.net/msf/... o simili
-                        loadExtractor(bypassed, subtitleCallback, callback) 
-                    }
-                } else {
-                    loadExtractor(cleanLink, subtitleCallback, callback)
+    allLinks.forEach { cleanLink ->
+        try {
+            if (cleanLink.contains("stayonline.pro")) {
+
+                val bypassed = bypassStayOnline(cleanLink)
+                if (bypassed != null) {
+                    // PASSIAMO IL REFERER ORIGINALE A UPROT
+                    loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
                 }
-            } catch (e: Exception) {
-                // Passa al link successivo in caso di errore
+
+            } else {
+                loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
             }
-        }
-        return true
+        } catch (_: Exception) {}
     }
+    return true
+}
+
 
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
