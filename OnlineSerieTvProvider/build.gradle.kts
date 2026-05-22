@@ -19,5 +19,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries")
     requiresResources = false
     language = "it"
-    iconUrl = "https://onlineserietv.com/wp-content/uploads/2023/01/cropped-tv-1.png"
+    iconUrl = "logo.svg"
 }
