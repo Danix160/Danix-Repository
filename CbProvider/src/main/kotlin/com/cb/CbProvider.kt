@@ -201,53 +201,50 @@ document.select("div.sp-wrap").forEachIndexed { index, wrap ->
 
     private suspend fun bypassStayOnline(link: String): String? {
     return try {
-        val id = link.split("/").last { it.isNotBlank() }
+        val id = link.substringAfterLast("/").trim('/')
 
-        // 1️⃣ Primo endpoint (quello che già usi)
-        val r1 = app.post(
-            "https://stayonline.pro/ajax/linkEmbedView.php",
+        // 1️⃣ Prima richiesta: serve per ottenere i cookie giusti
+        val init = app.get(
+            link,
             headers = mapOf(
-                "X-Requested-With" to "XMLHttpRequest",
-                "Referer" to link,
-                "User-Agent" to "Mozilla/5.0"
-            ),
-            data = mapOf("id" to id)
-        ).text
+                "User-Agent" to "Mozilla/5.0",
+                "Accept" to "text/html,application/xhtml+xml",
+                "Accept-Language" to "en-US,en;q=0.9"
+            )
+        )
 
-        val first = JSONObject(r1).getJSONObject("data").getString("value")
+        val cookies = init.cookies
 
-        // Se il primo è Maxstream → perfetto
-        if (first.contains("maxstream", ignoreCase = true)) {
-            return first
-        }
-
-        // 2️⃣ Secondo endpoint: qui spesso c’è Maxstream
-        val r2 = app.post(
+        // 2️⃣ Richiesta AJAX corretta (come fa il browser)
+        val response = app.post(
             "https://stayonline.pro/ajax/getSources.php",
             headers = mapOf(
                 "X-Requested-With" to "XMLHttpRequest",
+                "Origin" to "https://stayonline.pro",
                 "Referer" to link,
-                "User-Agent" to "Mozilla/5.0"
+                "User-Agent" to "Mozilla/5.0",
+                "Accept" to "*/*",
+                "Accept-Language" to "en-US,en;q=0.9"
             ),
+            cookies = cookies,
             data = mapOf("id" to id)
         ).text
 
-        val sources = JSONObject(r2).getJSONArray("data")
+        val arr = JSONObject(response).getJSONArray("data")
 
-        // Cerca Maxstream tra tutte le sorgenti
-        for (i in 0 until sources.length()) {
-            val src = sources.getJSONObject(i).getString("file")
-            if (src.contains("maxstream", ignoreCase = true)) {
-                return src
+        // 3️⃣ CERCHIAMO MAXSTREAM
+        for (i in 0 until arr.length()) {
+            val file = arr.getJSONObject(i).getString("file")
+            if (file.contains("maxstream", ignoreCase = true)) {
+                return file
             }
         }
 
-        // Se non c’è Maxstream, ritorna il primo (Mixdrop)
-        first
+        // 4️⃣ fallback: Mixdrop (se Maxstream non esiste)
+        arr.getJSONObject(0).getString("file")
 
     } catch (e: Exception) {
         null
     }
 }
-
 }
