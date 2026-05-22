@@ -92,6 +92,7 @@ class CbProvider : MainAPI() {
                 episodes.add(newEpisode(links.joinToString("###")) { this.name = "Film - Streaming" })
             }
         } else {
+            // Analisi Serie TV resiliente all'HTML rotto
             document.select("div.sp-wrap").forEachIndexed { index, wrap ->
                 val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
                 var currentSeason = index + 1
@@ -101,11 +102,15 @@ class CbProvider : MainAPI() {
                     currentSeason = seasonMatch.groupValues[1].toIntOrNull() ?: currentSeason
                 }
 
-                wrap.select(".sp-body p").forEach { p ->
-                    val rowText = p.text()
-                    val anchors = p.select("a")
-
+                // Usiamo l'asterisco per scendere su qualsiasi elemento figlio dentro sp-body
+                wrap.select(".sp-body *").forEach { row ->
+                    val anchors = row.select("a")
                     if (anchors.isNotEmpty()) {
+                        val rowText = row.text().trim()
+                        
+                        // Saltiamo i nodi duplicati o contenitori vuoti valutando il testo utile
+                        if (rowText.isBlank() || rowText == "[riduci]") return@forEach
+
                         if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE"))) {
                             val folderLinks = anchors.map { it.attr("href") }.filter { link -> supportedHosts.any { link.contains(it) } }
                             if (folderLinks.isNotEmpty()) {
@@ -116,22 +121,27 @@ class CbProvider : MainAPI() {
                                 })
                             }
                         } else {
-                            val epMatch = "(\\d+)[x×](\\d+)".toRegex().find(rowText)
+                            // Match flessibile per intercettare l'episodio (es: "1×01" o "1x01")
+                            val epMatch = "(\\d+)\\s*[x×]\\s*(\\d+)".toRegex().find(rowText)
+                            
                             val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodes.size + 1)
                             val seasonNumber = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
                             val baseEpName = if (epMatch != null) "${epMatch.groupValues[1]}x${epMatch.groupValues[2]}" else "Episodio $episodeNumber"
 
-                            // Generiamo un episodio distinto per OGNI link di streaming trovato nella riga (Maxstream, Mixdrop, ecc.)
                             anchors.forEach { a ->
                                 val link = a.attr("href")
                                 if (supportedHosts.any { link.contains(it) }) {
-                                    val serverName = a.text().trim() // "Maxstream", "Mixdrop", ecc.
+                                    val serverName = a.text().trim()
                                     
-                                    episodes.add(newEpisode(link) {
-                                        this.name = "$baseEpName - $serverName"
-                                        this.season = seasonNumber
-                                        this.episode = episodeNumber
-                                    })
+                                    // Evitiamo duplicati identici sulla stessa riga causati dalla selezione ricorsiva delle strutture annidate
+                                    val isDuplicate = episodes.any { it.data == link && it.season == seasonNumber && it.episode == episodeNumber }
+                                    if (!isDuplicate) {
+                                        episodes.add(newEpisode(link) {
+                                            this.name = "$baseEpName - $serverName"
+                                            this.season = seasonNumber
+                                            this.episode = episodeNumber
+                                        })
+                                    }
                                 }
                             }
                         }
@@ -159,14 +169,14 @@ class CbProvider : MainAPI() {
             try {
                 if (cleanLink.contains("stayonline.pro")) {
                     bypassStayOnline(cleanLink)?.let { bypassed ->
-                        // bypassed sarà "https://uprot.net/msf/..." o simili
+                        // bypassed fornirà l'URL di uprot.net/msf/... o simili
                         loadExtractor(bypassed, subtitleCallback, callback) 
                     }
                 } else {
                     loadExtractor(cleanLink, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                // Continua in caso di errore su un singolo host
+                // Passa al link successivo in caso di errore
             }
         }
         return true
@@ -177,7 +187,11 @@ class CbProvider : MainAPI() {
             val id = link.split("/").last { it.isNotBlank() }
             val response = app.post(
                 "https://stayonline.pro/ajax/linkEmbedView.php",
-                headers = mapOf("X-Requested-With" to "XMLHttpRequest", "Referer" to link),
+                headers = mapOf(
+                    "X-Requested-With" to "XMLHttpRequest", 
+                    "Referer" to link,
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
                 data = mapOf("id" to id)
             ).text
             JSONObject(response).getJSONObject("data").getString("value")
