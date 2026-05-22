@@ -146,7 +146,53 @@ class Uprot : ExtractorApi() {
 
         return null
     }
+private fun findLinkInHtml(html: String): String? {
+    val doc = Jsoup.parse(html)
+    doc.select("a").forEach { tag ->
+        val text = tag.text().uppercase()
+        if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
+            var href = tag.attr("href").trim()
+            if (href.isBlank()) return@forEach
+            
+            // Fix critico per OkHttp: assicura che lo schema sia presente
+            if (href.startsWith("//")) {
+                href = "https:$href"
+            } else if (!href.startsWith("http")) {
+                href = "https://uprot.net/" + href.removePrefix("/")
+            }
+            return href
+        }
+    }
+    return null
+}
 
+private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
+    var redirectUrl = findLinkInHtml(html) ?: return null
+    var time = 0
+
+    while (redirectUrl.contains("uprots")) {
+        // Altro controllo di sicurezza prima della chiamata di rete nel ciclo while
+        if (!redirectUrl.startsWith("http")) {
+            redirectUrl = "https://" + redirectUrl.removePrefix("//")
+        }
+        
+        val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
+        redirectUrl = headResponse.url
+        time++
+        if (time == 10) return null
+    }
+
+    return if (redirectUrl.contains("watchfree/")) {
+        val parts = redirectUrl.split("watchfree/")[1].split("/")
+        if (parts.size > 1) {
+            "https://maxstream.video/emvvv/${parts[1]}"
+        } else {
+            redirectUrl
+        }
+    } else {
+        redirectUrl
+    }
+}
     // ============================
     //   CONVERSIONE MAXSTREAM
     // ============================
