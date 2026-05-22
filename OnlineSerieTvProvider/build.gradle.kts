@@ -19,5 +19,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries")
     requiresResources = false
     language = "it"
-    iconUrl = "logo.svg"
+    iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/OnlineSerieTvProvider/logo.svg"
 }
