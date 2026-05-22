@@ -88,17 +88,16 @@ class Uprot : ExtractorApi() {
     }
 
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-    var redirectUrl = findLinkInHtml(html) ?: return null
-    var time = 0
+        var redirectUrl = findLinkInHtml(html) ?: return null
+        var time = 0
 
-    // SE IL LINK CONTIENE GIÀ MAXSTREAM, ABBIAMO FINITO! Restituiscilo subito ed esci.
-    if (redirectUrl.contains("maxstream.video") || redirectUrl.contains("watchfree")) {
-        return redirectUrl
-    }
+        // SE IL LINK CONTIENE GIÀ MAXSTREAM, ABBIAMO FINITO! Restituiscilo subito ed esci.
+        if (redirectUrl.contains("maxstream.video") || redirectUrl.contains("watchfree")) {
+            return redirectUrl
+        }
 
-    // Insegue la catena di redirect SOLO se siamo ancora sui domini di transito uprots/uprot.net originali
-    while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
-        // ... tutto il resto del tuo codice dentro il while rimane uguale
+        // Insegue la catena di redirect SOLO se siamo ancora sui domini di transito uprots/uprot.net originali
+        while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
             // LOG INSERITO QUI:
             Log.d("CB01_DEBUG", "Inseguendo redirect (Tentativo ${time + 1}): $redirectUrl")
 
