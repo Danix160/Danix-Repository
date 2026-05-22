@@ -5,7 +5,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
 import org.jsoup.Jsoup
-import android.util.Log // Importato per far funzionare il Log.d
+import android.util.Log
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
@@ -35,20 +35,20 @@ class Uprot : ExtractorApi() {
             "Upgrade-Insecure-Requests" to "1"
         )
 
-        // 2. Chiamata a Uprot (gestione differenziata msfi per Serie TV / msf per Film)
+        // =========================================================================
+        // 2. Chiamata a Uprot con Sanificazione Universale Antiblocco
+        // =========================================================================
+        // Riscrive gli endpoint per bypassare Cloudflare e rispondere all'istante
         if (targetLink.contains("msfi")) {
-            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
-            if (response.code != 403) {
-                maxStreamUrl = getFinalMaxstreamLink(response.text, baseHeaders)
-            }
-        } else {
-            if (targetLink.contains("msf")) {
-                targetLink = targetLink.replace("msf", "mse")
-            }
-            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
-            if (response.code != 403) {
-                maxStreamUrl = getFinalMaxstreamLink(response.text, baseHeaders)
-            }
+            targetLink = targetLink.replace("msfi", "msei") // Sostituisce msfi con msei per le serie TV
+        } else if (targetLink.contains("msf")) {
+            targetLink = targetLink.replace("msf", "mse")   // Sostituisce msf con mse per i film
+        }
+
+        // Esegue la richiesta sull'endpoint libero che non blocca la connessione
+        val response = app.get(targetLink, headers = baseHeaders, referer = referer)
+        if (response.code != 403) {
+            maxStreamUrl = getFinalMaxstreamLink(response.text, baseHeaders)
         }
 
         // Fallback: se il parsing del pulsante fallisce, usiamo l'URL di transito
@@ -60,7 +60,7 @@ class Uprot : ExtractorApi() {
         // Gestione e Smistamento del link finale ottenuto
         // =========================================================================
         if (maxStreamUrl.contains("watchfree") || maxStreamUrl.contains("maxstream") || maxStreamUrl.contains("maxf")) {
-            // Forza il passaggio directo all'estrattore MaxStream che gestisce i domini specchio
+            // Forza il passaggio diretto all'estrattore MaxStream che gestisce i domini specchio
             MaxStream().getUrl(maxStreamUrl, url, subtitleCallback, callback)
         } else {
             // Altrimenti (es. se la catena ha restituito Mixdrop), si affida al core di Cloudstream
@@ -91,14 +91,13 @@ class Uprot : ExtractorApi() {
         var redirectUrl = findLinkInHtml(html) ?: return null
         var time = 0
 
-        // SE IL LINK CONTIENE GIÀ MAXSTREAM, ABBIAMO FINITO! Restituiscilo subito ed esci.
-        if (redirectUrl.contains("maxstream.video") || redirectUrl.contains("watchfree")) {
+        // SE IL LINK CONTIENE GIÀ MAXSTREAM/WATCHFREE, ABBIAMO FINITO! Restituiscilo subito ed esci.
+        if (redirectUrl.contains("maxstream.video") || redirectUrl.contains("watchfree") || redirectUrl.contains("maxf")) {
             return redirectUrl
         }
 
         // Insegue la catena di redirect SOLO se siamo ancora sui domini di transito uprots/uprot.net originali
         while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
-            // LOG INSERITO QUI:
             Log.d("CB01_DEBUG", "Inseguendo redirect (Tentativo ${time + 1}): $redirectUrl")
 
             if (!redirectUrl.startsWith("http")) {
@@ -108,7 +107,7 @@ class Uprot : ExtractorApi() {
             val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
             redirectUrl = headResponse.url
             
-            // CORREZIONE: Interrompiamo se intercettiamo qualsiasi variante finale (incluso maxf)
+            // Interrompiamo se intercettiamo qualsiasi variante finale (incluso maxf e watchfree)
             if (redirectUrl.contains("watchfree") || redirectUrl.contains("maxstream") || redirectUrl.contains("maxf")) {
                 break
             }
