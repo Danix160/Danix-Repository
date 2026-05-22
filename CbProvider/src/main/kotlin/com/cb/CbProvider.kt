@@ -6,7 +6,7 @@ import org.json.JSONObject
 import org.jsoup.nodes.Element
 
 class CbProvider : MainAPI() {
-    override var mainUrl = "https://cb01uno.download"
+    override var mainUrl = "https://cb01uno.bar"
     override var name = "CB01"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Cartoon)
     override var lang = "it"
@@ -92,16 +92,42 @@ class CbProvider : MainAPI() {
                 episodes.add(newEpisode(links.joinToString("###")) { this.name = "Film - Streaming" })
             }
         } else {
+            // GESTIONE SERIE TV (Sia ad episodi singoli che a lista/folder cumulativa)
             document.select("div.sp-wrap").forEachIndexed { index, wrap ->
-                wrap.select("p, li").forEach { row ->
+                // Ottieni il nome della stagione dall'intestazione dello spoiler (es: "STAGIONE 1" o "SCOOBY...")
+                val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
+                var currentSeason = index + 1
+                val seasonMatch = "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)
+                if (seasonMatch != null) {
+                    currentSeason = seasonMatch.groupValues[1].toIntOrNull() ?: currentSeason
+                }
+
+                wrap.select("p, li, tr").forEach { row ->
                     val rowLinks = row.select("a").map { it.attr("href") }
                         .filter { link -> supportedHosts.any { link.contains(it) } }
                     
                     if (rowLinks.isNotEmpty()) {
-                        episodes.add(newEpisode(rowLinks.joinToString("###")) {
-                            this.name = row.text().substringBefore("–").trim()
-                            this.season = index + 1
-                        })
+                        val rowText = row.text()
+                        
+                        // CONTROLLO SE È UN LINK CUMULATIVO (Folder di Uprot / Maxstream)
+                        if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE"))) {
+                            episodes.add(newEpisode(rowLinks.joinToString("###")) {
+                                this.name = rowText.substringBefore("–").trim().ifBlank { "Tutti gli Episodi (Lista)" }
+                                this.season = currentSeason
+                                this.episode = 1 // Lo impostiamo come primo slot, Uprot caricherà la lista
+                            })
+                        } else {
+                            // EPISODIO SINGOLO STANDARD (Es: 4x13)
+                            val epName = if (rowText.contains("–")) rowText.substringBefore("–").trim() else "Episodio"
+                            val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
+                            val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodes.size + 1)
+
+                            episodes.add(newEpisode(rowLinks.joinToString("###")) {
+                                this.name = epName
+                                this.season = currentSeason
+                                this.episode = episodeNumber
+                            })
+                        }
                     }
                 }
             }
@@ -120,22 +146,21 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Ordiniamo per priorità: MixDrop e Voe per primi
         val allLinks = data.split("###").map { it.trim() }.sortedByDescending { 
-            it.contains("mixdrop") || it.contains("voe") 
+            it.contains("uprot") || it.contains("maxstream") || it.contains("mixdrop") || it.contains("voe") 
         }
 
         allLinks.forEach { cleanLink ->
             try {
                 if (cleanLink.contains("stayonline.pro")) {
-                    bypassStayOnline(cleanLink)?.let { 
-                        loadExtractor(it, subtitleCallback, callback) 
+                    bypassStayOnline(cleanLink)?.let { bypassed ->
+                        loadExtractor(bypassed, subtitleCallback, callback) 
                     }
                 } else {
                     loadExtractor(cleanLink, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                // Se un link fallisce, passiamo al prossimo senza crashare
+                // Salta l'host fallito e passa al successivo
             }
         }
         return true
