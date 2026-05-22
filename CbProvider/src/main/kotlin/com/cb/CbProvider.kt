@@ -74,7 +74,7 @@ class CbProvider : MainAPI() {
         }.distinctBy { it.url }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+   override suspend fun load(url: String): LoadResponse {
     val document = app.get(url, headers = commonHeaders).document
     val isSeries = url.contains("/serietv/") || url.contains("/serie/")
 
@@ -127,15 +127,23 @@ class CbProvider : MainAPI() {
 
         // Ogni episodio è in un <p>
         wrap.select(".sp-body p").forEach { row ->
-            val rowText = row.text().trim()
+            var rowText = row.text().trim()
             val anchors = row.select("a")
 
             if (anchors.isEmpty()) return@forEach
             if (rowText.contains("[riduci]", ignoreCase = true)) return@forEach
 
-            // Match episodio tipo 1×01 o 1x01
-            val epMatch = "(\\d+)\\s*[x×]\\s*(\\d+)".toRegex().find(rowText)
-            if (epMatch == null) return@forEach
+            // Normalizzazione caratteri sporchi
+            rowText = rowText
+                .replace(Regex("[×✕✖✗✘]"), "x")   // tutte le varianti di "×"
+                .replace("–", "-")
+                .replace("—", "-")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+
+            // Regex robusta: 1x01
+            val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
+                ?: return@forEach
 
             val seasonNumber = epMatch.groupValues[1].toInt()
             val episodeNumber = epMatch.groupValues[2].toInt()
@@ -144,7 +152,6 @@ class CbProvider : MainAPI() {
             anchors.forEach { a ->
                 val link = a.attr("href")
                 if (supportedHosts.any { link.contains(it) }) {
-
                     episodes.add(
                         newEpisode(link) {
                             this.name = "$baseEpName - ${a.text().trim()}"
