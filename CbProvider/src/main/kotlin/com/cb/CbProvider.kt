@@ -17,7 +17,6 @@ class CbProvider : MainAPI() {
         "Referer" to "$mainUrl/",
     )
 
-    // Lista degli host supportati, stayonline è fondamentale per intercettare i link delle serie
     private val supportedHosts = listOf(
         "voe", "mixdrop", "streamtape", "fastream", "filemoon", 
         "wolfstream", "streamwish", "maxstream", "lulustream", 
@@ -85,6 +84,7 @@ class CbProvider : MainAPI() {
         val episodes = mutableListOf<Episode>()
 
         if (!isSeries) {
+            // Logica Film (Inalterata perché funzionante con le tabelle)
             val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
                 .map { it.attr("href").ifBlank { it.attr("src") } }
                 .filter { link -> supportedHosts.any { link.contains(it) } }
@@ -93,38 +93,44 @@ class CbProvider : MainAPI() {
                 episodes.add(newEpisode(links.joinToString("###")) { this.name = "Film - Streaming" })
             }
         } else {
-            // Gestione flessibile delle serie TV (Spoiler div.sp-wrap)
+            // Nuova Logica Serie TV basata sul blocco dei paragrafi degli spoiler
             document.select("div.sp-wrap").forEachIndexed { index, wrap ->
                 val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
                 var currentSeason = index + 1
+                
+                // Determina il numero di stagione dal titolo dello spoiler
                 val seasonMatch = "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)
                 if (seasonMatch != null) {
                     currentSeason = seasonMatch.groupValues[1].toIntOrNull() ?: currentSeason
                 }
 
-                wrap.select("p, li, tr").forEach { row ->
-                    val rowLinks = row.select("a").map { it.attr("href") }
-                        .filter { link -> supportedHosts.any { link.contains(it) } }
+                // Cerca tutti i paragrafi <p> dentro la sezione sp-body (dove ci sono gli episodi)
+                wrap.select(".sp-body p").forEach { p ->
+                    val rowText = p.text()
                     
-                    if (rowLinks.isNotEmpty()) {
-                        val rowText = row.text()
-                        
+                    // Trova tutti i link di streaming all'interno del paragrafo dell'episodio
+                    val pLinks = p.select("a").map { it.attr("href") }
+                        .filter { link -> supportedHosts.any { link.contains(it) } }
+
+                    if (pLinks.isNotEmpty()) {
+                        // Verifica se si tratta di una cartella unica o di un elenco ad episodi
                         if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE"))) {
-                            // Caso cartelle cumulative (uprot folder / msfld)
-                            episodes.add(newEpisode(rowLinks.joinToString("###")) {
-                                this.name = rowText.substringBefore("–").trim().ifBlank { "Tutti gli Episodi (Lista)" }
+                            episodes.add(newEpisode(pLinks.joinToString("###")) {
+                                this.name = "Lista Completa Episodi"
                                 this.season = currentSeason
                                 this.episode = 1
                             })
                         } else {
-                            // Caso elenco classico ad episodi singoli (passando da stayonline o uprot diretto)
-                            val epName = if (rowText.contains("–")) rowText.substringBefore("–").trim() else "Episodio"
-                            val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
+                            // Cerca la stringa dell'episodio (es: 1×01 o 1x01)
+                            val epMatch = "(\\d+)[x×](\\d+)".toRegex().find(rowText)
+                            
                             val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodes.size + 1)
+                            val seasonNumber = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
+                            val cleanEpName = if (epMatch != null) "${epMatch.groupValues[1]}x${epMatch.groupValues[2]}" else "Episodio $episodeNumber"
 
-                            episodes.add(newEpisode(rowLinks.joinToString("###")) {
-                                this.name = epName
-                                this.season = currentSeason
+                            episodes.add(newEpisode(pLinks.joinToString("###")) {
+                                this.name = cleanEpName
+                                this.season = seasonNumber
                                 this.episode = episodeNumber
                             })
                         }
@@ -146,7 +152,6 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Splitta i link concatenati e ordina dando massima priorità a stayonline, uprot e maxstream
         val allLinks = data.split("###").map { it.trim() }.sortedByDescending { 
             it.contains("stayonline") || it.contains("uprot") || it.contains("maxstream") 
         }
@@ -154,16 +159,14 @@ class CbProvider : MainAPI() {
         allLinks.forEach { cleanLink ->
             try {
                 if (cleanLink.contains("stayonline.pro")) {
-                    // Risolve la chiamata AJAX protetta di stayonline per sbloccare il link reale
                     bypassStayOnline(cleanLink)?.let { bypassed ->
                         loadExtractor(bypassed, subtitleCallback, callback) 
                     }
                 } else {
-                    // Invia direttamente all'estrattore di Uprot o MaxStream
                     loadExtractor(cleanLink, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                // Fallback silenzioso se un singolo link fallisce, per passare al successivo dell'elenco
+                // Passa al link successivo se uno fallisce
             }
         }
         return true
