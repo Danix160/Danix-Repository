@@ -4,6 +4,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.json.JSONObject
 import org.jsoup.nodes.Element
+import org.jsoup.nodes.Document
 
 class CbProvider : MainAPI() {
     override var mainUrl = "https://cb01uno.bar"
@@ -81,6 +82,7 @@ class CbProvider : MainAPI() {
             this.posterUrl = posterUrl
         }
     }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data.removeSuffix("/")}/page/$page/"
         val document = app.get(url, headers = commonHeaders).document
@@ -113,6 +115,9 @@ class CbProvider : MainAPI() {
 
         val episodes = mutableListOf<Episode>()
 
+        // ============================
+        //          FILM
+        // ============================
         if (!isSeries) {
             val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
                 .map { it.attr("href").ifBlank { it.attr("src") } }
@@ -136,7 +141,26 @@ class CbProvider : MainAPI() {
                 this.plot = plot
             }
         }
+
+        // ============================
+        //          SERIE TV
+        // ============================
+        val seasonsData = mutableListOf<SeasonData>()
+
         document.select("div.sp-wrap").forEachIndexed { index, wrap ->
+            val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
+            val seasonNumber = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
+
+            // Salva nome stagione pulito
+            val seasonNameClean = seasonHead
+                .replace("- ITA", "", ignoreCase = true)
+                .replace("- HD", "", ignoreCase = true)
+                .trim()
+
+            if (seasonNameClean.isNotBlank()) {
+                seasonsData.add(SeasonData(seasonNumber, seasonNameClean))
+            }
+
             wrap.select(".sp-body p, .sp-body li, .sp-body div, .sp-body span").forEach { row ->
                 val rowText = row.text().trim()
                 val anchors = row.select("a[href]")
@@ -144,8 +168,8 @@ class CbProvider : MainAPI() {
                 if (anchors.isEmpty()) return@forEach
 
                 val epMatch = Regex("(\\d+)x(\\d+)").find(rowText) ?: return@forEach
-                val seasonNumber = epMatch.groupValues[1].toInt()
-                val episodeNumber = epMatch.groupValues[2].toInt()
+                val sNum = epMatch.groupValues[1].toInt()
+                val eNum = epMatch.groupValues[2].toInt()
 
                 val linksForEpisode = anchors.mapNotNull { a ->
                     val link = a.attr("href")
@@ -155,9 +179,9 @@ class CbProvider : MainAPI() {
                 if (linksForEpisode.isNotEmpty()) {
                     episodes.add(
                         newEpisode(linksForEpisode.joinToString("###")) {
-                            this.name = "${seasonNumber}x${episodeNumber}"
-                            this.season = seasonNumber
-                            this.episode = episodeNumber
+                            this.name = "${sNum}x${eNum}"
+                            this.season = sNum
+                            this.episode = eNum
                         }
                     )
                 }
@@ -167,8 +191,10 @@ class CbProvider : MainAPI() {
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
             this.plot = plot
+            addSeasonNames(seasonsData)
         }
     }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -195,18 +221,49 @@ class CbProvider : MainAPI() {
 
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
-            val id = link.substringAfterLast("/").trim('/')
+            val headers = mapOf(
+                "Origin" to "https://stayonline.pro",
+                "Referer" to link,
+                "User-Agent" to "Mozilla/5.0",
+                "X-Requested-With" to "XMLHttpRequest",
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8"
+            )
 
-            val init = app.get(link)
+            // 1️⃣ GET pagina per estrarre linkId corretto
+            val pageResponse = app.get(link, headers = headers)
+            val pageHtml = pageResponse.text
 
+            var linkId = link.substringAfterLast("/")
+            val idPattern = Regex("""var linkId\s*=\s*"([^"]+)";""")
+            val idMatch = idPattern.find(pageHtml)
+            if (idMatch != null) {
+                linkId = idMatch.groupValues[1]
+            }
+
+            // 2️⃣ POST ajax/linkView.php
             val response = app.post(
                 "https://stayonline.pro/ajax/linkView.php",
-                data = mapOf("id" to id),
-                cookies = init.cookies
+                headers = headers,
+                data = mapOf(
+                    "id" to linkId,
+                    "ref" to ""
+                )
             ).text
 
-            JSONObject(response).getJSONObject("data").getString("value")
+            val json = JSONObject(response)
+            if (json.optString("status") == "success") {
+                var realUrl = json.getJSONObject("data").getString("value")
 
+                // Fix m1xdrop → mixdrop
+                if (realUrl.contains("m1xdrop.net/f/")) {
+                    val videoId = realUrl.substringAfterLast("/")
+                    realUrl = "https://mixdrop.top/e/$videoId"
+                }
+                realUrl
+            } else {
+                null
+            }
         } catch (e: Exception) {
             null
         }
