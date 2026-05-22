@@ -35,9 +35,8 @@ class Uprot : ExtractorApi() {
             "Sec-GPC" to "1"
         )
 
-        // Gestione differenziata ma parallela per msf (Film) e msfi (Serie TV)
+        // Se è un link Serie TV (msfi), verifichiamo se serve normalizzarlo o se possiamo leggerlo direttamente
         if (targetLink.contains("msfi")) {
-            // Caso Serie TV: eseguiamo direttamente la get sul link msfi sbloccato da StayOnline
             val response = app.get(targetLink, headers = baseHeaders, referer = referer)
             if (response.code != 403) {
                 maxStreamUrl = getFinalMaxstreamLink(response.text, baseHeaders)
@@ -53,11 +52,22 @@ class Uprot : ExtractorApi() {
             }
         }
 
-        // Se abbiamo trovato il link finale di MaxStream, lo carichiamo nell'estrattore
-        if (!maxStreamUrl.isNullOrEmpty()) {
-            // Un'ultima verifica di sicurezza sullo schema prima di passarlo a loadExtractor
+        // Se l'estrazione standard fallisce ma abbiamo comunque un redirect parziale o un watchfree
+        if (maxStreamUrl.isNullOrEmpty()) {
+            maxStreamUrl = targetLink
+        }
+
+        // Se abbiamo trovato o ripulito il link finale di MaxStream, lo carichiamo nell'estrattore
+        if (!maxStreamUrl.isNullOrEmpty() && (maxStreamUrl.contains("maxstream") || maxStreamUrl.contains("watchfree") || maxStreamUrl.contains("uprots"))) {
             if (!maxStreamUrl.startsWith("http")) {
                 maxStreamUrl = "https://" + maxStreamUrl.removePrefix("//")
+            }
+            // Forza la conversione nel formato nativo incorporato se rimangono residui di watchfree
+            if (maxStreamUrl.contains("watchfree/")) {
+                val parts = maxStreamUrl.split("watchfree/")[1].split("/")
+                if (parts.size > 1) {
+                    maxStreamUrl = "https://maxstream.video/emvvv/${parts[1]}"
+                }
             }
             loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
         }
@@ -71,7 +81,6 @@ class Uprot : ExtractorApi() {
                 var href = tag.attr("href").trim()
                 if (href.isBlank()) return@forEach
                 
-                // Fix critico per OkHttp: assicura che lo schema sia presente
                 if (href.startsWith("//")) {
                     href = "https:$href"
                 } else if (!href.startsWith("http")) {
@@ -87,27 +96,30 @@ class Uprot : ExtractorApi() {
         var redirectUrl = findLinkInHtml(html) ?: return null
         var time = 0
 
-        while (redirectUrl.contains("uprots")) {
-            // Controllo di sicurezza prima della chiamata di rete nel ciclo while
+        // Insegue la catena di redirect dei domini uprots/uprot
+        while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
             if (!redirectUrl.startsWith("http")) {
                 redirectUrl = "https://" + redirectUrl.removePrefix("//")
             }
             
             val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
             redirectUrl = headResponse.url
+            
+            // Se uscendo dal redirect abbiamo già beccato watchfree o maxstream, ci fermiamo subito
+            if (redirectUrl.contains("watchfree") || redirectUrl.contains("maxstream")) {
+                break
+            }
+            
+            // Se rimaniamo bloccati sulla stessa pagina, proviamo a cercare un nuovo pulsante CONTINUE nell'HTML intermedio
+            val nextLink = findLinkInHtml(headResponse.text)
+            if (nextLink != null && nextLink != redirectUrl) {
+                redirectUrl = nextLink
+            }
+
             time++
             if (time == 10) return null
         }
 
-        return if (redirectUrl.contains("watchfree/")) {
-            val parts = redirectUrl.split("watchfree/")[1].split("/")
-            if (parts.size > 1) {
-                "https://maxstream.video/emvvv/${parts[1]}"
-            } else {
-                redirectUrl
-            }
-        } else {
-            redirectUrl
-        }
+        return redirectUrl
     }
 }
