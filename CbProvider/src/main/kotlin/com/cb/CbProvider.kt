@@ -222,38 +222,54 @@ class CbProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        Log.d("CB01", "loadLinks() chiamato con data: $data")
-        
-        // OTTIMIZZAZIONE USER EXPERIENCE: I link diretti nativi (senza stayonline) vanno in cima.
-        // Riduce a zero i tempi di attesa per l'utente quando sono disponibili host veloci.
-        val allLinks = data.split("###")
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .sortedBy { it.contains("stayonline.pro") } 
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    Log.d("CB01", "loadLinks() chiamato con data: $data")
+    
+    val allLinks = data.split("###")
+        .map { it.trim() }
+        .filter { it.isNotBlank() && it.startsWith("http") }
+        .sortedBy { it.contains("stayonline.pro") } 
 
-        allLinks.forEach { cleanLink ->
-            try {
-                if (cleanLink.contains("stayonline.pro")) {
-                    Log.d("CB01", "StayOnline rilevato → bypass in corso…")
-                    val bypassed = bypassStayOnline(cleanLink)
-                    if (bypassed != null) {
+    allLinks.forEach { cleanLink ->
+        try {
+            // Caso A: Il link è protetto da StayOnline
+            if (cleanLink.contains("stayonline.pro")) {
+                Log.d("CB01", "StayOnline rilevato → bypass in corso per $cleanLink")
+                var bypassed = bypassStayOnline(cleanLink)
+                
+                if (!bypassed.isNullOrBlank()) {
+                    // Sanificazione di sicurezza: aggiunge il protocollo se manca
+                    if (!bypassed.startsWith("http")) {
+                        bypassed = "https://" + bypassed.removePrefix("//")
+                    }
+                    Log.d("CB01", "StayOnline sbloccato! Link reale estratto: $bypassed")
+
+                    // SE IL LINK REALE È UPROT, APPLICHIAMO LO STESSO FLUSSO DEI FILM
+                    if (bypassed.contains("uprot")) {
+                        Log.d("CB01", "Il link sbloccato è un host Uprot. Avvio l'estrattore dedicato...")
+                        // Invochiamo direttamente l'istanza dell'estrattore registrato per evitare conflitti di OkHttp
+                        val uprotExtractor = Uprot()
+                        uprotExtractor.getUrl(bypassed, referer = cleanLink, subtitleCallback, callback)
+                    } else {
+                        // Altrimenti lo passiamo al gestore generico (es. Mixdrop, Voe, ecc.)
                         loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
                     }
-                } else {
-                    loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
-            } catch (e: Exception) {
-                Log.e("CB01", "Errore nell'estrazione del link $cleanLink: ${e.message}")
+            } 
+            // Caso B: Il link è diretto (es. Uprot dei film o Mixdrop nativo)
+            else {
+                loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
             }
+        } catch (e: Exception) {
+            Log.e("CB01", "Errore nell'estrazione del link $cleanLink: ${e.message}")
         }
-        return true
     }
-
+    return true
+}
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
             // 1. Sanificazione e isolamento sicuro del LinkID dall'URL di partenza
