@@ -32,39 +32,73 @@ class Uprot : ExtractorApi() {
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language" to "en-US,en;q=0.5",
             "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1"
+            "Upgrade-Insecure-Requests" to "1",
+            "Sec-GPC" to "1"
         )
 
         // =========================================================================
-        // 2. Chiamata a Uprot con Sanificazione Universale Antiblocco
+        // 2. Gestione Condizionale: FILM (mse) vs SERIE TV (msfi) con Auto-Captcha
         // =========================================================================
-        // Riscrive gli endpoint per bypassare Cloudflare e rispondere all'istante
-        if (targetLink.contains("msfi")) {
-            targetLink = targetLink.replace("msfi", "msei") // Sostituisce msfi con msei per le serie TV
-        } else if (targetLink.contains("msf")) {
-            targetLink = targetLink.replace("msf", "mse")   // Sostituisce msf con mse per i film
-        }
+        if (!targetLink.contains("msfi")) {
+            // Gestione FILM: Sostituzione lineare classica
+            if (targetLink.contains("msf")) {
+                targetLink = targetLink.replace("msf", "mse")
+            }
 
-        // Esegue la richiesta sull'endpoint libero che non blocca la connessione
-        val response = app.get(targetLink, headers = baseHeaders, referer = referer)
-        if (response.code != 403) {
-            maxStreamUrl = getFinalMaxstreamLink(response.text, baseHeaders)
-        }
-
-        // Fallback: se il parsing del pulsante fallisce, usiamo l'URL di transito
-        if (maxStreamUrl.isNullOrEmpty()) {
-            maxStreamUrl = targetLink
-        }
-
-        // =========================================================================
-        // Gestione e Smistamento del link finale ottenuto
-        // =========================================================================
-        if (maxStreamUrl.contains("watchfree") || maxStreamUrl.contains("maxstream") || maxStreamUrl.contains("maxf")) {
-            // Forza il passaggio diretto all'estrattore MaxStream che gestisce i domini specchio
-            MaxStream().getUrl(maxStreamUrl, url, subtitleCallback, callback)
+            Log.d("CB01_DEBUG", "Uprot Film - Richiesta GET standard su: $targetLink")
+            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
+            if (response.code != 403) {
+                maxStreamUrl = findLinkInHtml(response.text)
+            }
         } else {
-            // Altrimenti (es. se la catena ha restituito Mixdrop), si affida al core di Cloudstream
-            loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
+            // Gestione SERIE TV: Exploit del Captcha numerico in chiaro
+            if (targetLink.contains("msei")) {
+                targetLink = targetLink.replace("msei", "msfi") // Forza l'endpoint corretto per la POST
+            }
+
+            Log.d("CB01_DEBUG", "Uprot Serie TV - Avvio bypass del Captcha su: $targetLink")
+            
+            // Inizializza la sessione per catturare i cookie e l'HTML del modulo
+            val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
+            val cookies = initResponse.cookies
+
+            val doc = Jsoup.parse(initResponse.text)
+            val imgCaptcha = doc.selectFirst("img")?.attr("src")
+            
+            // Estrae i numeri del captcha direttamente dall'URL dell'immagine di verifica
+            val captchaNumber = imgCaptcha?.substringAfter("captcha=", "")?.substringBefore("&") ?: ""
+            Log.d("CB01_DEBUG", "Captcha Uprot intercettato automaticamente: $captchaNumber")
+
+            // Invia il modulo risolto tramite POST
+            val postResponse = app.post(
+                targetLink,
+                cookies = cookies,
+                headers = baseHeaders.plus("Content-Type" to "application/x-www-form-urlencoded"),
+                data = mapOf("captcha" to captchaNumber),
+                referer = targetLink
+            )
+
+            if (postResponse.code != 403) {
+                maxStreamUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
+            }
+        }
+
+        // Failsafe: Se l'estrazione fallisce o restituisce un link vuoto, interrompiamo 
+        // l'esecuzione senza passare l'URL madre a loadExtractor, evitando il caricamento infinito.
+        if (maxStreamUrl.isNullOrEmpty() || maxStreamUrl == targetLink) {
+            Log.e("CB01_DEBUG", "Estrazione interrotta: Nessun link valido trovato su Uprot")
+            return
+        }
+
+        // =========================================================================
+        // 3. Smistamento Finale del Link Estratto
+        // =========================================================================
+        Log.d("CB01_DEBUG", "Link sbloccato con successo: $maxStreamUrl")
+        
+        if (maxStreamUrl!!.contains("watchfree") || maxStreamUrl!!.contains("maxstream") || maxStreamUrl!!.contains("maxf")) {
+            MaxStream().getUrl(maxStreamUrl!!, url, subtitleCallback, callback)
+        } else {
+            loadExtractor(maxStreamUrl!!, url, subtitleCallback, callback)
         }
     }
 
@@ -91,37 +125,27 @@ class Uprot : ExtractorApi() {
         var redirectUrl = findLinkInHtml(html) ?: return null
         var time = 0
 
-        // SE IL LINK CONTIENE GIÀ MAXSTREAM/WATCHFREE, ABBIAMO FINITO! Restituiscilo subito ed esci.
-        if (redirectUrl.contains("maxstream.video") || redirectUrl.contains("watchfree") || redirectUrl.contains("maxf")) {
-            return redirectUrl
-        }
-
-        // Insegue la catena di redirect SOLO se siamo ancora sui domini di transito uprots/uprot.net originali
+        // Insegue la catena finché siamo nei server di transito di uprot
         while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
-            Log.d("CB01_DEBUG", "Inseguendo redirect (Tentativo ${time + 1}): $redirectUrl")
-
-            if (!redirectUrl.startsWith("http")) {
-                redirectUrl = "https://" + redirectUrl.removePrefix("//")
-            }
+            Log.d("CB01_DEBUG", "Inseguendo redirect intermedio (${time + 1}): $redirectUrl")
             
             val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
             redirectUrl = headResponse.url
             
-            // Interrompiamo se intercettiamo qualsiasi variante finale (incluso maxf e watchfree)
-            if (redirectUrl.contains("watchfree") || redirectUrl.contains("maxstream") || redirectUrl.contains("maxf")) {
-                break
-            }
-            
-            // Se rimaniamo bloccati sulla stessa pagina, proviamo a cercare un nuovo pulsante CONTINUE nell'HTML intermedio
-            val nextLink = findLinkInHtml(headResponse.text)
-            if (nextLink != null && nextLink != redirectUrl) {
-                redirectUrl = nextLink
-            }
-
             time++
-            if (time == 10) return null
+            if (time == 5) break // Protezione anti-loop ridotta a 5 passaggi massimi
         }
 
-        return redirectUrl
+        // Formatta correttamente la stringa finale se passa da watchfree
+        return if (redirectUrl.contains("watchfree/")) {
+            val parts = redirectUrl.split("watchfree/")[1].split("/")
+            if (parts.size > 1) {
+                "https://maxstream.video/emvvv/${parts[1]}"
+            } else {
+                redirectUrl
+            }
+        } else {
+            redirectUrl
+        }
     }
 }
