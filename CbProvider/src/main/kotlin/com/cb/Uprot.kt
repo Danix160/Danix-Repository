@@ -1,11 +1,10 @@
-package com.cb
+package com.onlineserietv
 
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
 import org.jsoup.Jsoup
-import android.util.Log
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
@@ -18,95 +17,78 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        var targetLink = url.trim()
-        
-        // 1. Sanificazione
-        if (targetLink.startsWith("//")) targetLink = "https:$targetLink"
-        else if (!targetLink.startsWith("http")) targetLink = "https://uprot.net/" + targetLink.removePrefix("/")
+        var targetLink = url
+        var maxStreamUrl: String? = null
 
         val baseHeaders = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Referer" to (referer ?: targetLink)
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language" to "en-US,en;q=0.5",
+            "Connection" to "keep-alive",
+            "Upgrade-Insecure-Requests" to "1",
+            "Sec-GPC" to "1"
         )
 
-        // 2. Gestione FILM (msf -> mse)
         if (!targetLink.contains("msfi")) {
-            val filmUrl = if (targetLink.contains("msf")) targetLink.replace("msf", "mse") else targetLink
-            val response = app.get(filmUrl, headers = baseHeaders)
-            val link = findLinkInHtml(response.text)
-            if (link != null) loadExtractor(link, url, subtitleCallback, callback)
-        } 
-        // 3. Gestione SERIE TV (msfi -> msei)
-        else {
-            Log.d("CB01_DEBUG", "Inizio Serie TV su: $targetLink")
-            
-            // GET iniziale per i Cookie
-            val initResponse = app.get(targetLink, headers = baseHeaders)
+            if (targetLink.contains("msi")) {
+                targetLink = targetLink.replace("msi", "msei")
+            }
+
+            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
+            if (response.code != 403) {
+                maxStreamUrl = findLinkInHtml(response.text)
+            }
+        } else {
+            if (targetLink.contains("mse")) {
+                targetLink = targetLink.replace("mse", "msf")
+            }
+
+            val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
+            val cookies = initResponse.cookies
+
             val doc = Jsoup.parse(initResponse.text)
-            
-            // Estrazione Captcha
-            val imgCaptcha = doc.selectFirst("img[src*=captcha]")?.attr("src")
+            val imgCaptcha = doc.selectFirst("img")?.attr("src")
             val captchaNumber = imgCaptcha?.substringAfter("captcha=", "")?.substringBefore("&") ?: ""
-            
-            // LO SWITCH FONDAMENTALE: da msfi a msei
-            val postUrl = targetLink.replace("/msfi/", "/msei/")
-            Log.d("CB01_DEBUG", "Invio POST a: $postUrl con captcha: $captchaNumber")
 
             val postResponse = app.post(
-                postUrl,
-                cookies = initResponse.cookies,
-                headers = baseHeaders,
-                data = mapOf("captcha" to captchaNumber)
+                targetLink,
+                cookies = cookies,
+                headers = baseHeaders.plus("Content-Type" to "application/x-www-form-urlencoded"),
+                data = mapOf("captcha" to captchaNumber),
+                referer = targetLink
             )
 
-            // Trova il link nel contenuto dopo la POST
-            val finalLink = findLinkInHtml(postResponse.text)
-            
-            if (!finalLink.isNullOrEmpty()) {
-                Log.d("CB01_DEBUG", "Link trovato, inoltro a estrattore: $finalLink")
-                // Se è un link MaxStream, lo gestiamo tramite l'estrattore apposito
-                if (finalLink.contains("maxstream") || finalLink.contains("watchfree") || finalLink.contains("maxf")) {
-                    MaxStream().getUrl(finalLink, url, subtitleCallback, callback)
-                } else {
-                    loadExtractor(finalLink, url, subtitleCallback, callback)
-                }
-            } else {
-                Log.e("CB01_DEBUG", "Errore: Bottone CONTINUE non trovato dopo la POST")
+            if (postResponse.code != 403) {
+                maxStreamUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
             }
+        }
+
+        if (!maxStreamUrl.isNullOrEmpty()) {
+            loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
         }
     }
 
     private fun findLinkInHtml(html: String): String? {
         val doc = Jsoup.parse(html)
-        // Cerca il bottone, ma cerca anche link diretti se il bottone non c'è
-        val element = doc.select("a").firstOrNull { 
-            it.text().contains("CONTINUE", ignoreCase = true) || 
-            it.attr("href").contains("maxf") || 
-            it.attr("href").contains("watchfree") 
+        doc.select("a").forEach { tag ->
+            val text = tag.text().uppercase()
+            if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
+                return tag.attr("href")
+            }
         }
-        
-        var href = element?.attr("abs:href")
-        if (href.isNullOrEmpty()) return null
-        
-        // Risoluzione finale se necessario
-        return href
+        return null
     }
+
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
         var redirectUrl = findLinkInHtml(html) ?: return null
         var time = 0
 
-        // Insegue la catena finché siamo nei server di transito di uprot
-        while (redirectUrl.contains("uprots") || redirectUrl.contains("uprot.net")) {
-            Log.d("CB01_DEBUG", "Inseguendo redirect intermedio (${time + 1}): $redirectUrl")
-            
+        while (redirectUrl.contains("uprots")) {
             val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
             redirectUrl = headResponse.url
-            
             time++
-            if (time == 5) break // Protezione anti-loop ridotta a 5 passaggi massimi
+            if (time == 10) return null
         }
 
-        // Formatta correttamente la stringa finale se passa da watchfree
         return if (redirectUrl.contains("watchfree/")) {
             val parts = redirectUrl.split("watchfree/")[1].split("/")
             if (parts.size > 1) {
