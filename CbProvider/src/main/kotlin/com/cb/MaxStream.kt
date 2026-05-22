@@ -12,9 +12,6 @@ class MaxStream : ExtractorApi() {
     override val mainUrl = "https://maxstream.video"
     override val requiresReferer = true
 
-    // Intercettiamo maxstream, watchfree, uprots e qualsiasi dominio specchio (.website, .online, .pro, ecc.) che contenga /watchfree/
-    override val regexUrl = "((maxstream|watchfree|uprots|maxf\\d+)\\.[a-z]{2,4}/.+)".toRegex()
-
     override suspend fun getUrl(
         url: String,
         referer: String?,
