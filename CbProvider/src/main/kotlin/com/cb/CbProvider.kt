@@ -17,6 +17,7 @@ class CbProvider : MainAPI() {
         "Referer" to "$mainUrl/",
     )
 
+    // Lista degli host supportati, stayonline è fondamentale per intercettare i link delle serie
     private val supportedHosts = listOf(
         "voe", "mixdrop", "streamtape", "fastream", "filemoon", 
         "wolfstream", "streamwish", "maxstream", "lulustream", 
@@ -92,9 +93,8 @@ class CbProvider : MainAPI() {
                 episodes.add(newEpisode(links.joinToString("###")) { this.name = "Film - Streaming" })
             }
         } else {
-            // GESTIONE SERIE TV (Sia ad episodi singoli che a lista/folder cumulativa)
+            // Gestione flessibile delle serie TV (Spoiler div.sp-wrap)
             document.select("div.sp-wrap").forEachIndexed { index, wrap ->
-                // Ottieni il nome della stagione dall'intestazione dello spoiler (es: "STAGIONE 1" o "SCOOBY...")
                 val seasonTitle = wrap.selectFirst(".sp-head")?.text() ?: ""
                 var currentSeason = index + 1
                 val seasonMatch = "(?i)Stagione\\s*(\\d+)".toRegex().find(seasonTitle)
@@ -109,15 +109,15 @@ class CbProvider : MainAPI() {
                     if (rowLinks.isNotEmpty()) {
                         val rowText = row.text()
                         
-                        // CONTROLLO SE È UN LINK CUMULATIVO (Folder di Uprot / Maxstream)
                         if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE"))) {
+                            // Caso cartelle cumulative (uprot folder / msfld)
                             episodes.add(newEpisode(rowLinks.joinToString("###")) {
                                 this.name = rowText.substringBefore("–").trim().ifBlank { "Tutti gli Episodi (Lista)" }
                                 this.season = currentSeason
-                                this.episode = 1 // Lo impostiamo come primo slot, Uprot caricherà la lista
+                                this.episode = 1
                             })
                         } else {
-                            // EPISODIO SINGOLO STANDARD (Es: 4x13)
+                            // Caso elenco classico ad episodi singoli (passando da stayonline o uprot diretto)
                             val epName = if (rowText.contains("–")) rowText.substringBefore("–").trim() else "Episodio"
                             val epMatch = "(\\d+)x(\\d+)".toRegex().find(rowText)
                             val episodeNumber = epMatch?.groupValues?.get(2)?.toIntOrNull() ?: (episodes.size + 1)
@@ -146,21 +146,24 @@ class CbProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // Splitta i link concatenati e ordina dando massima priorità a stayonline, uprot e maxstream
         val allLinks = data.split("###").map { it.trim() }.sortedByDescending { 
-            it.contains("uprot") || it.contains("maxstream") || it.contains("mixdrop") || it.contains("voe") 
+            it.contains("stayonline") || it.contains("uprot") || it.contains("maxstream") 
         }
 
         allLinks.forEach { cleanLink ->
             try {
                 if (cleanLink.contains("stayonline.pro")) {
+                    // Risolve la chiamata AJAX protetta di stayonline per sbloccare il link reale
                     bypassStayOnline(cleanLink)?.let { bypassed ->
                         loadExtractor(bypassed, subtitleCallback, callback) 
                     }
                 } else {
+                    // Invia direttamente all'estrattore di Uprot o MaxStream
                     loadExtractor(cleanLink, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                // Salta l'host fallito e passa al successivo
+                // Fallback silenzioso se un singolo link fallisce, per passare al successivo dell'elenco
             }
         }
         return true
