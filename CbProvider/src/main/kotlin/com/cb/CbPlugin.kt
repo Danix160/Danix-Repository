@@ -9,5 +9,7 @@ class CbPlugin: Plugin() {
     override fun load(context: Context) {
         // Registra il provider definito sopra nella classe ToonItaliaProvider
         registerMainAPI(CbProvider())
+        registerExtractorAPI(Uprot())
+        registerExtractorAPI(MaxStream())
     }
 }
