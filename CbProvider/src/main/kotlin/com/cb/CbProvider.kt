@@ -14,7 +14,7 @@ class CbProvider : MainAPI() {
 
     private val commonHeaders = mapOf(
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer" to "$mainUrl/",
+        "Referer" to "$mainUrl/"
     )
 
     private val supportedHosts = listOf(
@@ -30,24 +30,33 @@ class CbProvider : MainAPI() {
 
     private fun fixTitle(title: String, isMovie: Boolean): String {
         return if (isMovie) {
-            title.replace(Regex("(?i)streaming|\
+            title.replace(
+                Regex("(?i)streaming|\
 
-\[HD]|film gratis by cb01 official|\\(\\d{4}\\)"), "").trim()
+\[HD]|film gratis by cb01 official|\\(\\d{4}\\)")
+            ).trim()
         } else {
-            title.replace(Regex("(?i)streaming|serie tv gratis by cb01 official|stagione \\d+|completa|[-–] ITA|[-–] HD"), "").trim()
+            title.replace(
+                Regex("(?i)streaming|serie tv gratis by cb01 official|stagione \\d+|completa|[-–] ITA|[-–] HD")
+            ).trim()
         }
     }
 
     private fun parseElement(element: Element, isTvSeriesSearch: Boolean = false): SearchResponse? {
-        val titleElement = element.selectFirst("h2 a, h3 a, .card-title a, .post-title a, a[title]") ?: return null
+        val titleElement = element.selectFirst("h2 a, h3 a, .card-title a, .post-title a, a[title]")
+            ?: return null
+
         val href = titleElement.attr("href")
         if (href.contains("/tag/") || href.contains("/category/") || href.length < 15) return null
 
         val rawTitle = titleElement.text()
-        val isSeries = isTvSeriesSearch || href.contains("/serietv/") || href.contains("/serie/") ||
+        val isSeries = isTvSeriesSearch ||
+                href.contains("/serietv/") ||
+                href.contains("/serie/") ||
                 rawTitle.contains(Regex("(?i)Stagion|Serie|Episodio"))
 
         val title = fixTitle(rawTitle, !isSeries)
+
         val posterUrl = element.selectFirst("img")?.let { img ->
             img.attr("data-lazy-src").ifBlank {
                 img.attr("data-src").ifBlank { img.attr("src") }
@@ -62,18 +71,21 @@ class CbProvider : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data.removeSuffix("/")}/page/$page/"
         val document = app.get(url, headers = commonHeaders).document
-        val items = document.select("div.card, div.post-video, article.post, div.mp-post").mapNotNull {
-            parseElement(it, request.data.contains("serietv"))
-        }.distinctBy { it.url }
+
+        val items = document.select("div.card, div.post-video, article.post, div.mp-post")
+            .mapNotNull { parseElement(it, request.data.contains("serietv")) }
+            .distinctBy { it.url }
+
         return newHomePageResponse(request.name, items)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/?s=$query"
         val document = app.get(searchUrl, headers = commonHeaders).document
-        return document.select("div.card, div.post-video, article, div.mp-post, .result-item").mapNotNull {
-            parseElement(it)
-        }.distinctBy { it.url }
+
+        return document.select("div.card, div.post-video, article, div.mp-post, .result-item")
+            .mapNotNull { parseElement(it) }
+            .distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -87,34 +99,6 @@ class CbProvider : MainAPI() {
             ?.text()
 
         val episodes = mutableListOf<Episode>()
-
-        // ============================
-        //          FILM
-        // ============================
-        if (!isSeries) {
-            val links = document.select("table a, a.buttona_stream, .stream-link, iframe")
-                .map { it.attr("href").ifBlank { it.attr("src") } }
-                .filter { link -> supportedHosts.any { link.contains(it) } }
-
-            if (links.isNotEmpty()) {
-                episodes.add(
-                    newEpisode(links.joinToString("###")) {
-                        this.name = "Film - Streaming"
-                    }
-                )
-            }
-
-            return newMovieLoadResponse(
-                title,
-                url,
-                TvType.Movie,
-                episodes.firstOrNull()?.data ?: ""
-            ) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
-        }
-
         // ============================
         //        SERIE TV
         // ============================
@@ -170,12 +154,16 @@ class CbProvider : MainAPI() {
         }
     }
 
+    // ============================
+    //        LOAD LINKS
+    // ============================
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+
         val allLinks = data.split("###").map { it.trim() }
 
         allLinks.forEach { cleanLink ->
@@ -195,6 +183,9 @@ class CbProvider : MainAPI() {
         return true
     }
 
+    // ============================
+    //     BYPASS STAYONLINE
+    // ============================
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
             val id = link.substringAfterLast("/").trim('/')
@@ -216,4 +207,18 @@ class CbProvider : MainAPI() {
                     "X-Requested-With" to "XMLHttpRequest",
                     "Origin" to "https://stayonline.pro",
                     "Referer" to link,
-                    "User-Agent" to "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari
+                    "User-Agent" to "Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+                    "Accept" to "application/json, text/javascript, */*; q=0.01",
+                    "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+                ),
+                cookies = cookies,
+                data = mapOf("id" to id)
+            ).text
+
+            JSONObject(response).getJSONObject("data").getString("value")
+
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
