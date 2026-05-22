@@ -1,9 +1,9 @@
 package com.cb
 
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.app
 import com.lagradost.api.Log
 import org.jsoup.Jsoup
 
@@ -21,50 +21,56 @@ class Uprot : ExtractorApi() {
         Log.d("UPROT", "=== UPROT 2026 START ===")
         Log.d("UPROT", "Input URL: $url")
 
-        var current = normalize(url)
-        Log.d("UPROT", "Normalized URL: $current")
-
         val headers = mapOf(
             "User-Agent" to "Mozilla/5.0",
             "Accept" to "*/*",
             "Referer" to (referer ?: url)
         )
 
-        // 1️⃣ GET iniziale
-        val res = app.get(current, headers = headers)
+        val target = normalize(url)
+        Log.d("UPROT", "Normalized URL: $target")
+
+        val res = app.get(target, headers = headers)
         val html = res.text
         Log.d("UPROT", "Initial GET status: ${res.code}")
 
-        // 2️⃣ CONTINUE diretto → Maxstream
-        findContinue(html)?.let { continueUrl ->
-            Log.d("UPROT", "Found CONTINUE → $continueUrl")
-            loadExtractor(continueUrl, url, subtitleCallback, callback)
+        // 1) Maxstream diretto nell'HTML (caso /msfi/ CB01)
+        extractMaxstream(html)?.let { maxUrl ->
+            Log.d("UPROT", "Found Maxstream in HTML → $maxUrl")
+            loadExtractor(maxUrl, url, subtitleCallback, callback)
             return
         }
 
-        // 3️⃣ Meta refresh
+        // 2) CONTINUE classico
+        findContinue(html)?.let { contUrl ->
+            Log.d("UPROT", "Found CONTINUE → $contUrl")
+            loadExtractor(contUrl, url, subtitleCallback, callback)
+            return
+        }
+
+        // 3) Meta refresh
         extractMetaRefresh(html)?.let { metaUrl ->
             Log.d("UPROT", "Found META refresh → $metaUrl")
             loadExtractor(metaUrl, url, subtitleCallback, callback)
             return
         }
 
-        // 4️⃣ Form hidden
+        // 4) Form hidden
         extractFormRedirect(html, headers)?.let { formUrl ->
             Log.d("UPROT", "Found FORM redirect → $formUrl")
             loadExtractor(formUrl, url, subtitleCallback, callback)
             return
         }
 
-        // 5️⃣ JS redirect
+        // 5) JS redirect
         extractJsRedirect(html)?.let { jsUrl ->
             Log.d("UPROT", "Found JS redirect → $jsUrl")
             loadExtractor(jsUrl, url, subtitleCallback, callback)
             return
         }
 
-        // 6️⃣ Redirect multipli uprots → maxstream
-        followRedirects(current, headers)?.let { finalUrl ->
+        // 6) Redirect HTTP multipli (caso /mse/ / uprots)
+        followRedirects(target, headers)?.let { finalUrl ->
             Log.d("UPROT", "Final redirect chain → $finalUrl")
             loadExtractor(finalUrl, url, subtitleCallback, callback)
             return
@@ -78,10 +84,12 @@ class Uprot : ExtractorApi() {
     // ============================
     private fun normalize(url: String): String {
         return when {
+            // /msfi/ CB01 → NON /msf/, NON /mse/, la apriamo così com'è
             url.contains("/msfi/") -> {
-                Log.d("UPROT", "Normalizing /msfi/ → /mse/")
-                url.replace("/msfi/", "/mse/")
+                Log.d("UPROT", "Keep /msfi/ as is")
+                url
             }
+            // /msf/ OnlineSerieTV → /mse/ per avere redirect pulito
             url.contains("/msf/") -> {
                 Log.d("UPROT", "Normalizing /msf/ → /mse/")
                 url.replace("/msf/", "/mse/")
@@ -91,20 +99,35 @@ class Uprot : ExtractorApi() {
     }
 
     // ============================
+    //   MAXSTREAM DALL'HTML
+    // ============================
+    private fun extractMaxstream(html: String): String? {
+        val doc = Jsoup.parse(html)
+        doc.select("a[href]").forEach { a ->
+            val href = a.attr("href")
+            if (href.contains("maxstream.video/uprots")) {
+                return href
+            }
+        }
+        return null
+    }
+
+    // ============================
     //   CONTINUE LINK
     // ============================
     private fun findContinue(html: String): String? {
         val doc = Jsoup.parse(html)
 
-        // CONTINUE normale
+        // bottone "C o n t i n u e" o simili
         doc.select("a").forEach { a ->
             val text = a.text().trim().uppercase()
             if (text.contains("CONTINUE")) {
-                return a.attr("href")
+                val href = a.attr("href")
+                if (href.isNotBlank()) return href
             }
         }
 
-        // JS redirect
+        // fallback: JS redirect
         Regex("""window\.location\.href\s*=\s*['"](.*?)['"]""")
             .find(html)?.groupValues?.get(1)?.let { return it }
 
@@ -117,13 +140,16 @@ class Uprot : ExtractorApi() {
     private fun extractMetaRefresh(html: String): String? {
         val doc = Jsoup.parse(html)
         val meta = doc.selectFirst("meta[http-equiv=refresh]")?.attr("content") ?: return null
-        return meta.substringAfter("url=", "")
+        return meta.substringAfter("url=", "").takeIf { it.isNotBlank() }
     }
 
     // ============================
     //   FORM HIDDEN
     // ============================
-    private suspend fun extractFormRedirect(html: String, headers: Map<String, String>): String? {
+    private suspend fun extractFormRedirect(
+        html: String,
+        headers: Map<String, String>
+    ): String? {
         val doc = Jsoup.parse(html)
         val form = doc.selectFirst("form[action]") ?: return null
 
@@ -135,38 +161,48 @@ class Uprot : ExtractorApi() {
         Log.d("UPROT", "Submitting hidden form → $action")
 
         val res = app.post(action, data = data, headers = headers)
-        return findContinue(res.text)
+        val body = res.text
+
+        extractMaxstream(body)?.let { return it }
+        findContinue(body)?.let { return it }
+        extractMetaRefresh(body)?.let { return it }
+
+        return null
     }
 
     // ============================
     //   JS REDIRECT
     // ============================
     private fun extractJsRedirect(html: String): String? {
-        val regex = Regex("window\\.location\\.href\\s*=\\s*['\"](.*?)['\"]")
+        val regex = Regex("""window\.location\.href\s*=\s*['"](.*?)['"]""")
         return regex.find(html)?.groupValues?.get(1)
     }
 
     // ============================
-    //   REDIRECT MULTIPLI
+    //   REDIRECT MULTIPLI HTTP
     // ============================
-    private suspend fun followRedirects(url: String, headers: Map<String, String>): String? {
-        var current = url
+    private suspend fun followRedirects(
+        startUrl: String,
+        headers: Map<String, String>
+    ): String? {
+        var current = startUrl
         val visited = mutableSetOf<String>()
 
         repeat(10) {
-            if (current in visited) return null
-            visited.add(current)
+            if (!visited.add(current)) return null
 
             val res = app.get(current, headers = headers, allowRedirects = false)
             val loc = res.headers["location"]
 
-            Log.d("UPROT", "Redirect step → $loc")
-
             if (loc == null) {
-                return findContinue(res.text)
+                val html = res.text
+                extractMaxstream(html)?.let { return it }
+                findContinue(html)?.let { return it }
+                extractMetaRefresh(html)?.let { return it }
+                return null
             }
 
-            current = loc
+            current = if (loc.startsWith("http")) loc else mainUrl + loc
         }
 
         return null
