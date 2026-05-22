@@ -1,5 +1,7 @@
 package com.cb
 
+import android.util.Log
+import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -11,91 +13,75 @@ class Uprot : ExtractorApi() {
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
 
+    private val TAG = "UprotExtractor"
+
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        var targetLink = url
-        var maxStreamUrl: String? = null
+        Log.d(TAG, "Avvio estrazione per URL: $url")
 
         val baseHeaders = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "en-US,en;q=0.5",
+            "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
             "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1",
-            "Sec-GPC" to "1"
+            "Upgrade-Insecure-Requests" to "1"
         )
 
-        if (!targetLink.contains("msfi")) {
-            if (targetLink.contains("msi")) {
-                targetLink = targetLink.replace("msi", "msei")
-            }
+        // Eseguiamo una GET diretta, senza POST complicati
+        val response = app.get(url, headers = baseHeaders, referer = referer)
+        Log.d(TAG, "Risposta ricevuta, codice: ${response.code}")
 
-            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
-            if (response.code != 403) {
-                maxStreamUrl = findLinkInHtml(response.text)
+        val continueLink = findLinkInHtml(response.text)
+        
+        if (!continueLink.isNullOrEmpty()) {
+            val absoluteLink = if (continueLink.startsWith("http")) continueLink else "https://uprot.net$continueLink"
+            Log.d(TAG, "Bottone CONTINUE trovato: $absoluteLink")
+            
+            val finalUrl = getFinalMaxstreamLink(absoluteLink, baseHeaders)
+            
+            if (!finalUrl.isNullOrEmpty()) {
+                Log.d(TAG, "Link finale trovato: $finalUrl")
+                loadExtractor(finalUrl, url, subtitleCallback, callback)
+            } else {
+                Log.e(TAG, "Errore: getFinalMaxstreamLink non ha restituito nulla")
             }
         } else {
-            if (targetLink.contains("mse")) {
-                targetLink = targetLink.replace("mse", "msf")
-            }
-
-            val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
-            val cookies = initResponse.cookies
-
-            val doc = Jsoup.parse(initResponse.text)
-            val imgCaptcha = doc.selectFirst("img")?.attr("src")
-            val captchaNumber = imgCaptcha?.substringAfter("captcha=", "")?.substringBefore("&") ?: ""
-
-            val postResponse = app.post(
-                targetLink,
-                cookies = cookies,
-                headers = baseHeaders.plus("Content-Type" to "application/x-www-form-urlencoded"),
-                data = mapOf("captcha" to captchaNumber),
-                referer = targetLink
-            )
-
-            if (postResponse.code != 403) {
-                maxStreamUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
-            }
-        }
-
-        if (!maxStreamUrl.isNullOrEmpty()) {
-            loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
+            Log.e(TAG, "Errore: Nessun bottone CONTINUE trovato nell'HTML")
+            Log.d(TAG, "HTML ricevuto: ${response.text.take(500)}...") // Debug HTML
         }
     }
 
     private fun findLinkInHtml(html: String): String? {
         val doc = Jsoup.parse(html)
-        doc.select("a").forEach { tag ->
-            val text = tag.text().uppercase()
-            if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
-                return tag.attr("href")
-            }
+        // Cerchiamo link che contengono "CONTINUE" nel testo
+        val element = doc.select("a").firstOrNull { 
+            it.text().contains("CONTINUE", ignoreCase = true) 
         }
-        return null
+        return element?.attr("href")
     }
 
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-        var redirectUrl = findLinkInHtml(html) ?: return null
-        var time = 0
+        // Se il link passato è già un video, ritornalo
+        if (html.contains("maxstream.video")) return html
 
-        while (redirectUrl.contains("uprots")) {
+        val response = app.get(html, headers = headers)
+        var redirectUrl = findLinkInHtml(response.text) ?: response.url
+        
+        var time = 0
+        // Gestione loop di redirect
+        while (redirectUrl.contains("uprots") && time < 10) {
             val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
             redirectUrl = headResponse.url
             time++
-            if (time == 10) return null
         }
 
         return if (redirectUrl.contains("watchfree/")) {
-            val parts = redirectUrl.split("watchfree/")[1].split("/")
-            if (parts.size > 1) {
-                "https://maxstream.video/emvvv/${parts[1]}"
-            } else {
-                redirectUrl
-            }
+            val parts = redirectUrl.split("watchfree/").last().split("/")
+            if (parts.isNotEmpty()) "https://maxstream.video/emvvv/${parts[0]}" else redirectUrl
         } else {
             redirectUrl
         }
