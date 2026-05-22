@@ -20,7 +20,7 @@ class Uprot : ExtractorApi() {
         var targetLink = url.trim()
         var maxStreamUrl: String? = null
 
-        // Sanificazione immediata dello schema dell'URL in ingresso
+        // 1. Sanificazione iniziale dell'URL ricevuto da StayOnline
         if (targetLink.startsWith("//")) {
             targetLink = "https:$targetLink"
         } else if (!targetLink.startsWith("http")) {
@@ -31,18 +31,16 @@ class Uprot : ExtractorApi() {
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language" to "en-US,en;q=0.5",
             "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1",
-            "Sec-GPC" to "1"
+            "Upgrade-Insecure-Requests" to "1"
         )
 
-        // Se è un link Serie TV (msfi), verifichiamo se serve normalizzarlo o se possiamo leggerlo direttamente
+        // 2. Chiamata a Uprot (gestione differenziata msfi per Serie TV / msf per Film)
         if (targetLink.contains("msfi")) {
             val response = app.get(targetLink, headers = baseHeaders, referer = referer)
             if (response.code != 403) {
                 maxStreamUrl = getFinalMaxstreamLink(response.text, baseHeaders)
             }
         } else {
-            // Caso Film standard
             if (targetLink.contains("msf")) {
                 targetLink = targetLink.replace("msf", "mse")
             }
@@ -52,23 +50,19 @@ class Uprot : ExtractorApi() {
             }
         }
 
-        // Se l'estrazione standard fallisce ma abbiamo comunque un redirect parziale o un watchfree
+        // Fallback: se il parsing del pulsante fallisce, usiamo l'URL di transito
         if (maxStreamUrl.isNullOrEmpty()) {
             maxStreamUrl = targetLink
         }
 
-        // Se abbiamo trovato o ripulito il link finale di MaxStream, lo carichiamo nell'estrattore
-        if (!maxStreamUrl.isNullOrEmpty() && (maxStreamUrl.contains("maxstream") || maxStreamUrl.contains("watchfree") || maxStreamUrl.contains("uprots"))) {
-            if (!maxStreamUrl.startsWith("http")) {
-                maxStreamUrl = "https://" + maxStreamUrl.removePrefix("//")
-            }
-            // Forza la conversione nel formato nativo incorporato se rimangono residui di watchfree
-            if (maxStreamUrl.contains("watchfree/")) {
-                val parts = maxStreamUrl.split("watchfree/")[1].split("/")
-                if (parts.size > 1) {
-                    maxStreamUrl = "https://maxstream.video/emvvv/${parts[1]}"
-                }
-            }
+        // =========================================================================
+        // Gestione e Smistamento del link finale ottenuto
+        // =========================================================================
+        if (maxStreamUrl.contains("watchfree") || maxStreamUrl.contains("maxstream") || maxStreamUrl.contains("maxf")) {
+            // Forza il passaggio diretto all'estrattore MaxStream che gestisce i domini specchio
+            MaxStream().getUrl(maxStreamUrl, url, subtitleCallback, callback)
+        } else {
+            // Altrimenti (es. se la catena ha restituito Mixdrop), si affida al core di Cloudstream
             loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
         }
     }
@@ -105,12 +99,12 @@ class Uprot : ExtractorApi() {
             val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
             redirectUrl = headResponse.url
             
-            // Se uscendo dal redirect abbiamo già beccato watchfree o maxstream, ci fermiamo subito
-            if (redirectUrl.contains("watchfree") || redirectUrl.contains("maxstream")) {
+            // CORREZIONE: Interrompiamo se intercettiamo qualsiasi variante finale (incluso maxf)
+            if (redirectUrl.contains("watchfree") || redirectUrl.contains("maxstream") || redirectUrl.contains("maxf")) {
                 break
             }
             
-            // Se rimaniamo bloccati sulla stessa pagina, proviamo a cercare un nuovo pulsante CONTINUE nell'HTML intermedio
+            // Se rimaniam bloccati sulla stessa pagina, proviamo a cercare un nuovo pulsante CONTINUE nell'HTML intermedio
             val nextLink = findLinkInHtml(headResponse.text)
             if (nextLink != null && nextLink != redirectUrl) {
                 redirectUrl = nextLink
