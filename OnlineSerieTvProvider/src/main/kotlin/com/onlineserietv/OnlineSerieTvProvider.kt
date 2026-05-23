@@ -2,7 +2,6 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.ActorData
-import com.lagradost.cloudstream3.ActorRole
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -323,7 +322,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 ?.take(4)
                 ?.toIntOrNull()
 
-            // ⭐ Cast film (ActorData)
+            // ⭐ Cast film (ActorData SENZA ActorRole)
             val movieCredits = app.get(
                 "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()
@@ -340,9 +339,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
                     ActorData(
                         actor = actor,
-                        role = ActorRole(
-                            role = it["character"]?.toString()
-                        )
+                        role = null
                     )
                 }
         }
@@ -393,7 +390,7 @@ class OnlineSerieTvProvider : MainAPI() {
         seriesGenres = (tmdbShow?.get("genres") as? List<Map<String, Any>>)
             ?.map { it["name"].toString() }
 
-        // ⭐ Cast serie TV (ActorData)
+        // ⭐ Cast serie TV (ActorData SENZA ActorRole)
         val seriesCredits = app.get(
             "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
         ).parsedSafe<Map<String, Any>>()
@@ -410,9 +407,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
                 ActorData(
                     actor = actor,
-                    role = ActorRole(
-                        role = it["character"]?.toString()
-                    )
+                    role = null
                 )
             }
 
