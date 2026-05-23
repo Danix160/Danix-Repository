@@ -318,24 +318,24 @@ class OnlineSerieTvProvider : MainAPI() {
         }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            this.posterUrl = poster
-            this.plot = finalDescription
+    this.posterUrl = poster
+    this.plot = finalDescription
 
-        // ⭐ Durata film
-        if (movieRuntime != null && movieRuntime > 0) {
-            this.duration = movieRuntime
-            }
-
-        // ⭐ Generi film
-        if (!movieGenres.isNullOrEmpty()) {
-            this.tags = movieGenres!!
-            }
-
-        // ⭐ Score TMDB (classe Score, NON Double)
-        if (movieScore != null) {
-            this.score = Score(movieScore)
-            }
+    // ⭐ Durata film
+    if (movieRuntime != null && movieRuntime > 0) {
+        this.duration = movieRuntime
     }
+
+    // ⭐ Generi film
+    if (!movieGenres.isNullOrEmpty()) {
+        this.tags = movieGenres!!
+    }
+
+    // ⭐ Score TMDB (usare addScore!)
+    if (movieScore != null) {
+        this.addScore(movieScore)
+    }
+}
 
     }
 
