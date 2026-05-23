@@ -13,9 +13,9 @@ AGGIORNATO 22/05/2026
 Questi sono i plugin disponibili al momento
 | **Nome**           | **Sito**                                               |            **Categorie**            | **Lingua** | **Funzionante** | **Note**|                                                                                                                  
 |--------------------|--------------------------------------------------------|:-----------------------------------:|:----------:|:---------------:|---------------------------------------------|
-| CB01               | https://cb01uno.bar/                                   | Film, TV Show, Cartoni, Anime       |    🇮🇹    |        ✅         | Serie TV non funzionanti al 100%, utilizzare solo con i film|
-| OnlineSerieTV      | https://onlineserietv.lol                              | Film, TV Show, Cartoni              |    🇮🇹    |        ✅         |      
-| ToonItalia         | https://toonitalia.xyz/                                | Anime, Cartoni, Film, Serie TV      |    🇮🇹    |        ✅         |    
+| CB01               | https://cb01uno.bar/                                   | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         | Serie TV in Lavorazione, Film Completi    |
+| OnlineSerieTV      | https://onlineserietv.lol                              | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         |      
+| ToonItalia         | https://toonitalia.xyz/                                | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         |    
 ---
 
 ### Istruzioni Manuali
