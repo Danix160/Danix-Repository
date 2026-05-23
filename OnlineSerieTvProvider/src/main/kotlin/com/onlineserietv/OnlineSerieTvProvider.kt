@@ -1,5 +1,9 @@
 package com.onlineserietv
 
+import com.lagradost.cloudstream3.Actor
+import com.lagradost.cloudstream3.ActorData
+import com.lagradost.cloudstream3.ActorRole
+
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -327,9 +331,18 @@ class OnlineSerieTvProvider : MainAPI() {
             movieCast = (movieCredits?.get("cast") as? List<Map<String, Any>>)
                 ?.take(10)
                 ?.map {
+
+                    val actor = Actor(
+                        name = it["name"]?.toString() ?: "",
+                        image = (it["profile_path"] as? String)
+                            ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
+                    )
+
                     ActorData(
-                        it["name"].toString(),
-                        (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
+                        actor = actor,
+                        role = ActorRole(
+                            role = it["character"]?.toString()
+                        )
                     )
                 }
         }
@@ -388,9 +401,18 @@ class OnlineSerieTvProvider : MainAPI() {
         seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
             ?.take(10)
             ?.map {
+
+                val actor = Actor(
+                    name = it["name"]?.toString() ?: "",
+                    image = (it["profile_path"] as? String)
+                        ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
+                )
+
                 ActorData(
-                    it["name"].toString(),
-                    (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
+                    actor = actor,
+                    role = ActorRole(
+                        role = it["character"]?.toString()
+                    )
                 )
             }
 
@@ -524,7 +546,6 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 }
-
 
     // -----------------------------
     // LOAD LINKS
