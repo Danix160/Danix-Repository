@@ -5,6 +5,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.Episode
+
 
 // -----------------------------
 // TMDB DATA CLASS
@@ -298,7 +300,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
 
                     // Durata episodio
-                    this.runTime = defaultRuntime
+                    this.duration = defaultRuntime
 
                 }
             )
