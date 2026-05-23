@@ -298,7 +298,8 @@ class OnlineSerieTvProvider : MainAPI() {
                     this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
 
                     // Durata episodio
-                    this.duration = defaultRuntime
+                    this.runTime = defaultRuntime
+
                 }
             )
         }
