@@ -311,7 +311,7 @@ val episodesList = mutableListOf<Episode>()
 // Cache TMDB per stagione
 val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
 
-// --- OTTENIAMO I DATI COMPLETI DELLA SERIE DA TMDB (per sapere episodi per stagione) ---
+// --- OTTENIAMO I DATI COMPLETI DELLA SERIE DA TMDB ---
 var tmdbSeasonsInfo: List<Pair<Int, Int>> = emptyList() // (season_number, episode_count)
 
 if (tmdb != null) {
@@ -370,6 +370,7 @@ document.select("table tr").forEach { row ->
         }
     } else emptyMap()
 
+    // Se TMDB NON ha l’episodio → lo manteniamo comunque
     val info = seasonMap[epInSeason]
 
     episodesList.add(
