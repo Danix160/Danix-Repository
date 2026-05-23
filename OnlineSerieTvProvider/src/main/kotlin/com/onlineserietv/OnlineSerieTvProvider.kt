@@ -284,7 +284,7 @@ class OnlineSerieTvProvider : MainAPI() {
     // -----------------------------
     // LOAD (FILM + SERIE)
     // -----------------------------
-    override suspend fun load(url: String): LoadResponse {
+   override suspend fun load(url: String): LoadResponse {
     val document = app.get(url).document
 
     val rawTitle = document.selectFirst("h1")?.text() ?: "Senza Titolo"
@@ -372,12 +372,9 @@ class OnlineSerieTvProvider : MainAPI() {
                     val recPoster = (item["poster_path"] as? String)
                         ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
 
-                    MovieSearchResponse(
-                        recTitle,
-                        "$mainUrl/film/$recId",
-                        this@OnlineSerieTvProvider.name,
-                        TvType.Movie
-                    ).apply { this.posterUrl = recPoster }
+                    newMovieSearchResponse(recTitle, "$mainUrl/film/$recId") {
+                        this.posterUrl = recPoster
+                    }
                 }
         }
 
@@ -392,7 +389,6 @@ class OnlineSerieTvProvider : MainAPI() {
             if (!relatedMovies.isNullOrEmpty()) this.recommendations = relatedMovies!!
         }
     }
-
     // -----------------------------
     // SERIE TV
     // -----------------------------
@@ -463,12 +459,9 @@ class OnlineSerieTvProvider : MainAPI() {
                 val recPoster = (item["poster_path"] as? String)
                     ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
 
-                TvSeriesSearchResponse(
-                    recTitle,
-                    "$mainUrl/serietv/$recId",
-                    this@OnlineSerieTvProvider.name,
-                    TvType.TvSeries
-                ).apply { this.posterUrl = recPoster }
+                newTvSeriesSearchResponse(recTitle, "$mainUrl/serietv/$recId") {
+                    this.posterUrl = recPoster
+                }
             }
 
         // --- EPISODI TMDB ---
@@ -487,7 +480,6 @@ class OnlineSerieTvProvider : MainAPI() {
         val runtimes = tmdbShow?.get("episode_run_time") as? List<Int>
         defaultRuntime = runtimes?.firstOrNull()
     }
-
     // --- EPISODI DEL SITO ---
     val rows = document.select("table tr")
     var siteMaxSeason = 1
