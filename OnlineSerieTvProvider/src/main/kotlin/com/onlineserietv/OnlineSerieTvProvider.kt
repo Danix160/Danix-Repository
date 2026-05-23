@@ -441,13 +441,13 @@ rows.forEach { row ->
         val runtime = info?.runtime ?: defaultRuntime ?: 0
 
         this.description = buildString {
-        append(info?.overview ?: "")
-        if (runtime > 0) {
-            append("\n\nDurata: ${runtime} min")
-                    }
-                }
+            append(info?.overview ?: "")
+            if (runtime > 0) {
+                append("\n\nDurata: ${runtime} min")
             }
-    )
+        }
+    }
+)
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
             this.plot = finalDescription
