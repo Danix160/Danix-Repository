@@ -421,13 +421,18 @@ rows.forEach { row ->
     val info = seasonMap[epInSeason]
 
     episodesList.add(
-        newEpisode(maxStreamLink.attr("href")) {
-            this.name = info?.name ?: "Episodio $epInSeason"
-            this.season = seasonNumber
-            this.episode = epInSeason
-            this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+    newEpisode(maxStreamLink.attr("href")) {
+        this.name = info?.name ?: "Episodio $epInSeason"
+        this.season = seasonNumber
+        this.episode = epInSeason
+        this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+
+        // ⭐ DURATA EPISODIO (in minuti)
+        if (defaultRuntime != null) {
+            this.duration = defaultRuntime
         }
-    )
+    }
+)
 }
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
