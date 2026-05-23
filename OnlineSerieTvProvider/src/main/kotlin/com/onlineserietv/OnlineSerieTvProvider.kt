@@ -324,17 +324,19 @@ class OnlineSerieTvProvider : MainAPI() {
 
             // ⭐ Cast film
             val movieCredits = app.get(
-                "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+            "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()
 
             movieCast = (movieCredits?.get("cast") as? List<Map<String, Any>>)
-                ?.take(10)
-                ?.map {
-                    Actor(
-                        it["name"].toString(),
-                        (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
-                    )
-                }
+            ?.take(10)
+            ?.map {
+                ActorData(
+                    it["name"].toString(),
+                    (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" },
+                    null
+                )
+            }
+
         }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -354,8 +356,9 @@ class OnlineSerieTvProvider : MainAPI() {
             }
 
             if (!movieCast.isNullOrEmpty()) {
-                this.actors = movieCast!!
+            this.actors = movieCast!!
             }
+
         }
     }
 
@@ -388,16 +391,17 @@ class OnlineSerieTvProvider : MainAPI() {
         // ⭐ Cast serie TV
         val seriesCredits = app.get(
             "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
-        ).parsedSafe<Map<String, Any>>()
+            ).parsedSafe<Map<String, Any>>()
 
-        seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
+            seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
             ?.take(10)
             ?.map {
-                Actor(
+                ActorData(
                     it["name"].toString(),
-                    (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
+                    (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" },
+                    null
                 )
-            }
+        }
 
         val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
         if (seasons != null) {
@@ -525,8 +529,9 @@ class OnlineSerieTvProvider : MainAPI() {
         }
 
         if (!seriesCast.isNullOrEmpty()) {
-            this.actors = seriesCast!!
+        this.actors = seriesCast!!
         }
+
     }
 }
 
