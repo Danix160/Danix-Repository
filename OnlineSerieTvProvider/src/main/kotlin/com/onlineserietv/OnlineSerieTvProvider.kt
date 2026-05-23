@@ -17,6 +17,12 @@ data class TmdbSearchResult(
     val poster_path: String?
 )
 
+data class TmdbEpisodeInfo(
+    val name: String?,
+    val overview: String?,
+    val stillPath: String?
+)
+
 // -----------------------------
 // TMDB SEARCH (con anno + filtro)
 // -----------------------------
@@ -60,24 +66,23 @@ suspend fun MainAPI.tmdbSearch(title: String, isMovie: Boolean, year: Int?): Tmd
 }
 
 // -----------------------------
-// TMDB: INFO EPISODIO (titolo + trama + still)
+// TMDB: TUTTA LA STAGIONE (1 chiamata)
 // -----------------------------
-data class TmdbEpisodeInfo(
-    val name: String?,
-    val overview: String?,
-    val stillPath: String?
-)
-
-suspend fun MainAPI.getTmdbEpisodeInfo(tvId: Int, season: Int, episode: Int): TmdbEpisodeInfo? {
+suspend fun MainAPI.getTmdbSeason(tvId: Int, season: Int): Map<Int, TmdbEpisodeInfo> {
     val url =
-        "https://api.themoviedb.org/3/tv/$tvId/season/$season/episode/$episode?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
-    val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return null
+        "https://api.themoviedb.org/3/tv/$tvId/season/$season?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
 
-    val name = json["name"] as? String
-    val overview = json["overview"] as? String
-    val still = json["still_path"] as? String
+    val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return emptyMap()
+    val eps = json["episodes"] as? List<Map<String, Any>> ?: return emptyMap()
 
-    return TmdbEpisodeInfo(name, overview, still)
+    return eps.associate { ep ->
+        val num = (ep["episode_number"] as Number).toInt()
+        num to TmdbEpisodeInfo(
+            name = ep["name"] as? String,
+            overview = ep["overview"] as? String,
+            stillPath = ep["still_path"] as? String
+        )
+    }
 }
 
 // -----------------------------
@@ -104,25 +109,47 @@ private fun fixSpecialCases(title: String): String {
     return t
 }
 
+private fun cleanTitle(title: String): String {
+    val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
+
+    var cleaned = title
+        .replace(" in streaming - OnlineSerieTv", "")
+        .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
+        .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
+        .replace("(?i)serie animata".toRegex(), "")
+        .replace("""\s*[\(
+
+\[-]?\s*(19|20)\d{2}\s*[\)\]
+
+-]?\s*""".toRegex(), " ")
+        .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
+        .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
+        .replace("""\s+""".toRegex(), " ")
+        .trim()
+
+    cleaned = fixApostrophes(cleaned)
+    cleaned = fixSpecialCases(cleaned)
+
+    if (isSubIta) cleaned = "$cleaned SUB ITA"
+    return cleaned
+}
+
 // -----------------------------
-// PARSING NUMERO EPISODIO DAL TESTO
+// PARSING NUMERI EPISODIO/STAGIONE
 // -----------------------------
 private fun parseEpisodeNumberFromText(text: String): Int? {
     val t = text.lowercase()
 
-    // 1x01, 01x05, 2x3
     val rx1 = "(\\d+)x(\\d+)".toRegex()
     rx1.find(t)?.let {
         return it.groupValues[2].toIntOrNull()
     }
 
-    // episodio 1, ep 1, ep. 1
     val rx2 = "(episodio|ep\\.?|episode|capitolo|parte)\\s*(\\d+)".toRegex()
     rx2.find(t)?.let {
         return it.groupValues[2].toIntOrNull()
     }
 
-    // solo numero isolato (es. "1", "2")
     val rx3 = "\\b(\\d{1,3})\\b".toRegex()
     rx3.find(t)?.let {
         return it.groupValues[1].toIntOrNull()
@@ -131,9 +158,6 @@ private fun parseEpisodeNumberFromText(text: String): Int? {
     return null
 }
 
-// -----------------------------
-// PARSING STAGIONE+EPISODIO DAL TESTO (01x05, 02x13, ecc.)
-// -----------------------------
 private fun parseSeasonAndEpisode(text: String): Pair<Int, Int>? {
     val t = text.lowercase()
     val rx = "(\\d{1,2})x(\\d{1,2})".toRegex()
@@ -160,33 +184,8 @@ class OnlineSerieTvProvider : MainAPI() {
         "$mainUrl/serie-tv-generi/animazione/" to "Cartoni & Anime"
     )
 
-    private fun cleanTitle(title: String): String {
-        val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
-
-        var cleaned = title
-            .replace(" in streaming - OnlineSerieTv", "")
-            .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
-            .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
-            .replace("(?i)serie animata".toRegex(), "")
-            .replace("""\s*[\(
-
-\[-]?\s*(19|20)\d{2}\s*[\)\]
-
--]?\s*""".toRegex(), " ")
-            .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
-            .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
-            .replace("""\s+""".toRegex(), " ")
-            .trim()
-
-        cleaned = fixApostrophes(cleaned)
-        cleaned = fixSpecialCases(cleaned)
-
-        if (isSubIta) cleaned = "$cleaned SUB ITA"
-        return cleaned
-    }
-
     // -----------------------------
-    // MAIN PAGE (NO TMDB)
+    // MAIN PAGE
     // -----------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
@@ -226,7 +225,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
-    // SEARCH (NO TMDB)
+    // SEARCH
     // -----------------------------
     override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
@@ -274,7 +273,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
-    // LOAD (FILM + SERIE) — TMDB QUI
+    // LOAD (FILM + SERIE) — TMDB OTTIMIZZATO
     // -----------------------------
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
@@ -309,6 +308,9 @@ class OnlineSerieTvProvider : MainAPI() {
         // -----------------------------
         val episodesList = mutableListOf<Episode>()
 
+        // Mappa stagione -> dati TMDB per quella stagione (lazy)
+        val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
+
         document.select("table tr").forEach { row ->
             val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
             if (maxStreamLink == null) return@forEach
@@ -320,25 +322,24 @@ class OnlineSerieTvProvider : MainAPI() {
             val seasonNumber = se?.first ?: 1
             val epInSeason = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
 
-            var epName: String? = null
-            var epPlot: String? = null
-            var epPoster: String? = null
-
-            if (tmdb != null) {
-                getTmdbEpisodeInfo(tmdb.id, seasonNumber, epInSeason)?.let { info ->
-                    epName = info.name
-                    epPlot = info.overview
-                    epPoster = info.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+            // TMDB: carica TUTTA la stagione solo la prima volta
+            val seasonMap = if (tmdb != null) {
+                tmdbSeasonsCache.getOrPut(seasonNumber) {
+                    getTmdbSeason(tmdb.id, seasonNumber)
                 }
-            }
+            } else emptyMap()
+
+            val info = seasonMap[epInSeason]
 
             episodesList.add(
                 newEpisode(maxStreamLink.attr("href")) {
-                    this.name = epName ?: "Episodio $epInSeason"
+                    this.name = info?.name ?: "Episodio $epInSeason"
                     this.season = seasonNumber
                     this.episode = epInSeason
-                    this.posterUrl = epPoster ?: poster
-                    this.description = epPlot
+                    this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+
+                    // niente descrizione per velocità
+                    // this.description = info?.overview
                 }
             )
         }
