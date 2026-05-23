@@ -60,22 +60,6 @@ suspend fun MainAPI.tmdbSearch(title: String, isMovie: Boolean, year: Int?): Tmd
 }
 
 // -----------------------------
-// TMDB: MAPPA STAGIONI → NUMERO EPISODI
-// -----------------------------
-suspend fun MainAPI.getTmdbSeasonsMap(tmdbId: Int): Map<Int, Int> {
-    val url = "https://api.themoviedb.org/3/tv/$tmdbId?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
-    val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return emptyMap()
-
-    val seasons = json["seasons"] as? List<Map<String, Any>> ?: return emptyMap()
-
-    return seasons.associate {
-        val seasonNum = (it["season_number"] as Number).toInt()
-        val epCount = (it["episode_count"] as Number).toInt()
-        seasonNum to epCount
-    }.filterKeys { it > 0 } // esclude eventuale stagione 0 (special)
-}
-
-// -----------------------------
 // TMDB: INFO EPISODIO (titolo + trama + still)
 // -----------------------------
 data class TmdbEpisodeInfo(
@@ -84,9 +68,9 @@ data class TmdbEpisodeInfo(
     val stillPath: String?
 )
 
-suspend fun MainAPI.getTmdbEpisodeInfo(tmdbId: Int, season: Int, episode: Int): TmdbEpisodeInfo? {
+suspend fun MainAPI.getTmdbEpisodeInfo(tvId: Int, season: Int, episode: Int): TmdbEpisodeInfo? {
     val url =
-        "https://api.themoviedb.org/3/tv/$tmdbId/season/$season/episode/$episode?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+        "https://api.themoviedb.org/3/tv/$tvId/season/$season/episode/$episode?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
     val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return null
 
     val name = json["name"] as? String
@@ -148,6 +132,18 @@ private fun parseEpisodeNumberFromText(text: String): Int? {
 }
 
 // -----------------------------
+// PARSING STAGIONE+EPISODIO DAL TESTO (01x05, 02x13, ecc.)
+// -----------------------------
+private fun parseSeasonAndEpisode(text: String): Pair<Int, Int>? {
+    val t = text.lowercase()
+    val rx = "(\\d{1,2})x(\\d{1,2})".toRegex()
+    val m = rx.find(t) ?: return null
+    val s = m.groupValues[1].toIntOrNull() ?: return null
+    val e = m.groupValues[2].toIntOrNull() ?: return null
+    return s to e
+}
+
+// -----------------------------
 // PROVIDER
 // -----------------------------
 class OnlineSerieTvProvider : MainAPI() {
@@ -190,7 +186,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
-    // MAIN PAGE (NO TMDB → VELOCE)
+    // MAIN PAGE (NO TMDB)
     // -----------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(request.data).document
@@ -230,7 +226,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
-    // SEARCH (NO TMDB → VELOCE)
+    // SEARCH (NO TMDB)
     // -----------------------------
     override suspend fun search(query: String): List<SearchResponse> {
         val results = mutableListOf<SearchResponse>()
@@ -312,32 +308,17 @@ class OnlineSerieTvProvider : MainAPI() {
         // SERIE TV
         // -----------------------------
         val episodesList = mutableListOf<Episode>()
-        val tmdbSeasons = if (tmdb != null) getTmdbSeasonsMap(tmdb.id) else emptyMap()
 
         document.select("table tr").forEach { row ->
             val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
             if (maxStreamLink == null) return@forEach
 
             val fullText = row.selectFirst("td")?.text() ?: ""
+            val se = parseSeasonAndEpisode(fullText)
             val explicitEpNum = parseEpisodeNumberFromText(fullText)
 
-            val globalIndex = episodesList.size + 1
-            val episodeNumber = explicitEpNum ?: globalIndex
-
-            var seasonNumber = 1
-            var epInSeason = episodeNumber
-
-            if (tmdbSeasons.isNotEmpty()) {
-                var remaining = episodeNumber
-                for ((season, count) in tmdbSeasons.toSortedMap()) {
-                    if (remaining <= count) {
-                        seasonNumber = season
-                        epInSeason = remaining
-                        break
-                    }
-                    remaining -= count
-                }
-            }
+            val seasonNumber = se?.first ?: 1
+            val epInSeason = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
 
             var epName: String? = null
             var epPlot: String? = null
