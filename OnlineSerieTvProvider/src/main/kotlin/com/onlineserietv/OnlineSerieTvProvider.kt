@@ -314,6 +314,8 @@ val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
 // Info stagioni TMDB: (season_number, episode_count)
 var tmdbSeasonsInfo: List<Pair<Int, Int>> = emptyList()
 
+var defaultRuntime: Int? = null
+
 if (tmdb != null) {
     val tmdbShow = app.get(
         "https://api.themoviedb.org/3/tv/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
@@ -322,7 +324,7 @@ if (tmdb != null) {
     val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
     if (seasons != null) {
         tmdbSeasonsInfo = seasons
-            .filter { (it["season_number"] as Number).toInt() > 0 } // esclude specials
+            .filter { (it["season_number"] as Number).toInt() > 0 }
             .sortedBy { (it["season_number"] as Number).toInt() }
             .map {
                 val sn = (it["season_number"] as Number).toInt()
@@ -330,6 +332,10 @@ if (tmdb != null) {
                 sn to epCount
             }
     }
+
+    // ⭐ Durata media episodio da TMDB
+    val runtimes = tmdbShow?.get("episode_run_time") as? List<Int>
+    defaultRuntime = runtimes?.firstOrNull()
 }
 
 // Prima passata: capiamo quante stagioni vede il SITO
@@ -427,12 +433,18 @@ rows.forEach { row ->
         this.episode = epInSeason
         this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
 
-        // ⭐ DURATA EPISODIO (in minuti)
-        if (defaultRuntime != null) {
-            this.duration = defaultRuntime
+        // ⭐ DURATA EPISODIO (inserita nella descrizione)
+        val runtime = defaultRuntime ?: 0
+
+        this.description = buildString {
+            append(info?.overview ?: "")
+            if (runtime > 0) {
+                append("\n\nDurata: ${runtime} min")
+            }
         }
     }
 )
+
 }
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
