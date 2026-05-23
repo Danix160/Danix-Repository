@@ -298,12 +298,42 @@ class OnlineSerieTvProvider : MainAPI() {
         // -----------------------------
         // FILM
         // -----------------------------
+        
         if (isMovie) {
-            return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = finalDescription
-            }
+
+    var movieRuntime: Int? = null
+    var movieGenres: String? = null
+
+    if (tmdb != null) {
+        val movieDetails = app.get(
+            "https://api.themoviedb.org/3/movie/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+        ).parsedSafe<Map<String, Any>>()
+
+        // ⭐ Durata film
+        movieRuntime = (movieDetails?.get("runtime") as? Number)?.toInt()
+
+        // ⭐ Generi film
+        val genresList = movieDetails?.get("genres") as? List<Map<String, Any>>
+        movieGenres = genresList?.joinToString(", ") { it["name"].toString() }
+    }
+
+    // ⭐ Descrizione finale con runtime + generi
+    val movieDescription = buildString {
+        append(finalDescription ?: "")
+        if (movieRuntime != null && movieRuntime > 0) {
+            append("\n\nDurata: ${movieRuntime} min")
         }
+        if (!movieGenres.isNullOrBlank()) {
+            append("\nGeneri: $movieGenres")
+        }
+    }
+
+    return newMovieLoadResponse(title, url, TvType.Movie, url) {
+        this.posterUrl = poster
+        this.plot = movieDescription
+    }
+}
+
 
         // -----------------------------
         // SERIE TV
