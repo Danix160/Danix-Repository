@@ -322,7 +322,7 @@ if (tmdb != null) {
     val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
     if (seasons != null) {
         tmdbSeasonsInfo = seasons
-            .filter { (it["season_number"] as Number).toInt() > 0 } // esclude specials
+            .filter { (it["season_number"] as Number).toInt() > 0 }
             .sortedBy { (it["season_number"] as Number).toInt() }
             .map {
                 val sn = (it["season_number"] as Number).toInt()
@@ -342,7 +342,7 @@ document.select("table tr").forEach { row ->
     val se = parseSeasonAndEpisode(fullText)
     val explicitEpNum = parseEpisodeNumberFromText(fullText)
 
-    // Valori "come dice il sito"
+    // Valori del sito
     val siteSeason = se?.first ?: 1
     val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
 
@@ -350,36 +350,26 @@ document.select("table tr").forEach { row ->
     var epInSeason = siteEpisode
 
     if (tmdbSeasonsInfo.isNotEmpty()) {
-        // 1) Provo mappatura diretta: stessa stagione, stesso episodio
-        val direct = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
-        val directOk = direct != null && siteEpisode in 1..direct.second
 
-        if (!directOk) {
-            // 2) Se la stagione del sito è sbagliata (es. tutto 01xXX),
-            // uso indice globale e distribuisco sugli episodi TMDB
-            val rawEpisode = siteEpisode
-            var remaining = rawEpisode
-            var mapped = false
-
-            for ((sn, epCount) in tmdbSeasonsInfo) {
-                if (remaining <= epCount) {
-                    seasonNumber = sn
-                    epInSeason = remaining
-                    mapped = true
-                    break
-                }
-                remaining -= epCount
-            }
-
-            // 3) Se nemmeno così TMDB copre quell'episodio (episodio extra),
-            // TORNO ai valori del sito (non lo cancello)
-            if (!mapped) {
+        // 1) Se TMDB ha questa stagione → usa TMDB
+        val tmdbSeason = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
+        if (tmdbSeason != null) {
+            if (siteEpisode <= tmdbSeason.second) {
+                seasonNumber = siteSeason
+                epInSeason = siteEpisode
+            } else {
+                // Episodio extra → mantieni sito
                 seasonNumber = siteSeason
                 epInSeason = siteEpisode
             }
+        } else {
+            // 2) TMDB NON ha questa stagione → mantieni sito
+            seasonNumber = siteSeason
+            epInSeason = siteEpisode
         }
     }
 
+    // TMDB: carica stagione solo una volta
     val seasonMap = if (tmdb != null) {
         tmdbSeasonsCache.getOrPut(seasonNumber) {
             getTmdbSeason(tmdb.id, seasonNumber)
