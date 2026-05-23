@@ -302,36 +302,42 @@ class OnlineSerieTvProvider : MainAPI() {
 
         var movieRuntime: Int? = null
         var movieGenres: List<String>? = null
-        var movieScore: Double? = null
+        var movieYear: Int? = null
 
         if (tmdb != null) {
             val movieDetails = app.get(
                 "https://api.themoviedb.org/3/movie/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()
 
+            // ⭐ Durata film
             movieRuntime = (movieDetails?.get("runtime") as? Number)?.toInt()
 
+            // ⭐ Generi film
             val genresList = movieDetails?.get("genres") as? List<Map<String, Any>>
             movieGenres = genresList?.map { it["name"].toString() }
 
-            movieScore = (movieDetails?.get("vote_average") as? Number)?.toDouble()
+            // ⭐ Anno TMDB
+            movieYear = (movieDetails?.get("release_date") as? String)
+                ?.take(4)
+                ?.toIntOrNull()
         }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-    this.posterUrl = poster
-    this.plot = finalDescription
+            this.posterUrl = poster
+            this.plot = finalDescription
 
-    // ⭐ Durata film
-    if (movieRuntime != null && movieRuntime > 0) {
-        this.duration = movieRuntime
-    }
+            if (movieRuntime != null && movieRuntime > 0) {
+                this.duration = movieRuntime
+            }
 
-    // ⭐ Generi film
-    if (!movieGenres.isNullOrEmpty()) {
-        this.tags = movieGenres!!
-    }
-}
+            if (!movieGenres.isNullOrEmpty()) {
+                this.tags = movieGenres!!
+            }
 
+            if (movieYear != null) {
+                this.year = movieYear
+            }
+        }
     }
 
     // -----------------------------
@@ -342,11 +348,22 @@ class OnlineSerieTvProvider : MainAPI() {
     val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
     var tmdbSeasonsInfo: List<Pair<Int, Int>> = emptyList()
     var defaultRuntime: Int? = null
+    var seriesYear: Int? = null
+    var seriesGenres: List<String>? = null
 
     if (tmdb != null) {
         val tmdbShow = app.get(
             "https://api.themoviedb.org/3/tv/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
         ).parsedSafe<Map<String, Any>>()
+
+        // ⭐ Anno TMDB serie TV
+        seriesYear = (tmdbShow?.get("first_air_date") as? String)
+            ?.take(4)
+            ?.toIntOrNull()
+
+        // ⭐ Generi serie TV
+        seriesGenres = (tmdbShow?.get("genres") as? List<Map<String, Any>>)
+            ?.map { it["name"].toString() }
 
         val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
         if (seasons != null) {
@@ -464,6 +481,14 @@ class OnlineSerieTvProvider : MainAPI() {
     return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
         this.posterUrl = poster
         this.plot = finalDescription
+
+        if (seriesYear != null) {
+            this.year = seriesYear
+        }
+
+        if (!seriesGenres.isNullOrEmpty()) {
+            this.tags = seriesGenres!!
+        }
     }
 }
 
