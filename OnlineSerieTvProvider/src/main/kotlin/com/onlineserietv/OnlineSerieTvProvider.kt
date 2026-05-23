@@ -20,8 +20,10 @@ data class TmdbSearchResult(
 data class TmdbEpisodeInfo(
     val name: String?,
     val overview: String?,
-    val stillPath: String?
+    val stillPath: String?,
+    val runtime: Int?
 )
+
 
 // -----------------------------
 // TMDB SEARCH (con anno + filtro)
@@ -80,10 +82,12 @@ suspend fun MainAPI.getTmdbSeason(tvId: Int, season: Int): Map<Int, TmdbEpisodeI
         num to TmdbEpisodeInfo(
             name = ep["name"] as? String,
             overview = ep["overview"] as? String,
-            stillPath = ep["still_path"] as? String
+            stillPath = ep["still_path"] as? String,
+            runtime = (ep["runtime"] as? Number)?.toInt()
         )
     }
 }
+
 
 // -----------------------------
 // CORREZIONI TITOLI
@@ -433,19 +437,17 @@ rows.forEach { row ->
         this.episode = epInSeason
         this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
 
-        // ⭐ DURATA EPISODIO (inserita nella descrizione)
-        val runtime = defaultRuntime ?: 0
+        // ⭐ DURATA EPISODIO (specifica > media > niente)
+        val runtime = info?.runtime ?: defaultRuntime ?: 0
 
         this.description = buildString {
-            append(info?.overview ?: "")
-            if (runtime > 0) {
-                append("\n\nDurata: ${runtime} min")
+        append(info?.overview ?: "")
+        if (runtime > 0) {
+            append("\n\nDurata: ${runtime} min")
+                    }
+                }
             }
-        }
-    }
-)
-
-}
+    )
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
             this.plot = finalDescription
