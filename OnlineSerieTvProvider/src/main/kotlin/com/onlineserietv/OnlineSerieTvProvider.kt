@@ -343,7 +343,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     ActorData(actor = actor, role = null)
                 }
 
-            // ⭐ Correlati film (similar + genere)
+            // ⭐ Correlati film (similar + genere) filtrati per esistenza sul sito
             val similar = app.get(
                 "https://api.themoviedb.org/3/movie/${tmdb.id}/similar?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()?.get("results") as? List<Map<String, Any>>
@@ -365,14 +365,21 @@ class OnlineSerieTvProvider : MainAPI() {
 
             relatedMovies = merged
                 .distinctBy { it["id"] }
-                .take(12)
+                .take(20)
                 .mapNotNull { item ->
-                    val recId = item["id"]?.toString() ?: return@mapNotNull null
                     val recTitle = item["title"]?.toString() ?: return@mapNotNull null
+
+                    // 🔍 CERCA SUL SITO
+                    val searchUrl = "$mainUrl/?s=${recTitle.replace(" ", "+")}"
+                    val searchDoc = app.get(searchUrl).document
+                    val result = searchDoc.select("div.result-item a").firstOrNull()
+                        ?: return@mapNotNull null  // ❌ non esiste → scarta
+
+                    val finalUrl = result.attr("href")
                     val recPoster = (item["poster_path"] as? String)
                         ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
 
-                    newMovieSearchResponse(recTitle, "$mainUrl/film/$recId") {
+                    newMovieSearchResponse(recTitle, finalUrl) {
                         this.posterUrl = recPoster
                     }
                 }
@@ -430,7 +437,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 ActorData(actor = actor, role = null)
             }
 
-        // ⭐ Correlati serie TV (similar + genere)
+        // ⭐ Correlati serie TV (similar + genere) filtrati per esistenza sul sito
         val similar = app.get(
             "https://api.themoviedb.org/3/tv/${tmdb.id}/similar?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
         ).parsedSafe<Map<String, Any>>()?.get("results") as? List<Map<String, Any>>
@@ -452,14 +459,21 @@ class OnlineSerieTvProvider : MainAPI() {
 
         relatedSeries = merged
             .distinctBy { it["id"] }
-            .take(12)
+            .take(20)
             .mapNotNull { item ->
-                val recId = item["id"]?.toString() ?: return@mapNotNull null
                 val recTitle = item["name"]?.toString() ?: return@mapNotNull null
+
+                // 🔍 CERCA SUL SITO
+                val searchUrl = "$mainUrl/?s=${recTitle.replace(" ", "+")}"
+                val searchDoc = app.get(searchUrl).document
+                val result = searchDoc.select("div.result-item a").firstOrNull()
+                    ?: return@mapNotNull null  // ❌ non esiste → scarta
+
+                val finalUrl = result.attr("href")
                 val recPoster = (item["poster_path"] as? String)
                     ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
 
-                newTvSeriesSearchResponse(recTitle, "$mainUrl/serietv/$recId") {
+                newTvSeriesSearchResponse(recTitle, finalUrl) {
                     this.posterUrl = recPoster
                 }
             }
@@ -586,7 +600,6 @@ class OnlineSerieTvProvider : MainAPI() {
         if (!relatedSeries.isNullOrEmpty()) this.recommendations = relatedSeries!!
     }
 }
-
 
     // -----------------------------
     // LOAD LINKS
