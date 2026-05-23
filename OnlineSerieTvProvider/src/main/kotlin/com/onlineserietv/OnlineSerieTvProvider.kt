@@ -357,7 +357,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     this.season = seasonNumber
                     this.episode = epInSeason
                     this.posterUrl = epPoster ?: poster
-                    this.plot = epPlot
+                    this.description = epPlot
                 }
             )
         }
