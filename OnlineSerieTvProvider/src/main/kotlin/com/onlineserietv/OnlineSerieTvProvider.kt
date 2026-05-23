@@ -330,11 +330,6 @@ class OnlineSerieTvProvider : MainAPI() {
     if (!movieGenres.isNullOrEmpty()) {
         this.tags = movieGenres!!
     }
-
-    // ⭐ Score TMDB (usare addScore!)
-    if (movieScore != null) {
-        this.addScore(movieScore)
-    }
 }
 
     }
