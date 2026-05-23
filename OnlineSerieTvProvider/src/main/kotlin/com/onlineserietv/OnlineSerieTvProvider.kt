@@ -304,46 +304,58 @@ class OnlineSerieTvProvider : MainAPI() {
         }
 
         // -----------------------------
-        // SERIE TV
-        // -----------------------------
-        val episodesList = mutableListOf<Episode>()
+// SERIE TV
+// -----------------------------
+val episodesList = mutableListOf<Episode>()
 
-        // Mappa stagione -> dati TMDB per quella stagione (lazy)
-        val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
+// Mappa stagione -> dati TMDB per quella stagione (lazy)
+val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
 
-        document.select("table tr").forEach { row ->
-            val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
-            if (maxStreamLink == null) return@forEach
+var currentSeason = 1
 
-            val fullText = row.selectFirst("td")?.text() ?: ""
-            val se = parseSeasonAndEpisode(fullText)
-            val explicitEpNum = parseEpisodeNumberFromText(fullText)
+document.select("table tr").forEach { row ->
 
-            val seasonNumber = se?.first ?: 1
-            val epInSeason = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
+    // --- RICONOSCIMENTO STAGIONE DAL SITO ---
+    val header = row.selectFirst("td[colspan=4] b")?.text()
+    if (header != null) {
+        val match = Regex("Stagione\\s+(\\d+)").find(header)
+        if (match != null) currentSeason = match.groupValues[1].toInt()
+        return@forEach
+    }
 
-            // TMDB: carica TUTTA la stagione solo la prima volta
-            val seasonMap = if (tmdb != null) {
-                tmdbSeasonsCache.getOrPut(seasonNumber) {
-                    getTmdbSeason(tmdb.id, seasonNumber)
-                }
-            } else emptyMap()
+    // --- LINK MAXSTREAM ---
+    val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
+    if (maxStreamLink == null) return@forEach
 
-            val info = seasonMap[epInSeason]
+    val fullText = row.selectFirst("td")?.text() ?: ""
 
-            episodesList.add(
-                newEpisode(maxStreamLink.attr("href")) {
-                    this.name = info?.name ?: "Episodio $epInSeason"
-                    this.season = seasonNumber
-                    this.episode = epInSeason
-                    this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+    val se = parseSeasonAndEpisode(fullText)
+    val explicitEpNum = parseEpisodeNumberFromText(fullText)
 
-                    // niente descrizione per velocità
-                    // this.description = info?.overview
-                }
-            )
+    // STAGIONE CORRETTA DAL SITO
+    val seasonNumber = currentSeason
+
+    // EPISODIO CORRETTO
+    val epInSeason = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
+
+    // TMDB: carica stagione solo una volta
+    val seasonMap = if (tmdb != null) {
+        tmdbSeasonsCache.getOrPut(seasonNumber) {
+            getTmdbSeason(tmdb.id, seasonNumber)
         }
+    } else emptyMap()
 
+    val info = seasonMap[epInSeason]
+
+    episodesList.add(
+        newEpisode(maxStreamLink.attr("href")) {
+            this.name = info?.name ?: "Episodio $epInSeason"
+            this.season = seasonNumber
+            this.episode = epInSeason
+            this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+        }
+    )
+}
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
             this.plot = finalDescription
