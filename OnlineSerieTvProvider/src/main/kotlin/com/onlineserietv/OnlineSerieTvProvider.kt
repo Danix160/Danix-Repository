@@ -298,11 +298,11 @@ class OnlineSerieTvProvider : MainAPI() {
         // -----------------------------
         // FILM
         // -----------------------------
-        
-        if (isMovie) {
+      if (isMovie) {
 
     var movieRuntime: Int? = null
-    var movieGenres: String? = null
+    var movieGenres: List<String>? = null
+    var movieRating: Double? = null
 
     if (tmdb != null) {
         val movieDetails = app.get(
@@ -314,19 +314,32 @@ class OnlineSerieTvProvider : MainAPI() {
 
         // ⭐ Generi film
         val genresList = movieDetails?.get("genres") as? List<Map<String, Any>>
-        movieGenres = genresList?.joinToString(", ") { it["name"].toString() }
+        movieGenres = genresList?.map { it["name"].toString() }
+
+        // ⭐ Rating TMDB
+        movieRating = (movieDetails?.get("vote_average") as? Number)?.toDouble()
     }
 
-    // ⭐ Descrizione finale con runtime + generi
-    val movieDescription = buildString {
-        append(finalDescription ?: "")
+    return newMovieLoadResponse(title, url, TvType.Movie, url) {
+        this.posterUrl = poster
+        this.plot = finalDescription
+
+        // ⭐ Durata film (campo nativo)
         if (movieRuntime != null && movieRuntime > 0) {
-            append("\n\nDurata: ${movieRuntime} min")
+            this.duration = movieRuntime
         }
-        if (!movieGenres.isNullOrBlank()) {
-            append("\nGeneri: $movieGenres")
+
+        // ⭐ Generi film (campo nativo)
+        if (!movieGenres.isNullOrEmpty()) {
+            this.tags = movieGenres!!
+        }
+
+        // ⭐ Rating TMDB (campo nativo)
+        if (movieRating != null) {
+            this.rating = movieRating
         }
     }
+}
 
     return newMovieLoadResponse(title, url, TvType.Movie, url) {
         this.posterUrl = poster
