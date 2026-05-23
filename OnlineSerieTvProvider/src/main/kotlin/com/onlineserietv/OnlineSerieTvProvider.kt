@@ -4,8 +4,8 @@ import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.ActorData
 
 import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.MovieSearchResponse
-import com.lagradost.cloudstream3.TvSeriesSearchResponse
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
