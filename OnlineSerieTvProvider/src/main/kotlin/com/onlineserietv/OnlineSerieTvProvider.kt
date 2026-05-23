@@ -303,7 +303,7 @@ class OnlineSerieTvProvider : MainAPI() {
         var movieRuntime: Int? = null
         var movieGenres: List<String>? = null
         var movieYear: Int? = null
-        var movieCast: List<Actor>? = null
+        var movieCast: List<ActorData>? = null
 
         if (tmdb != null) {
             val movieDetails = app.get(
@@ -319,7 +319,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 ?.take(4)
                 ?.toIntOrNull()
 
-            // ⭐ Cast film (Actor)
+            // ⭐ Cast film (ActorData)
             val movieCredits = app.get(
                 "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()
@@ -327,10 +327,9 @@ class OnlineSerieTvProvider : MainAPI() {
             movieCast = (movieCredits?.get("cast") as? List<Map<String, Any>>)
                 ?.take(10)
                 ?.map {
-                    Actor(
+                    ActorData(
                         it["name"].toString(),
-                        (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" },
-                        null
+                        (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
                     )
                 }
         }
@@ -367,7 +366,7 @@ class OnlineSerieTvProvider : MainAPI() {
     var defaultRuntime: Int? = null
     var seriesYear: Int? = null
     var seriesGenres: List<String>? = null
-    var seriesCast: List<Actor>? = null
+    var seriesCast: List<ActorData>? = null
 
     if (tmdb != null) {
         val tmdbShow = app.get(
@@ -381,7 +380,7 @@ class OnlineSerieTvProvider : MainAPI() {
         seriesGenres = (tmdbShow?.get("genres") as? List<Map<String, Any>>)
             ?.map { it["name"].toString() }
 
-        // ⭐ Cast serie TV (Actor)
+        // ⭐ Cast serie TV (ActorData)
         val seriesCredits = app.get(
             "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
         ).parsedSafe<Map<String, Any>>()
@@ -389,10 +388,9 @@ class OnlineSerieTvProvider : MainAPI() {
         seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
             ?.take(10)
             ?.map {
-                Actor(
+                ActorData(
                     it["name"].toString(),
-                    (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" },
-                    null
+                    (it["profile_path"] as? String)?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
                 )
             }
 
@@ -526,6 +524,7 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 }
+
 
     // -----------------------------
     // LOAD LINKS
