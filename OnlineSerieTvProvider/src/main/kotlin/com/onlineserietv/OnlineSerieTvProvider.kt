@@ -321,18 +321,22 @@ class OnlineSerieTvProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = finalDescription
 
-            if (movieRuntime != null && movieRuntime > 0) {
-                this.duration = movieRuntime
+        // ⭐ Durata film
+        if (movieRuntime != null && movieRuntime > 0) {
+            this.duration = movieRuntime
             }
 
-            if (!movieGenres.isNullOrEmpty()) {
-                this.tags = movieGenres!!
+        // ⭐ Generi film
+        if (!movieGenres.isNullOrEmpty()) {
+            this.tags = movieGenres!!
             }
 
-            if (movieScore != null) {
-                this.score = movieScore
+        // ⭐ Score TMDB (classe Score, NON Double)
+        if (movieScore != null) {
+            this.score = Score(movieScore)
             }
-        }
+    }
+
     }
 
     // -----------------------------
