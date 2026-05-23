@@ -308,20 +308,31 @@ class OnlineSerieTvProvider : MainAPI() {
 // -----------------------------
 val episodesList = mutableListOf<Episode>()
 
-// Mappa stagione -> dati TMDB per quella stagione (lazy)
+// Cache TMDB per stagione
 val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
 
-var currentSeason = 1
+// --- OTTENIAMO I DATI COMPLETI DELLA SERIE DA TMDB (per sapere episodi per stagione) ---
+var tmdbSeasonsInfo: List<Pair<Int, Int>> = emptyList() // (season_number, episode_count)
+
+if (tmdb != null) {
+    val tmdbShow = app.get(
+        "https://api.themoviedb.org/3/tv/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+    ).parsedSafe<Map<String, Any>>()
+
+    val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
+    if (seasons != null) {
+        tmdbSeasonsInfo = seasons
+            .filter { (it["season_number"] as Number).toInt() > 0 } // esclude "specials"
+            .sortedBy { (it["season_number"] as Number).toInt() }
+            .map {
+                val sn = (it["season_number"] as Number).toInt()
+                val epCount = (it["episode_count"] as Number).toInt()
+                sn to epCount
+            }
+    }
+}
 
 document.select("table tr").forEach { row ->
-
-    // --- RICONOSCIMENTO STAGIONE DAL SITO ---
-    val header = row.selectFirst("td[colspan=4] b")?.text()
-    if (header != null) {
-        val match = Regex("Stagione\\s+(\\d+)").find(header)
-        if (match != null) currentSeason = match.groupValues[1].toInt()
-        return@forEach
-    }
 
     // --- LINK MAXSTREAM ---
     val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
@@ -332,11 +343,25 @@ document.select("table tr").forEach { row ->
     val se = parseSeasonAndEpisode(fullText)
     val explicitEpNum = parseEpisodeNumberFromText(fullText)
 
-    // STAGIONE CORRETTA DAL SITO
-    val seasonNumber = currentSeason
+    // Numero episodio SECONDO IL SITO
+    val rawEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
 
-    // EPISODIO CORRETTO
-    val epInSeason = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
+    // --- DISTRIBUZIONE AUTOMATICA BASATA SU TMDB ---
+    var seasonNumber = 1
+    var epInSeason = rawEpisode
+
+    if (tmdbSeasonsInfo.isNotEmpty()) {
+        var remaining = rawEpisode
+
+        for ((sn, epCount) in tmdbSeasonsInfo) {
+            if (remaining <= epCount) {
+                seasonNumber = sn
+                epInSeason = remaining
+                break
+            }
+            remaining -= epCount
+        }
+    }
 
     // TMDB: carica stagione solo una volta
     val seasonMap = if (tmdb != null) {
