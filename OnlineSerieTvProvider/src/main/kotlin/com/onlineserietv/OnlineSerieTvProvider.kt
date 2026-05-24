@@ -2,11 +2,9 @@ package com.onlineserietv
 
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.ActorData
-
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
-
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -126,11 +124,14 @@ private fun cleanTitle(title: String): String {
         .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
         .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
         .replace("(?i)serie animata".toRegex(), "")
-        .replace("""\s*[\(
+        .replace(
+            """\s*[\(
 
 \[\-]?\s*(19|20)\d{2}\s*[\)\]
 
-\-]?\s*""".toRegex(), " ")
+\-]?\s*""".toRegex(),
+            " "
+        )
         .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
         .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
         .replace("""\s+""".toRegex(), " ")
@@ -284,57 +285,133 @@ class OnlineSerieTvProvider : MainAPI() {
     // -----------------------------
     // LOAD (FILM + SERIE)
     // -----------------------------
-   override suspend fun load(url: String): LoadResponse {
-    val document = app.get(url).document
+    override suspend fun load(url: String): LoadResponse {
+        val document = app.get(url).document
 
-    val rawTitle = document.selectFirst("h1")?.text() ?: "Senza Titolo"
-    val title = cleanTitle(rawTitle)
-    val isMovie = !url.contains("/serietv/")
-    val year = document.select("span:contains(Anno:) i").text().trim().toIntOrNull()
+        val rawTitle = document.selectFirst("h1")?.text() ?: "Senza Titolo"
+        val title = cleanTitle(rawTitle)
+        val isMovie = !url.contains("/serietv/")
+        val year = document.select("span:contains(Anno:) i").text().trim().toIntOrNull()
 
-    val tmdb = tmdbSearch(title, isMovie, year)
+        val tmdb = tmdbSearch(title, isMovie, year)
 
-    val poster = tmdb?.poster_path?.let { "https://image.tmdb.org/t/p/w780$it" }
-        ?: document.selectFirst("meta[property=og:image]")?.attr("content")
+        val poster = tmdb?.poster_path?.let { "https://image.tmdb.org/t/p/w780$it" }
+            ?: document.selectFirst("meta[property=og:image]")?.attr("content")
 
-    val finalDescription = tmdb?.overview
-        ?: document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
-            ?.nextElementSibling()?.text()
-        ?: document.selectFirst("meta[property=og:description]")?.attr("content")
+        val finalDescription = tmdb?.overview
+            ?: document.select("b:contains(Trama), strong:contains(Trama)").firstOrNull()
+                ?.nextElementSibling()?.text()
+            ?: document.selectFirst("meta[property=og:description]")?.attr("content")
 
-    // -----------------------------
-    // FILM
-    // -----------------------------
-    if (isMovie) {
+        // -----------------------------
+        // FILM
+        // -----------------------------
+        if (isMovie) {
 
-        var movieRuntime: Int? = null
-        var movieGenres: List<String>? = null
-        var movieYear: Int? = null
-        var movieCast: List<ActorData>? = null
+            var movieRuntime: Int? = null
+            var movieGenres: List<String>? = null
+            var movieYear: Int? = null
+            var movieCast: List<ActorData>? = null
+            var movieImdbId: String? = null
+
+            if (tmdb != null) {
+                val movieDetails = app.get(
+                    "https://api.themoviedb.org/3/movie/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+                ).parsedSafe<Map<String, Any>>()
+
+                movieRuntime = (movieDetails?.get("runtime") as? Number)?.toInt()
+
+                val genresList = movieDetails?.get("genres") as? List<Map<String, Any>>
+                movieGenres = genresList?.map { it["name"].toString() }
+
+                movieYear = (movieDetails?.get("release_date") as? String)
+                    ?.take(4)
+                    ?.toIntOrNull()
+
+                movieImdbId = movieDetails?.get("imdb_id") as? String
+
+                val movieCredits = app.get(
+                    "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+                ).parsedSafe<Map<String, Any>>()
+
+                movieCast = (movieCredits?.get("cast") as? List<Map<String, Any>>)
+                    ?.take(10)
+                    ?.map {
+                        val actor = Actor(
+                            name = it["name"]?.toString() ?: "",
+                            image = (it["profile_path"] as? String)
+                                ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
+                        )
+
+                        ActorData(
+                            actor = actor,
+                            role = null
+                        )
+                    }
+            }
+
+            return newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl = poster
+                this.plot = finalDescription
+
+                if (movieRuntime != null && movieRuntime > 0) {
+                    this.duration = movieRuntime
+                }
+
+                if (!movieGenres.isNullOrEmpty()) {
+                    this.tags = movieGenres!!
+                }
+
+                if (movieYear != null) {
+                    this.year = movieYear
+                }
+
+                if (!movieCast.isNullOrEmpty()) {
+                    this.actors = movieCast!!
+                }
+
+                // ⭐ IMPORTANTE PER INTRODB
+                if (!movieImdbId.isNullOrBlank()) {
+                    this.imdbId = movieImdbId
+                }
+            }
+        }
+
+        // -----------------------------
+        // SERIE TV
+        // -----------------------------
+        val episodesList = mutableListOf<Episode>()
+
+        val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
+        var tmdbSeasonsInfo: List<Pair<Int, Int>> = emptyList()
+        var defaultRuntime: Int? = null
+        var seriesYear: Int? = null
+        var seriesGenres: List<String>? = null
+        var seriesCast: List<ActorData>? = null
+        var seriesImdbId: String? = null
 
         if (tmdb != null) {
-            val movieDetails = app.get(
-                "https://api.themoviedb.org/3/movie/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+            val tmdbShow = app.get(
+                "https://api.themoviedb.org/3/tv/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT&append_to_response=external_ids"
             ).parsedSafe<Map<String, Any>>()
 
-            movieRuntime = (movieDetails?.get("runtime") as? Number)?.toInt()
-
-            val genresList = movieDetails?.get("genres") as? List<Map<String, Any>>
-            movieGenres = genresList?.map { it["name"].toString() }
-
-            movieYear = (movieDetails?.get("release_date") as? String)
+            seriesYear = (tmdbShow?.get("first_air_date") as? String)
                 ?.take(4)
                 ?.toIntOrNull()
 
-            // ⭐ Cast film (ActorData SENZA ActorRole)
-            val movieCredits = app.get(
-                "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+            seriesGenres = (tmdbShow?.get("genres") as? List<Map<String, Any>>)
+                ?.map { it["name"].toString() }
+
+            val externalIds = tmdbShow?.get("external_ids") as? Map<String, Any>
+            seriesImdbId = externalIds?.get("imdb_id") as? String
+
+            val seriesCredits = app.get(
+                "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()
 
-            movieCast = (movieCredits?.get("cast") as? List<Map<String, Any>>)
+            seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
                 ?.take(10)
                 ?.map {
-
                     val actor = Actor(
                         name = it["name"]?.toString() ?: "",
                         image = (it["profile_path"] as? String)
@@ -346,210 +423,147 @@ class OnlineSerieTvProvider : MainAPI() {
                         role = null
                     )
                 }
-        }
 
-        return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            this.posterUrl = poster
-            this.plot = finalDescription
-
-            if (movieRuntime != null && movieRuntime > 0) {
-                this.duration = movieRuntime
-            }
-
-            if (!movieGenres.isNullOrEmpty()) {
-                this.tags = movieGenres!!
-            }
-
-            if (movieYear != null) {
-                this.year = movieYear
-            }
-
-            if (!movieCast.isNullOrEmpty()) {
-                this.actors = movieCast!!
-            }
-        }
-    }
-
-    // -----------------------------
-    // SERIE TV
-    // -----------------------------
-    val episodesList = mutableListOf<Episode>()
-
-    val tmdbSeasonsCache = mutableMapOf<Int, Map<Int, TmdbEpisodeInfo>>()
-    var tmdbSeasonsInfo: List<Pair<Int, Int>> = emptyList()
-    var defaultRuntime: Int? = null
-    var seriesYear: Int? = null
-    var seriesGenres: List<String>? = null
-    var seriesCast: List<ActorData>? = null
-
-    if (tmdb != null) {
-        val tmdbShow = app.get(
-            "https://api.themoviedb.org/3/tv/${tmdb.id}?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
-        ).parsedSafe<Map<String, Any>>()
-
-        seriesYear = (tmdbShow?.get("first_air_date") as? String)
-            ?.take(4)
-            ?.toIntOrNull()
-
-        seriesGenres = (tmdbShow?.get("genres") as? List<Map<String, Any>>)
-            ?.map { it["name"].toString() }
-
-        // ⭐ Cast serie TV (ActorData SENZA ActorRole)
-        val seriesCredits = app.get(
-            "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
-        ).parsedSafe<Map<String, Any>>()
-
-        seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
-            ?.take(10)
-            ?.map {
-
-                val actor = Actor(
-                    name = it["name"]?.toString() ?: "",
-                    image = (it["profile_path"] as? String)
-                        ?.let { p -> "https://image.tmdb.org/t/p/w500$p" }
-                )
-
-                ActorData(
-                    actor = actor,
-                    role = null
-                )
-            }
-
-        val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
-        if (seasons != null) {
-            tmdbSeasonsInfo = seasons
-                .filter { (it["season_number"] as Number).toInt() > 0 }
-                .sortedBy { (it["season_number"] as Number).toInt() }
-                .map {
-                    val sn = (it["season_number"] as Number).toInt()
-                    val epCount = (it["episode_count"] as Number).toInt()
-                    sn to epCount
-                }
-        }
-
-        val runtimes = tmdbShow?.get("episode_run_time") as? List<Int>
-        defaultRuntime = runtimes?.firstOrNull()
-    }
-
-    val rows = document.select("table tr")
-    var siteMaxSeason = 1
-    rows.forEach { row ->
-        val fullText = row.selectFirst("td")?.text() ?: return@forEach
-        val se = parseSeasonAndEpisode(fullText)
-        if (se != null && se.first > siteMaxSeason) {
-            siteMaxSeason = se.first
-        }
-    }
-
-    var globalIndex = 0
-
-    rows.forEach { row ->
-
-        val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
-        if (maxStreamLink == null) return@forEach
-
-        val fullText = row.selectFirst("td")?.text() ?: ""
-
-        val se = parseSeasonAndEpisode(fullText)
-        val explicitEpNum = parseEpisodeNumberFromText(fullText)
-
-        val siteSeason = se?.first ?: 1
-        val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
-
-        globalIndex++
-
-        var seasonNumber = siteSeason
-        var epInSeason = siteEpisode
-
-        if (tmdbSeasonsInfo.isNotEmpty()) {
-
-            if (siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
-                var remaining = globalIndex
-                var mapped = false
-
-                for ((sn, epCount) in tmdbSeasonsInfo) {
-                    if (remaining <= epCount) {
-                        seasonNumber = sn
-                        epInSeason = remaining
-                        mapped = true
-                        break
+            val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
+            if (seasons != null) {
+                tmdbSeasonsInfo = seasons
+                    .filter { (it["season_number"] as Number).toInt() > 0 }
+                    .sortedBy { (it["season_number"] as Number).toInt() }
+                    .map {
+                        val sn = (it["season_number"] as Number).toInt()
+                        val epCount = (it["episode_count"] as Number).toInt()
+                        sn to epCount
                     }
-                    remaining -= epCount
-                }
+            }
 
-                if (!mapped) {
-                    seasonNumber = siteSeason
-                    epInSeason = siteEpisode
-                }
+            val runtimes = tmdbShow?.get("episode_run_time") as? List<Int>
+            defaultRuntime = runtimes?.firstOrNull()
+        }
 
-            } else {
+        val rows = document.select("table tr")
+        var siteMaxSeason = 1
+        rows.forEach { row ->
+            val fullText = row.selectFirst("td")?.text() ?: return@forEach
+            val se = parseSeasonAndEpisode(fullText)
+            if (se != null && se.first > siteMaxSeason) {
+                siteMaxSeason = se.first
+            }
+        }
 
-                val tmdbSeason = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
+        var globalIndex = 0
 
-                if (tmdbSeason != null) {
-                    if (siteEpisode <= tmdbSeason.second) {
+        rows.forEach { row ->
+
+            val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
+            if (maxStreamLink == null) return@forEach
+
+            val fullText = row.selectFirst("td")?.text() ?: ""
+
+            val se = parseSeasonAndEpisode(fullText)
+            val explicitEpNum = parseEpisodeNumberFromText(fullText)
+
+            val siteSeason = se?.first ?: 1
+            val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
+
+            globalIndex++
+
+            var seasonNumber = siteSeason
+            var epInSeason = siteEpisode
+
+            if (tmdbSeasonsInfo.isNotEmpty()) {
+
+                if (siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
+                    var remaining = globalIndex
+                    var mapped = false
+
+                    for ((sn, epCount) in tmdbSeasonsInfo) {
+                        if (remaining <= epCount) {
+                            seasonNumber = sn
+                            epInSeason = remaining
+                            mapped = true
+                            break
+                        }
+                        remaining -= epCount
+                    }
+
+                    if (!mapped) {
                         seasonNumber = siteSeason
                         epInSeason = siteEpisode
+                    }
+
+                } else {
+
+                    val tmdbSeason = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
+
+                    if (tmdbSeason != null) {
+                        if (siteEpisode <= tmdbSeason.second) {
+                            seasonNumber = siteSeason
+                            epInSeason = siteEpisode
+                        } else {
+                            seasonNumber = siteSeason
+                            epInSeason = siteEpisode
+                        }
                     } else {
                         seasonNumber = siteSeason
                         epInSeason = siteEpisode
                     }
-                } else {
-                    seasonNumber = siteSeason
-                    epInSeason = siteEpisode
                 }
             }
-        }
 
-        val seasonMap = if (tmdb != null) {
-            tmdbSeasonsCache.getOrPut(seasonNumber) {
-                getTmdbSeason(tmdb.id, seasonNumber)
-            }
-        } else emptyMap()
+            val seasonMap = if (tmdb != null) {
+                tmdbSeasonsCache.getOrPut(seasonNumber) {
+                    getTmdbSeason(tmdb.id, seasonNumber)
+                }
+            } else emptyMap()
 
-        val info = seasonMap[epInSeason]
+            val info = seasonMap[epInSeason]
 
-        episodesList.add(
-            newEpisode(maxStreamLink.attr("href")) {
-                this.name = info?.name ?: "Episodio $epInSeason"
-                this.season = seasonNumber
-                this.episode = epInSeason
-                this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+            episodesList.add(
+                newEpisode(maxStreamLink.attr("href")) {
+                    this.name = info?.name ?: "Episodio $epInSeason"
+                    this.season = seasonNumber
+                    this.episode = epInSeason
+                    this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
 
-                val runtime = info?.runtime ?: defaultRuntime ?: 0
+                    val runtime = info?.runtime ?: defaultRuntime ?: 0
 
-                this.description = buildString {
-                    append(info?.overview ?: "")
-                    if (runtime > 0) {
-                        append("\n\nDurata: ${runtime} min")
+                    this.description = buildString {
+                        append(info?.overview ?: "")
+                        if (runtime > 0) {
+                            append("\n\nDurata: ${runtime} min")
+                        }
                     }
                 }
+            )
+        }
+
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
+            this.posterUrl = poster
+            this.plot = finalDescription
+
+            if (seriesYear != null) {
+                this.year = seriesYear
             }
-        )
-    }
 
-    return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
-        this.posterUrl = poster
-        this.plot = finalDescription
+            if (!seriesGenres.isNullOrEmpty()) {
+                this.tags = seriesGenres!!
+            }
 
-        if (seriesYear != null) {
-            this.year = seriesYear
-        }
+            if (!seriesCast.isNullOrEmpty()) {
+                this.actors = seriesCast!!
+            }
 
-        if (!seriesGenres.isNullOrEmpty()) {
-            this.tags = seriesGenres!!
-        }
-
-        if (!seriesCast.isNullOrEmpty()) {
-            this.actors = seriesCast!!
+            // ⭐ IMPORTANTE PER INTRODB
+            if (!seriesImdbId.isNullOrBlank()) {
+                this.imdbId = seriesImdbId
+            }
         }
     }
-}
 
     // -----------------------------
     // LOAD LINKS
     // -----------------------------
-     override suspend fun loadLinks(
+    override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
