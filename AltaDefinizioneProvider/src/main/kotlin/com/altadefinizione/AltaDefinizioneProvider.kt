@@ -206,39 +206,43 @@ class AltaDefinizioneProvider : MainAPI() {
     // ---------------------------------------------------------
     // PLAYER (Vidxgo API)
     // ---------------------------------------------------------
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+   override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
 
-        val doc = app.get(data).document
-        val iframe = doc.selectFirst("iframe")?.attr("src") ?: return false
+    val doc = app.get(data).document
+    val iframe = doc.selectFirst("iframe")?.attr("src") ?: return false
 
-        val id = iframe.substringAfterLast("/").replace("tt", "")
-        val api = "https://v.vidxgo.co/api/source/$id"
+    val id = iframe.substringAfterLast("/").replace("tt", "")
+    val api = "https://v.vidxgo.co/api/source/$id"
 
-        val json = app.post(api).parsedSafe<Map<String, Any>>() ?: return false
-        val dataList = json["data"] as? List<Map<String, Any>> ?: return false
+    val json = app.post(api).parsedSafe<Map<String, Any>>() ?: return false
+    val dataList = json["data"] as? List<Map<String, Any>> ?: return false
 
-        dataList.forEach { file ->
-            val url = file["file"]?.toString() ?: return@forEach
-            val quality = file["label"]?.toString() ?: "HD"
+    dataList.forEach { file ->
+        val url = file["file"]?.toString() ?: return@forEach
+        val quality = file["label"]?.toString() ?: "HD"
 
-            callback(
-                newExtractorLink(
-                    source = "Vidxgo",
-                    name = "Vidxgo $quality",
-                    url = url
-                    ) {
-                    this.referer = "https://v.vidxgo.co/"
-                    this.quality = getQualityFromName(quality)
-                    this.isM3u8 = url.contains(".m3u8")
+        callback(
+            newExtractorLink(
+                source = "Vidxgo",
+                name = "Vidxgo $quality",
+                url = url
+            ) {
+                this.referer = "https://v.vidxgo.co/"
+                this.quality = getQualityFromName(quality)
+                this.type = if (url.contains(".m3u8")) {
+                    ExtractorLinkType.M3U8
+                } else {
+                    ExtractorLinkType.VIDEO
                 }
-            )
-        }
-
-        return true
+            }
+        )
     }
+
+    return true
+}
 }
