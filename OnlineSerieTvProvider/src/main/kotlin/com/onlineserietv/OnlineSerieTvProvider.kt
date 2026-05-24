@@ -329,6 +329,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     ?.toIntOrNull()
 
                 movieImdbId = movieDetails?.get("imdb_id") as? String
+                println("DEBUG OSTV — MOVIE IMDB: $movieImdbId")
 
                 val movieCredits = app.get(
                     "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
@@ -405,6 +406,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
             val externalIds = tmdbShow?.get("external_ids") as? Map<String, Any>
             seriesImdbId = externalIds?.get("imdb_id") as? String
+            println("DEBUG OSTV — SERIES IMDB: $seriesImdbId")
 
             val seriesCredits = app.get(
                 "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
