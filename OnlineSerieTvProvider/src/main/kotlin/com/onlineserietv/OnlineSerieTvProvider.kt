@@ -284,6 +284,20 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
+    // ANISKIP
+    // -----------------------------
+
+    private suspend fun hasAniSkip(imdbId: String, season: Int, episode: Int): Boolean {
+        return try {
+            val url = "https://api.aniskip.com/v2/skip-times/$imdbId/$season/$episode?types=op,ed,recap"
+            val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return false
+            (json["found"] as? Boolean) == true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // -----------------------------
     // LOAD (FILM + SERIE)
     // -----------------------------
     override suspend fun load(url: String): LoadResponse {
@@ -553,9 +567,23 @@ class OnlineSerieTvProvider : MainAPI() {
                     }
                 }
             
-                // ⭐ PATCH SKIP INTRO
-                seriesImdbId?.let { this.addImdbId(it) }
-            
+                // ⭐ PATCH SKIP INTRO (AniSkip + IntroDB fallback)
+            seriesImdbId?.let { imdb ->
+                    this.addImdbId(imdb)
+
+                // Controllo AniSkip solo sul primo episodio
+            val firstEp = episodesList.firstOrNull()
+                if (firstEp != null) {
+                val season = firstEp.season ?: 1
+                val ep = firstEp.episode ?: 1
+
+                if (hasAniSkip(imdb, season, ep)) {
+                    this.plot = (this.plot ?: "") + "\n\n[AniSkip disponibile]"
+                        } else {
+                    this.plot = (this.plot ?: "") + "\n\n[AniSkip non disponibile → fallback IntroDB]"
+                }
+            }
+    }        
                 if (seriesYear != null) {
                     this.year = seriesYear
                 }
