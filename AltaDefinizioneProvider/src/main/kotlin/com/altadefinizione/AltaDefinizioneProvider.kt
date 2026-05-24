@@ -2,7 +2,7 @@ package com.altadefinizione
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 
 class AltaDefinizioneProvider : MainAPI() {
 
@@ -21,9 +21,8 @@ class AltaDefinizioneProvider : MainAPI() {
 
         val list = items.mapNotNull { item ->
             val link = item.selectFirst("a")?.attr("href") ?: return@mapNotNull null
-            val title = item.selectFirst(".movie-title a")?.text()?.trim()
+            val title = item.parent()?.selectFirst(".movie-title a")?.text()?.trim()
                 ?: return@mapNotNull null
-
             val poster = item.selectFirst("img")?.attr("src")
 
             if (link.contains("/serie-tv/")) {
@@ -54,7 +53,6 @@ class AltaDefinizioneProvider : MainAPI() {
             val link = item.selectFirst("a")?.attr("href") ?: return@mapNotNull null
             val title = item.parent()?.selectFirst(".movie-title a")?.text()?.trim()
                 ?: return@mapNotNull null
-
             val poster = item.selectFirst("img")?.attr("src")
 
             if (link.contains("/serie-tv/")) {
@@ -74,20 +72,17 @@ class AltaDefinizioneProvider : MainAPI() {
     // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
-
-        val isSeries = url.contains("/serie-tv/")
-        return if (isSeries) loadSeries(url, doc) else loadMovie(url, doc)
+        return if (url.contains("/serie-tv/")) loadSeries(url, doc) else loadMovie(url, doc)
     }
 
     // ---------------------------------------------------------
     // FILM
     // ---------------------------------------------------------
-    private suspend fun loadMovie(url: String, doc: org.jsoup.nodes.Document): LoadResponse {
+    private suspend fun loadMovie(url: String, doc: Document): LoadResponse {
         val title = doc.selectFirst("h1")?.text()?.trim() ?: "Film"
         val poster = doc.selectFirst(".movie-poster img")?.attr("src")
         val plot = doc.selectFirst(".movie_entry-plot")?.text()?.trim()
 
-        // Cerca un link SuperVideo o DropLoad
         val superVideo = doc.select("a[href*=\"supervideo.cc\"]").attr("href")
         val dropLoad = doc.select("a[href*=\"dropload.co\"]").attr("href")
 
@@ -97,16 +92,21 @@ class AltaDefinizioneProvider : MainAPI() {
             else -> url
         }
 
-        return newMovieLoadResponse(title, url, TvType.Movie, link) {
+        return newMovieLoadResponse(
+            name = title,
+            url = url,
+            dataUrl = link,
+            type = TvType.Movie
+        ) {
             this.posterUrl = poster
             this.plot = plot
         }
     }
 
     // ---------------------------------------------------------
-    // SERIE TV (HTML EPISODES)
+    // SERIE TV
     // ---------------------------------------------------------
-    private suspend fun loadSeries(url: String, doc: org.jsoup.nodes.Document): LoadResponse {
+    private suspend fun loadSeries(url: String, doc: Document): LoadResponse {
         val title = doc.selectFirst("h1")?.text()?.trim() ?: "Serie TV"
         val poster = doc.selectFirst(".movie-poster img")?.attr("src")
 
@@ -125,26 +125,24 @@ class AltaDefinizioneProvider : MainAPI() {
             val link = when {
                 superVideo.isNotBlank() -> superVideo
                 dropLoad.isNotBlank() -> dropLoad
-                else -> ""
+                else -> return@forEach
             }
 
-            if (link.isNotBlank()) {
-                episodes += Episode(
-                    data = link,
-                    name = "Episodio $season x $episode",
-                    season = season,
-                    episode = episode,
-                    posterUrl = thumb
-                )
-            }
+            episodes += newEpisode(
+                data = link,
+                name = "Episodio $season x $episode",
+                season = season,
+                episode = episode,
+                posterUrl = thumb
+            )
         }
 
-        return TvSeriesLoadResponse(
-            title = title,
+        return newTvSeriesLoadResponse(
+            name = title,
             url = url,
             apiName = this.name,
-            episodes = episodes,
-            posterUrl = poster
+            posterUrl = poster,
+            episodes = episodes
         )
     }
 
@@ -157,8 +155,4 @@ class AltaDefinizioneProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-
-        // Cloudstream ha già gli extractor per SuperVideo e DropLoad
-        return loadExtractor(data, subtitleCallback, callback)
-    }
-}
+        return loadExtractor(data, subtitleCallback
