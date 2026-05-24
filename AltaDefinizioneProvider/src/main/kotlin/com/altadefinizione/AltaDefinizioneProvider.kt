@@ -12,9 +12,6 @@ class AltaDefinizioneProvider : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    // ---------------------------------------------------------
-    // HOME PAGE
-    // ---------------------------------------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val doc = app.get(mainUrl).document
         val items = doc.select(".movie-poster")
@@ -26,25 +23,15 @@ class AltaDefinizioneProvider : MainAPI() {
             val poster = item.selectFirst("img")?.attr("src")
 
             if (link.contains("/serie-tv/")) {
-                newTvSeriesSearchResponse(title, link) {
-                    this.posterUrl = poster
-                }
+                TvSeriesSearchResponse(title, link, this.name, TvType.TvSeries, poster)
             } else {
-                newMovieSearchResponse(title, link) {
-                    this.posterUrl = poster
-                }
+                MovieSearchResponse(title, link, this.name, TvType.Movie, poster)
             }
         }
 
-        return newHomePageResponse(
-            listOf(HomePageList("In evidenza", list)),
-            hasNext = false
-        )
+        return HomePageResponse(listOf(HomePageList("In evidenza", list)), false)
     }
 
-    // ---------------------------------------------------------
-    // SEARCH
-    // ---------------------------------------------------------
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?do=search&subaction=search&story=$query"
         val doc = app.get(url).document
@@ -56,28 +43,18 @@ class AltaDefinizioneProvider : MainAPI() {
             val poster = item.selectFirst("img")?.attr("src")
 
             if (link.contains("/serie-tv/")) {
-                newTvSeriesSearchResponse(title, link) {
-                    this.posterUrl = poster
-                }
+                TvSeriesSearchResponse(title, link, this.name, TvType.TvSeries, poster)
             } else {
-                newMovieSearchResponse(title, link) {
-                    this.posterUrl = poster
-                }
+                MovieSearchResponse(title, link, this.name, TvType.Movie, poster)
             }
         }
     }
 
-    // ---------------------------------------------------------
-    // LOAD (FILM + SERIE)
-    // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
         return if (url.contains("/serie-tv/")) loadSeries(url, doc) else loadMovie(url, doc)
     }
 
-    // ---------------------------------------------------------
-    // FILM
-    // ---------------------------------------------------------
     private suspend fun loadMovie(url: String, doc: Document): LoadResponse {
         val title = doc.selectFirst("h1")?.text()?.trim() ?: "Film"
         val poster = doc.selectFirst(".movie-poster img")?.attr("src")
@@ -92,20 +69,17 @@ class AltaDefinizioneProvider : MainAPI() {
             else -> url
         }
 
-        return newMovieLoadResponse(
-            name = title,
-            url = url,
-            dataUrl = link,
-            type = TvType.Movie
-        ) {
-            this.posterUrl = poster
-            this.plot = plot
-        }
+        return MovieLoadResponse(
+            title,
+            url,
+            this.name,
+            TvType.Movie,
+            link,
+            poster,
+            plot
+        )
     }
 
-    // ---------------------------------------------------------
-    // SERIE TV
-    // ---------------------------------------------------------
     private suspend fun loadSeries(url: String, doc: Document): LoadResponse {
         val title = doc.selectFirst("h1")?.text()?.trim() ?: "Serie TV"
         val poster = doc.selectFirst(".movie-poster img")?.attr("src")
@@ -128,31 +102,31 @@ class AltaDefinizioneProvider : MainAPI() {
                 else -> return@forEach
             }
 
-            episodes += newEpisode(
-                data = link,
-                name = "Episodio $season x $episode",
-                season = season,
-                episode = episode,
-                posterUrl = thumb
+            episodes += Episode(
+                link,
+                "Episodio $season x $episode",
+                season,
+                episode,
+                thumb
             )
         }
 
-        return newTvSeriesLoadResponse(
-            name = title,
-            url = url,
-            apiName = this.name,
-            posterUrl = poster,
-            episodes = episodes
+        return TvSeriesLoadResponse(
+            title,
+            url,
+            this.name,
+            TvType.TvSeries,
+            episodes,
+            poster
         )
     }
 
-    // ---------------------------------------------------------
-    // PLAYER (SuperVideo / DropLoad)
-    // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        return loadExtractor(data, subtitleCallback
+        return loadExtractor(data, subtitleCallback, callback)
+    }
+}
