@@ -231,7 +231,7 @@ class AltaDefinizioneProvider : MainAPI() {
                     source = "Vidxgo",
                     name = "Vidxgo $quality",
                     url = url
-                ) {
+                    ) {
                     this.referer = "https://v.vidxgo.co/"
                     this.quality = getQualityFromName(quality)
                     this.isM3u8 = url.contains(".m3u8")
