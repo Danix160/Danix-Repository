@@ -43,7 +43,7 @@ class AltaDefinizioneProvider : MainAPI() {
             }
         }
 
-        return HomePageResponse(
+        return newHomePageResponse(
             listOf(HomePageList("In evidenza", list)),
             hasNext = false
         )
@@ -92,7 +92,7 @@ class AltaDefinizioneProvider : MainAPI() {
     // ---------------------------------------------------------
     // FILM
     // ---------------------------------------------------------
-    private fun loadMovie(url: String, doc: org.jsoup.nodes.Document): LoadResponse {
+    private suspend fun loadMovie(url: String, doc: org.jsoup.nodes.Document): LoadResponse {
         val poster = doc.selectFirst(".movie_entry-poster")?.attr("src")?.let {
             if (it.startsWith("/")) mainUrl + it else it
         }
@@ -128,7 +128,7 @@ class AltaDefinizioneProvider : MainAPI() {
             this.plot = plot
             if (year != null) this.year = year
             if (!genres.isNullOrEmpty()) this.tags = genres
-            if (director != null) this.directors = listOf(director)
+            if (director != null) this.director = director
             if (actors.isNotEmpty()) this.actors = actors
         }
     }
@@ -160,16 +160,13 @@ class AltaDefinizioneProvider : MainAPI() {
             val plot = ep["plot"]?.toString()
             val thumb = ep["thumbnail"]?.toString()
 
-            val epUrl = "$url?ep=$epNum"
-
-            Episode(
-                data = epUrl,
-                name = epTitle,
-                season = 1,
-                episode = epNum,
-                posterUrl = thumb,
-                description = plot
-            )
+            newEpisode("$url?ep=$epNum") {
+                this.name = epTitle
+                this.season = 1
+                this.episode = epNum
+                this.posterUrl = thumb
+                this.description = plot
+            }
         } ?: emptyList()
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
