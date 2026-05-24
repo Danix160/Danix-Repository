@@ -118,31 +118,35 @@ private fun fixSpecialCases(title: String): String {
 }
 
 private fun cleanTitle(title: String): String {
-    val isSubIta = title.contains("(?i)\\bSUB[- ]?ITA\\b".toRegex())
-
     var cleaned = title
+
+        // Rimuove SUB ITA in tutte le varianti
+        .replace("(?i)\\bSUB\\s*[- ]?\\s*ITA\\b".toRegex(), "")
+        .replace("(?i)\\bSUBITA\\b".toRegex(), "")
+        .replace("(?i)\\bSUB-ITA\\b".toRegex(), "")
+        .replace("(?i)\\bSUB IT\\b".toRegex(), "")
+        .replace("(?i)\\bSUB-IT\\b".toRegex(), "")
+
+        // Rimuove eventuali doppie spaziature
+        .replace("""\s+""".toRegex(), " ")
+
+        // Rimuove anno, parentesi, tag inutili
         .replace(" in streaming - OnlineSerieTv", "")
-        .replace("(?i)\\bSUB[- ]?ITA\\b".toRegex(), "")
         .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
         .replace("(?i)serie animata".toRegex(), "")
-        .replace(
-            """\s*[\(
+        .replace("""\s*[\(
 
 \[\-]?\s*(19|20)\d{2}\s*[\)\]
 
-\-]?\s*""".toRegex(),
-            " "
-        )
+\-]?\s*""".toRegex(), " ")
         .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
         .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
-        .replace("""\s+""".toRegex(), " ")
         .trim()
 
     cleaned = fixApostrophes(cleaned)
     cleaned = fixSpecialCases(cleaned)
 
-    if (isSubIta) cleaned = "$cleaned SUB ITA"
-    return cleaned
+    return cleaned.trim()
 }
 
 // -----------------------------
