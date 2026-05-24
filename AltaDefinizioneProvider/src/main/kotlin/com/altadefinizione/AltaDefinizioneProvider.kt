@@ -129,7 +129,7 @@ class AltaDefinizioneProvider : MainAPI() {
     }
 
     // ---------------------------------------------------------
-    // SERIE TV
+    // SERIE TV (API + HTML FALLBACK)
     // ---------------------------------------------------------
     private suspend fun loadSeries(url: String, doc: org.jsoup.nodes.Document): LoadResponse {
         val title = doc.selectFirst("h1")?.text()?.trim()
@@ -144,33 +144,69 @@ class AltaDefinizioneProvider : MainAPI() {
         val iframe = doc.selectFirst("iframe")?.attr("src") ?: ""
         val imdb = iframe.substringAfterLast("/")
 
-        // 2) Chiamare API episodi
+        // 2) Tentare API Vidxgo
         val apiUrl = "https://v.vidxgo.co/api/popups/list.php?imdb=$imdb"
         val json = app.get(apiUrl).parsedSafe<Map<String, Any>>()
         val episodesJson = json?.get("episodes") as? List<Map<String, Any>>
 
-        val episodes = episodesJson?.map { ep ->
-            val epNum = (ep["episode"] as? Number)?.toInt() ?: 1
-            val epTitle = ep["title"]?.toString() ?: "Episodio $epNum"
-            val plot = ep["plot"]?.toString()
-            val thumb = ep["thumbnail"]?.toString()
+        if (!episodesJson.isNullOrEmpty()) {
+            val episodes = episodesJson.map { ep ->
+                val epNum = (ep["episode"] as? Number)?.toInt() ?: 1
+                val epTitle = ep["title"]?.toString() ?: "Episodio $epNum"
+                val plot = ep["plot"]?.toString()
+                val thumb = ep["thumbnail"]?.toString()
 
-            newEpisode("$url?ep=$epNum") {
-                this.name = epTitle
-                this.season = 1
-                this.episode = epNum
-                this.posterUrl = thumb
-                this.description = plot
+                newEpisode("$url?ep=$epNum") {
+                    this.name = epTitle
+                    this.season = 1
+                    this.episode = epNum
+                    this.posterUrl = thumb
+                    this.description = plot
+                }
             }
-        } ?: emptyList()
 
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+            }
+        }
+
+        // 3) FALLBACK HTML (Euphoria, The Boys, ecc.)
+        val htmlEpisodes = doc.select("#episodesList .ep-item")
+
+        if (htmlEpisodes.isNotEmpty()) {
+            val episodes = htmlEpisodes.map { ep ->
+                val epNum = ep.selectFirst(".ep-num")?.text()?.toIntOrNull() ?: 1
+                val epTitle = ep.selectFirst(".ep-name")?.text()?.trim() ?: "Episodio $epNum"
+                val epPlot = ep.selectFirst(".ep-plot")?.text()?.trim()
+                val epThumb = ep.selectFirst(".ep-thumb")?.attr("src")
+                val epRuntime = ep.selectFirst(".ep-runtime")?.text()
+
+                val href = ep.attr("href")
+                val epUrl = if (href.startsWith("/")) mainUrl + href else href
+
+                newEpisode(epUrl) {
+                    this.name = epTitle
+                    this.season = 1
+                    this.episode = epNum
+                    this.posterUrl = epThumb
+                    this.description = epPlot
+                    this.duration = epRuntime
+                }
+            }
+
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+            }
+        }
+
+        // Nessun episodio trovato
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, emptyList()) {
             this.posterUrl = poster
         }
     }
 
     // ---------------------------------------------------------
-    // PLAYER
+    // PLAYER (Vidxgo API)
     // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
@@ -182,8 +218,27 @@ class AltaDefinizioneProvider : MainAPI() {
         val doc = app.get(data).document
         val iframe = doc.selectFirst("iframe")?.attr("src") ?: return false
 
-        val finalUrl = iframe.replace("tt", "")
-        loadExtractor(finalUrl, data, subtitleCallback, callback)
+        val id = iframe.substringAfterLast("/").replace("tt", "")
+        val api = "https://v.vidxgo.co/api/source/$id"
+
+        val json = app.post(api).parsedSafe<Map<String, Any>>() ?: return false
+        val dataList = json["data"] as? List<Map<String, Any>> ?: return false
+
+        dataList.forEach { file ->
+            val url = file["file"]?.toString() ?: return@forEach
+            val quality = file["label"]?.toString() ?: "HD"
+
+            callback(
+                ExtractorLink(
+                    source = "Vidxgo",
+                    name = "Vidxgo $quality",
+                    url = url,
+                    referer = "https://v.vidxgo.co/",
+                    quality = getQualityFromName(quality),
+                    isM3u8 = url.endsWith(".m3u8")
+                )
+            )
+        }
 
         return true
     }
