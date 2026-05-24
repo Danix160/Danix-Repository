@@ -110,10 +110,6 @@ class AltaDefinizioneProvider : MainAPI() {
             .firstOrNull { it.text().contains("Genere:") }
             ?.select("a")?.map { it.text().trim() }
 
-        val director = doc.select("div.movie_entry-details .row")
-            .firstOrNull { it.text().contains("Regista:") }
-            ?.selectFirst(".cast")?.text()?.trim()
-
         val castList = doc.select("div.movie_entry-details .row")
             .firstOrNull { it.text().contains("Cast:") }
             ?.selectFirst(".cast")?.text()
@@ -128,7 +124,6 @@ class AltaDefinizioneProvider : MainAPI() {
             this.plot = plot
             if (year != null) this.year = year
             if (!genres.isNullOrEmpty()) this.tags = genres
-            if (director != null) this.director = director
             if (actors.isNotEmpty()) this.actors = actors
         }
     }
