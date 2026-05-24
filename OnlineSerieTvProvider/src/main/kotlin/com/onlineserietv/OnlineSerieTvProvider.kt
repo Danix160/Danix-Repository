@@ -352,7 +352,13 @@ class OnlineSerieTvProvider : MainAPI() {
 
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
-                this.plot = finalDescription
+                this.plot = buildString {
+                    append(finalDescription ?: "")
+                    if (!movieImdbId.isNullOrBlank()) {
+                        append("\nIMDB: $movieImdbId")
+                    }
+                }
+
 
                 if (movieRuntime != null && movieRuntime > 0) {
                     this.duration = movieRuntime
@@ -539,7 +545,13 @@ class OnlineSerieTvProvider : MainAPI() {
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
-            this.plot = finalDescription
+            this.plot = buildString {
+                append(finalDescription ?: "")
+                if (!seriesImdbId.isNullOrBlank()) {
+                    append("\nIMDB: $seriesImdbId")
+                }
+            }
+
 
             if (seriesYear != null) {
                 this.year = seriesYear
