@@ -375,10 +375,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     this.actors = movieCast!!
                 }
 
-                // ⭐ IMPORTANTE PER INTRODB
-                if (!movieImdbId.isNullOrBlank()) {
-                    this.imdbId = movieImdbId
-                }
             }
         }
 
@@ -561,11 +557,6 @@ class OnlineSerieTvProvider : MainAPI() {
 
             if (!seriesCast.isNullOrEmpty()) {
                 this.actors = seriesCast!!
-            }
-
-            // ⭐ IMPORTANTE PER INTRODB
-            if (!seriesImdbId.isNullOrBlank()) {
-                this.imdbId = seriesImdbId
             }
         }
     }
