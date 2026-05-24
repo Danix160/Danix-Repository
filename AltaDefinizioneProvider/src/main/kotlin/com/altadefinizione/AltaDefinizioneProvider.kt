@@ -30,12 +30,10 @@ class AltaDefinizioneProvider : MainAPI() {
             if (link.contains("/serie-tv/")) {
                 newTvSeriesSearchResponse(title, link, TvType.TvSeries) {
                     this.posterUrl = poster
-                    this.posterHeaders = headers
                 }
             } else {
                 newMovieSearchResponse(title, link, TvType.Movie) {
                     this.posterUrl = poster
-                    this.posterHeaders = headers
                 }
             }
         }
@@ -59,12 +57,10 @@ class AltaDefinizioneProvider : MainAPI() {
             if (link.contains("/serie-tv/")) {
                 newTvSeriesSearchResponse(title, link, TvType.TvSeries) {
                     this.posterUrl = poster
-                    this.posterHeaders = headers
                 }
             } else {
                 newMovieSearchResponse(title, link, TvType.Movie) {
                     this.posterUrl = poster
-                    this.posterHeaders = headers
                 }
             }
         }
@@ -90,7 +86,6 @@ class AltaDefinizioneProvider : MainAPI() {
 
         return newMovieLoadResponse(title, url, TvType.Movie, link) {
             this.posterUrl = poster
-            this.posterHeaders = headers
         }
     }
 
@@ -113,13 +108,11 @@ class AltaDefinizioneProvider : MainAPI() {
             episodes += newEpisode(link) {
                 this.name = "Episodio"
                 this.posterUrl = poster
-                this.posterHeaders = headers
             }
         }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
-            this.posterHeaders = headers
         }
     }
 
