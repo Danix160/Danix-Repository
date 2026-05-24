@@ -1,5 +1,6 @@
 package com.onlineserietv
 
+import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.ActorData
 import com.lagradost.cloudstream3.SearchResponse
@@ -352,31 +353,34 @@ class OnlineSerieTvProvider : MainAPI() {
             }
 
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = buildString {
-                    append(finalDescription ?: "")
-                    if (!movieImdbId.isNullOrBlank()) {
-                        append("\nIMDB: $movieImdbId")
+                    this.posterUrl = poster
+                    this.plot = buildString {
+                        append(finalDescription ?: "")
+                        if (!movieImdbId.isNullOrBlank()) {
+                            append("\nIMDB: $movieImdbId")
+                        }
+                    }
+                
+                    // ⭐ PATCH SKIP INTRO
+                    movieImdbId?.let { this.addImdbId(it) }
+                
+                    if (movieRuntime != null && movieRuntime > 0) {
+                        this.duration = movieRuntime
+                    }
+                
+                    if (!movieGenres.isNullOrEmpty()) {
+                        this.tags = movieGenres!!
+                    }
+                
+                    if (movieYear != null) {
+                        this.year = movieYear
+                    }
+                
+                    if (!movieCast.isNullOrEmpty()) {
+                        this.actors = movieCast!!
                     }
                 }
 
-                if (movieRuntime != null && movieRuntime > 0) {
-                    this.duration = movieRuntime
-                }
-
-                if (!movieGenres.isNullOrEmpty()) {
-                    this.tags = movieGenres!!
-                }
-
-                if (movieYear != null) {
-                    this.year = movieYear
-                }
-
-                if (!movieCast.isNullOrEmpty()) {
-                    this.actors = movieCast!!
-                }
-
-            }
         }
 
         // -----------------------------
@@ -541,26 +545,29 @@ class OnlineSerieTvProvider : MainAPI() {
         }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
-            this.posterUrl = poster
-            this.plot = buildString {
-                append(finalDescription ?: "")
-                if (!seriesImdbId.isNullOrBlank()) {
-                    append("\nIMDB: $seriesImdbId")
+                this.posterUrl = poster
+                this.plot = buildString {
+                    append(finalDescription ?: "")
+                    if (!seriesImdbId.isNullOrBlank()) {
+                        append("\nIMDB: $seriesImdbId")
+                    }
+                }
+            
+                // ⭐ PATCH SKIP INTRO
+                seriesImdbId?.let { this.addImdbId(it) }
+            
+                if (seriesYear != null) {
+                    this.year = seriesYear
+                }
+            
+                if (!seriesGenres.isNullOrEmpty()) {
+                    this.tags = seriesGenres!!
+                }
+            
+                if (!seriesCast.isNullOrEmpty()) {
+                    this.actors = seriesCast!!
                 }
             }
-
-            if (seriesYear != null) {
-                this.year = seriesYear
-            }
-
-            if (!seriesGenres.isNullOrEmpty()) {
-                this.tags = seriesGenres!!
-            }
-
-            if (!seriesCast.isNullOrEmpty()) {
-                this.actors = seriesCast!!
-            }
-        }
     }
 
     // -----------------------------
