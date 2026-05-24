@@ -179,7 +179,6 @@ class AltaDefinizioneProvider : MainAPI() {
                 val epTitle = ep.selectFirst(".ep-name")?.text()?.trim() ?: "Episodio $epNum"
                 val epPlot = ep.selectFirst(".ep-plot")?.text()?.trim()
                 val epThumb = ep.selectFirst(".ep-thumb")?.attr("src")
-                val epRuntime = ep.selectFirst(".ep-runtime")?.text()
 
                 val href = ep.attr("href")
                 val epUrl = if (href.startsWith("/")) mainUrl + href else href
@@ -190,7 +189,6 @@ class AltaDefinizioneProvider : MainAPI() {
                     this.episode = epNum
                     this.posterUrl = epThumb
                     this.description = epPlot
-                    this.duration = epRuntime
                 }
             }
 
@@ -229,14 +227,14 @@ class AltaDefinizioneProvider : MainAPI() {
             val quality = file["label"]?.toString() ?: "HD"
 
             callback(
-                ExtractorLink(
-                    source = "Vidxgo",
-                    name = "Vidxgo $quality",
-                    url = url,
-                    referer = "https://v.vidxgo.co/",
-                    quality = getQualityFromName(quality),
-                    isM3u8 = url.endsWith(".m3u8")
-                )
+                newExtractorLink {
+                    this.source = "Vidxgo"
+                    this.name = "Vidxgo $quality"
+                    this.url = url
+                    this.referer = "https://v.vidxgo.co/"
+                    this.quality = getQualityFromName(quality)
+                    this.isM3u8 = url.endsWith(".m3u8")
+                }
             )
         }
 
