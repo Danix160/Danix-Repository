@@ -359,7 +359,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     }
                 }
 
-
                 if (movieRuntime != null && movieRuntime > 0) {
                     this.duration = movieRuntime
                 }
@@ -551,7 +550,6 @@ class OnlineSerieTvProvider : MainAPI() {
                     append("\nIMDB: $seriesImdbId")
                 }
             }
-
 
             if (seriesYear != null) {
                 this.year = seriesYear
