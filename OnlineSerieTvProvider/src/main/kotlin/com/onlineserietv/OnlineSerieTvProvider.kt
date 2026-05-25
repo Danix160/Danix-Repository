@@ -134,11 +134,14 @@ private fun cleanTitle(title: String): String {
         .replace(" in streaming - OnlineSerieTv", "")
         .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
         .replace("(?i)serie animata".toRegex(), "")
-        .replace("""\s*[\(
+        .replace(
+            """\s*[\(
 
 \[\-]?\s*(19|20)\d{2}\s*[\)\]
 
-\-]?\s*""".toRegex(), " ")
+\-]?\s*""".toRegex(),
+            " "
+        )
         .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
         .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
         .trim()
@@ -288,9 +291,8 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
-    // ANISKIP
+    // ANISKIP (usato solo per check, non per trama)
     // -----------------------------
-
     private suspend fun hasAniSkip(imdbId: String, season: Int, episode: Int): Boolean {
         return try {
             val url = "https://api.aniskip.com/v2/skip-times/$imdbId/$season/$episode?types=op,ed,recap"
@@ -371,34 +373,28 @@ class OnlineSerieTvProvider : MainAPI() {
             }
 
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                    this.posterUrl = poster
-                    this.plot = buildString {
-                        append(finalDescription ?: "")
-                        if (!movieImdbId.isNullOrBlank()) {
-                            append("\nIMDB: $movieImdbId")
-                        }
-                    }
-                
-                    // ⭐ PATCH SKIP INTRO
-                    movieImdbId?.let { this.addImdbId(it) }
-                
-                    if (movieRuntime != null && movieRuntime > 0) {
-                        this.duration = movieRuntime
-                    }
-                
-                    if (!movieGenres.isNullOrEmpty()) {
-                        this.tags = movieGenres!!
-                    }
-                
-                    if (movieYear != null) {
-                        this.year = movieYear
-                    }
-                
-                    if (!movieCast.isNullOrEmpty()) {
-                        this.actors = movieCast!!
-                    }
+                this.posterUrl = poster
+                this.plot = finalDescription
+
+                // IMDb per skip (IntroDB / future integrazioni)
+                movieImdbId?.let { this.addImdbId(it) }
+
+                if (movieRuntime != null && movieRuntime > 0) {
+                    this.duration = movieRuntime
                 }
 
+                if (!movieGenres.isNullOrEmpty()) {
+                    this.tags = movieGenres!!
+                }
+
+                if (movieYear != null) {
+                    this.year = movieYear
+                }
+
+                if (!movieCast.isNullOrEmpty()) {
+                    this.actors = movieCast!!
+                }
+            }
         }
 
         // -----------------------------
@@ -563,43 +559,26 @@ class OnlineSerieTvProvider : MainAPI() {
         }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
-                this.posterUrl = poster
-                this.plot = buildString {
-                    append(finalDescription ?: "")
-                    if (!seriesImdbId.isNullOrBlank()) {
-                        append("\nIMDB: $seriesImdbId")
-                    }
-                }
-            
-                // ⭐ PATCH SKIP INTRO (AniSkip + IntroDB fallback)
+            this.posterUrl = poster
+            this.plot = finalDescription
+
+            // IMDb per skip (IntroDB / AniSkip / future integrazioni)
             seriesImdbId?.let { imdb ->
-                    this.addImdbId(imdb)
-
-                // Controllo AniSkip solo sul primo episodio
-            val firstEp = episodesList.firstOrNull()
-                if (firstEp != null) {
-                val season = firstEp.season ?: 1
-                val ep = firstEp.episode ?: 1
-
-                if (hasAniSkip(imdb, season, ep)) {
-                    this.plot = (this.plot ?: "") + "\n\n[AniSkip disponibile]"
-                        } else {
-                    this.plot = (this.plot ?: "") + "\n\n[AniSkip non disponibile → fallback IntroDB]"
-                }
+                this.addImdbId(imdb)
             }
-    }        
-                if (seriesYear != null) {
-                    this.year = seriesYear
-                }
-            
-                if (!seriesGenres.isNullOrEmpty()) {
-                    this.tags = seriesGenres!!
-                }
-            
-                if (!seriesCast.isNullOrEmpty()) {
-                    this.actors = seriesCast!!
-                }
+
+            if (seriesYear != null) {
+                this.year = seriesYear
             }
+
+            if (!seriesGenres.isNullOrEmpty()) {
+                this.tags = seriesGenres!!
+            }
+
+            if (!seriesCast.isNullOrEmpty()) {
+                this.actors = seriesCast!!
+            }
+        }
     }
 
     // -----------------------------
