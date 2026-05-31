@@ -33,8 +33,9 @@ class LoonexProvider : MainAPI() {
 
         doc.select(".scroller-item").forEach { item ->
             val a = item.selectFirst("a") ?: return@forEach
-            val url = a.attr("href")
-            val fullUrl = "$mainUrl/$url"
+            val relative = a.attr("href")
+            val fullUrl = "$mainUrl/$relative"
+
             val title = cleanTitle(item.selectFirst(".card-title-cine")?.text() ?: return@forEach)
             val poster = item.selectFirst("img")?.attr("src")
 
@@ -60,13 +61,14 @@ class LoonexProvider : MainAPI() {
 
         doc.select(".scroller-item").forEach { item ->
             val a = item.selectFirst("a") ?: return@forEach
-            val url2 = "$mainUrl/${a.attr("href")}"
+            val fullUrl = "$mainUrl/${a.attr("href")}"
+
             val title = cleanTitle(item.selectFirst(".card-title-cine")?.text() ?: return@forEach)
             val poster = item.selectFirst("img")?.attr("src")
             val isMovie = item.selectFirst(".movie-badge") != null
 
             list.add(
-                newMovieSearchResponse(title, url2, if (isMovie) TvType.Movie else TvType.TvSeries) {
+                newMovieSearchResponse(title, fullUrl, if (isMovie) TvType.Movie else TvType.TvSeries) {
                     this.posterUrl = poster
                 }
             )
@@ -81,9 +83,10 @@ class LoonexProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
 
-        val rawTitle = doc.selectFirst("h1, .cartoon-title-logo")?.attr("title")
-            ?: doc.selectFirst("h1")?.text()
-            ?: "Senza titolo"
+        val rawTitle =
+            doc.selectFirst(".cartoon-title-logo")?.attr("title")
+                ?: doc.selectFirst("h1")?.text()
+                ?: "Senza titolo"
 
         val title = cleanTitle(rawTitle)
 
@@ -93,7 +96,7 @@ class LoonexProvider : MainAPI() {
         val plot = doc.selectFirst(".text-secondary")?.text()
 
         // -----------------------------
-        // FILM (ha un solo pulsante GUARDA)
+        // FILM
         // -----------------------------
         val filmLink = doc.selectFirst("a[href*=/guarda/?id=]")?.attr("href")
         val isMovie = doc.select("h3:contains(Riproduci Film)").isNotEmpty()
@@ -106,7 +109,7 @@ class LoonexProvider : MainAPI() {
         }
 
         // -----------------------------
-        // SERIE (episodi in tab stagioni)
+        // SERIE
         // -----------------------------
         val episodes = mutableListOf<Episode>()
 
@@ -140,7 +143,6 @@ class LoonexProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        // Loonex usa link diretti o redirect → basta passarli a loadExtractor
         loadExtractor(data, mainUrl, subtitleCallback, callback)
         return true
     }
