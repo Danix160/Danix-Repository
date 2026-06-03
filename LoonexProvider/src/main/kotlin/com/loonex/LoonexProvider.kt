@@ -108,30 +108,40 @@ class LoonexProvider : MainAPI() {
             }
         }
 
-        // -----------------------------
-        // SERIE
-        // -----------------------------
-        val episodes = mutableListOf<Episode>()
+// -----------------------------
+// SERIE (stagione 0 per tutto ciò che non è "Stagione X")
+// -----------------------------
+val episodes = mutableListOf<Episode>()
 
-        doc.select(".tab-pane").forEach { tab ->
-            tab.select(".episode-row").forEach { row ->
-                val epTitle = row.selectFirst(".episode-title")?.text() ?: "Episodio"
-                val link = row.selectFirst("a[href]")?.attr("href") ?: return@forEach
+doc.select(".tab-pane").forEach { tab ->
+    // Legge il titolo della sezione (es. "Stai guardando: Speciali TV")
+    val sectionTitle = tab.selectFirst("h5")?.text()?.trim() ?: ""
 
-                episodes.add(
-                    newEpisode(link) {
-                        this.name = cleanTitle(epTitle)
-                        this.posterUrl = poster
-                    }
-                )
+    // Determina la stagione:
+    // - Se contiene "Stagione X" → usa X
+    // - Altrimenti → stagione 0 (speciali, film vari, extra, ecc.)
+    val seasonNumber =
+        Regex("""Stagione\s+(\d+)""", RegexOption.IGNORE_CASE)
+            .find(sectionTitle)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: 0  // default → speciali
+
+    tab.select(".episode-row").forEach { row ->
+        val epTitle = row.selectFirst(".episode-title")?.text() ?: "Episodio"
+        val link = row.selectFirst("a[href]")?.attr("href") ?: return@forEach
+
+        episodes.add(
+            newEpisode(link) {
+                this.name = cleanTitle(epTitle)
+                this.season = seasonNumber
+                this.posterUrl = poster
             }
-        }
-
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-            this.posterUrl = poster
-            this.plot = plot
-        }
+        )
     }
+  }
+}
 
     // -----------------------------
     // LOAD LINKS
