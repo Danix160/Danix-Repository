@@ -3,6 +3,10 @@ package com.altadefinizione
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Element
 
 class AltaDefinizioneProvider : MainAPI() {
