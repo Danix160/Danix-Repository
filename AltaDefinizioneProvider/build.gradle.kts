@@ -1,21 +1,4 @@
-plugins {
-    id("com.android.library") version "8.7.3"
-    kotlin("android") version "2.1.0"
-    id("cloudstream")
-}
-
 android {
-    namespace = "com.altadefinizione"
-    compileSdk = 34
-
-    defaultConfig {
-        minSdk = 21
-    }
-
-    buildFeatures {
-        buildConfig = false
-    }
-
     kotlinOptions {
         jvmTarget = "1.8"
         freeCompilerArgs = freeCompilerArgs + "-Xskip-metadata-version-check"
