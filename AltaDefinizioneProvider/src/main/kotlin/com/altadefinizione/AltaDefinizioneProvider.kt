@@ -36,7 +36,7 @@ class AltaDefinizioneProvider : MainAPI() {
         }
 
         // FIX RIGA 38: Usiamo l'helper corretto al posto del costruttore deprecato
-        return newHomePageResponse(this.name, homePageList)
+        return newHomePageResponse(homePageList)
     }
 
     private fun parseCard(card: Element): SearchResponse? {
