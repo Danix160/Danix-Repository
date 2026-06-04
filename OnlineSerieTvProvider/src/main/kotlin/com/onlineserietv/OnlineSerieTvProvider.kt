@@ -48,7 +48,7 @@ suspend fun MainAPI.tmdbSearch(title: String, isMovie: Boolean, year: Int?): Tmd
     }
 
     val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return null
-    val results = json["results"] as? List<Map<String, Any>> ?: return null
+    val results = (json["results"] as? List<*>)?.filterIsInstance<Map<String, Any>>() ?: return null
 
     val filtered = if (year != null) {
         results.firstOrNull { r ->
@@ -76,11 +76,10 @@ suspend fun MainAPI.tmdbSearch(title: String, isMovie: Boolean, year: Int?): Tmd
 // TMDB: TUTTA LA STAGIONE
 // -----------------------------
 suspend fun MainAPI.getTmdbSeason(tvId: Int, season: Int): Map<Int, TmdbEpisodeInfo> {
-    val url =
-        "https://api.themoviedb.org/3/tv/$tvId/season/$season?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
+    val url = "https://api.themoviedb.org/3/tv/$tvId/season/$season?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
 
     val json = app.get(url).parsedSafe<Map<String, Any>>() ?: return emptyMap()
-    val eps = json["episodes"] as? List<Map<String, Any>> ?: return emptyMap()
+    val eps = (json["episodes"] as? List<*>)?.filterIsInstance<Map<String, Any>>() ?: return emptyMap()
 
     return eps.associate { ep ->
         val num = (ep["episode_number"] as Number).toInt()
@@ -108,40 +107,25 @@ private fun fixApostrophes(title: String): String {
 
 private fun fixSpecialCases(title: String): String {
     var t = title
-
     t = t.replace("(?i)pokemon".toRegex(), "Pokémon")
         .replace("(?i)pokèmon".toRegex(), "Pokémon")
         .replace("(?i)pokè mon".toRegex(), "Pokémon")
         .replace("(?i)poke mon".toRegex(), "Pokémon")
-
     return t
 }
 
 private fun cleanTitle(title: String): String {
     var cleaned = title
-
-        // Rimuove SUB ITA in tutte le varianti
         .replace("(?i)\\bSUB\\s*[- ]?\\s*ITA\\b".toRegex(), "")
         .replace("(?i)\\bSUBITA\\b".toRegex(), "")
         .replace("(?i)\\bSUB-ITA\\b".toRegex(), "")
         .replace("(?i)\\bSUB IT\\b".toRegex(), "")
         .replace("(?i)\\bSUB-IT\\b".toRegex(), "")
-
-        // Rimuove eventuali doppie spaziature
         .replace("""\s+""".toRegex(), " ")
-
-        // Rimuove anno, parentesi, tag inutili
         .replace(" in streaming - OnlineSerieTv", "")
         .replace("(?i)\\b(ITA|STAGIONE \\d+|STAGIONE)\\b".toRegex(), "")
         .replace("(?i)serie animata".toRegex(), "")
-        .replace(
-            """\s*[\(
-
-\[\-]?\s*(19|20)\d{2}\s*[\)\]
-
-\-]?\s*""".toRegex(),
-            " "
-        )
+        .replace("""\s*[\( \[\-]?\s*(19|20)\d{2}\s*[\)\] \-]?\s*""".toRegex(), " ")
         .replace("""\s*[-–—:|]+\s*$""".toRegex(), "")
         .replace("""^\s*[-–—:|]+\s*""".toRegex(), "")
         .trim()
@@ -291,7 +275,7 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     // -----------------------------
-    // ANISKIP (usato solo per check, non per trama)
+    // ANISKIP
     // -----------------------------
     private suspend fun hasAniSkip(imdbId: String, season: Int, episode: Int): Boolean {
         return try {
@@ -328,7 +312,6 @@ class OnlineSerieTvProvider : MainAPI() {
         // FILM
         // -----------------------------
         if (isMovie) {
-
             var movieRuntime: Int? = null
             var movieGenres: List<String>? = null
             var movieYear: Int? = null
@@ -342,7 +325,7 @@ class OnlineSerieTvProvider : MainAPI() {
 
                 movieRuntime = (movieDetails?.get("runtime") as? Number)?.toInt()
 
-                val genresList = movieDetails?.get("genres") as? List<Map<String, Any>>
+                val genresList = (movieDetails?.get("genres") as? List<*>)?.filterIsInstance<Map<String, Any>>()
                 movieGenres = genresList?.map { it["name"].toString() }
 
                 movieYear = (movieDetails?.get("release_date") as? String)
@@ -356,7 +339,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     "https://api.themoviedb.org/3/movie/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
                 ).parsedSafe<Map<String, Any>>()
 
-                movieCast = (movieCredits?.get("cast") as? List<Map<String, Any>>)
+                movieCast = (movieCredits?.get("cast") as? List<*>)?.filterIsInstance<Map<String, Any>>()
                     ?.take(10)
                     ?.map {
                         val actor = Actor(
@@ -376,7 +359,6 @@ class OnlineSerieTvProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = finalDescription
 
-                // IMDb per skip (IntroDB / future integrazioni)
                 movieImdbId?.let { this.addImdbId(it) }
 
                 if (movieRuntime != null && movieRuntime > 0) {
@@ -384,7 +366,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 }
 
                 if (!movieGenres.isNullOrEmpty()) {
-                    this.tags = movieGenres!!
+                    this.tags = movieGenres
                 }
 
                 if (movieYear != null) {
@@ -392,7 +374,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 }
 
                 if (!movieCast.isNullOrEmpty()) {
-                    this.actors = movieCast!!
+                    this.actors = movieCast
                 }
             }
         }
@@ -419,10 +401,10 @@ class OnlineSerieTvProvider : MainAPI() {
                 ?.take(4)
                 ?.toIntOrNull()
 
-            seriesGenres = (tmdbShow?.get("genres") as? List<Map<String, Any>>)
-                ?.map { it["name"].toString() }
+            val sGenresList = (tmdbShow?.get("genres") as? List<*>)?.filterIsInstance<Map<String, Any>>()
+            seriesGenres = sGenresList?.map { it["name"].toString() }
 
-            val externalIds = tmdbShow?.get("external_ids") as? Map<String, Any>
+            val externalIds = tmdbShow?.get("external_ids") as? Map<*, *>
             seriesImdbId = externalIds?.get("imdb_id") as? String
             println("DEBUG OSTV — SERIES IMDB: $seriesImdbId")
 
@@ -430,7 +412,7 @@ class OnlineSerieTvProvider : MainAPI() {
                 "https://api.themoviedb.org/3/tv/${tmdb.id}/credits?api_key=e541cb159df14ce70fc51ab75703a1a2&language=it-IT"
             ).parsedSafe<Map<String, Any>>()
 
-            seriesCast = (seriesCredits?.get("cast") as? List<Map<String, Any>>)
+            seriesCast = (seriesCredits?.get("cast") as? List<*>)?.filterIsInstance<Map<String, Any>>()
                 ?.take(10)
                 ?.map {
                     val actor = Actor(
@@ -445,11 +427,11 @@ class OnlineSerieTvProvider : MainAPI() {
                     )
                 }
 
-            val seasons = tmdbShow?.get("seasons") as? List<Map<String, Any>>
+            val seasons = (tmdbShow?.get("seasons") as? List<*>)?.filterIsInstance<Map<String, Any>>()
             if (seasons != null) {
                 tmdbSeasonsInfo = seasons
-                    .filter { (it["season_number"] as Number).toInt() > 0 }
-                    .sortedBy { (it["season_number"] as Number).toInt() }
+                    .filter { ((it["season_number"] as? Number)?.toInt() ?: 0) > 0 }
+                    .sortedBy { (it["season_number"] as? Number)?.toInt() ?: 0 }
                     .map {
                         val sn = (it["season_number"] as Number).toInt()
                         val epCount = (it["episode_count"] as Number).toInt()
@@ -457,7 +439,7 @@ class OnlineSerieTvProvider : MainAPI() {
                     }
             }
 
-            val runtimes = tmdbShow?.get("episode_run_time") as? List<Int>
+            val runtimes = (tmdbShow?.get("episode_run_time") as? List<*>)?.filterIsInstance<Int>()
             defaultRuntime = runtimes?.firstOrNull()
         }
 
@@ -474,8 +456,7 @@ class OnlineSerieTvProvider : MainAPI() {
         var globalIndex = 0
 
         rows.forEach { row ->
-
-            val maxStreamLink = row.select("a[href*=/msf/]").firstOrNull()
+            val maxStreamLink = row.select("a[href*=/msf/ ]").firstOrNull() ?: row.select("a[href*=/msf/]").firstOrNull()
             if (maxStreamLink == null) return@forEach
 
             val fullText = row.selectFirst("td")?.text() ?: ""
@@ -492,7 +473,6 @@ class OnlineSerieTvProvider : MainAPI() {
             var epInSeason = siteEpisode
 
             if (tmdbSeasonsInfo.isNotEmpty()) {
-
                 if (siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
                     var remaining = globalIndex
                     var mapped = false
@@ -511,19 +491,11 @@ class OnlineSerieTvProvider : MainAPI() {
                         seasonNumber = siteSeason
                         epInSeason = siteEpisode
                     }
-
                 } else {
-
                     val tmdbSeason = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
-
                     if (tmdbSeason != null) {
-                        if (siteEpisode <= tmdbSeason.second) {
-                            seasonNumber = siteSeason
-                            epInSeason = siteEpisode
-                        } else {
-                            seasonNumber = siteSeason
-                            epInSeason = siteEpisode
-                        }
+                        seasonNumber = siteSeason
+                        epInSeason = siteEpisode
                     } else {
                         seasonNumber = siteSeason
                         epInSeason = siteEpisode
@@ -562,7 +534,6 @@ class OnlineSerieTvProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = finalDescription
 
-            // IMDb per skip (IntroDB / AniSkip / future integrazioni)
             seriesImdbId?.let { imdb ->
                 this.addImdbId(imdb)
             }
@@ -572,11 +543,11 @@ class OnlineSerieTvProvider : MainAPI() {
             }
 
             if (!seriesGenres.isNullOrEmpty()) {
-                this.tags = seriesGenres!!
+                this.tags = seriesGenres
             }
 
             if (!seriesCast.isNullOrEmpty()) {
-                this.actors = seriesCast!!
+                this.actors = seriesCast
             }
         }
     }
