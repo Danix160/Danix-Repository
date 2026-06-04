@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.library")
-    kotlin("android")
+    id("com.android.library") version "8.7.3"
+    kotlin("android") version "2.1.0"
     id("cloudstream")
 }
 
@@ -34,5 +34,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries")
     requiresResources = false
     language = "it"
-    iconUrl = "https://altadefinizione-01.forum/templates/Darktemplate_pagespeed/images/logo.png"
+    iconUrl = "https://altadefinizione-01.forum/templates/Darktemplate/images/logo.png"
 }
