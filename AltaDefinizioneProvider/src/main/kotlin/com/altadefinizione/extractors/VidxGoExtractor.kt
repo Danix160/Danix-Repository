@@ -1,10 +1,10 @@
 package com.altadefinizione.extractors
 
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.extractors.ExtractorApi
 import com.lagradost.cloudstream3.extractors.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.USER_AGENT
-import com.lagradost.cloudstream3.app
 
 class VidxGoExtractor : ExtractorApi() {
     override val name = "VidxGo"
