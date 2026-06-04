@@ -1,88 +1,87 @@
 package com.altadefinizione
 
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
-import org.jsoup.nodes.Element
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.app
 
 class AltaDefinizioneProvider : MainAPI() {
     override var mainUrl = "https://altadefinizione-01.forum"
     override var name = "AltaDefinizione"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "it"
-    override val hasMainPage = true
+   override val hasMainPage = true
 
-    override suspend fun getMainPage(page: Int, request: HomePageRequest): HomePageList? {
-    // Carichiamo l'HTML della home (valido solo per la pagina 1, dato che i caroselli di solito cambiano o spariscono nelle pagine successive)
-    val document = app.get(mainUrl).document
-    val homePageList = mutableListOf<HomePageRequestData>()
+    // Nella vecchia firma l'override corretto restituisce un HomePageResponse (o List<HomePageResponse> a seconda dell'SDK)
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        val document = app.get(mainUrl).document
+        val homePageList = mutableListOf<HomePageResponse>()
 
-    // 1. Lista "Al Cinema Ora" (Estratta dal carosello dello Slider)
-    val sliderItems = document.select("div#slider div.boxgrid")
-    if (sliderItems.isNotEmpty()) {
-        val sliderResults = sliderItems.mapNotNull { card ->
-            parseCard(card)
+        // 1. Carosello "Al Cinema Ora"
+        val sliderItems = document.select("div#slider div.boxgrid")
+        if (sliderItems.isNotEmpty()) {
+            val sliderResults = sliderItems.mapNotNull { card ->
+                parseCard(card)
+            }
+            if (sliderResults.isNotEmpty()) {
+                homePageList.add(HomePageResponse("Al Cinema Ora", sliderResults))
+            }
         }
-        if (sliderResults.isNotEmpty()) {
-            homePageList.add(HomePageRequestData("Al Cinema Ora", sliderResults, isMainEntries = true))
+
+        // 2. Griglia "Ultimi Arrivi"
+        val gridItems = document.select("div.son_eklenen div.boxgrid:not(.slidercaprion)")
+        if (gridItems.isNotEmpty()) {
+            val gridResults = gridItems.mapNotNull { card ->
+                parseCard(card)
+            }
+            if (gridResults.isNotEmpty()) {
+                homePageList.add(HomePageResponse("Ultimi Arrivi", gridResults))
+            }
         }
+
+        // Restituisce direttamente la lista se l'SDK prevede List<HomePageResponse>, 
+        // oppure passalo all'istanza corretta se l'SDK richiede l'incapsulamento.
+        return HomePageResponse(homePageList)
     }
 
-    // 2. Lista "Ultimi Film Aggiunti" (La griglia standard sotto lo slider)
-    // Se la griglia principale usa gli stessi nodi 'div.boxgrid' ma FUORI da 'div#slider'
-    val gridItems = document.select("div.son_eklenen div.boxgrid:not(.slidercaprion)")
-    // Nota: Se fuori dal carosello usano classi diverse, adatta il selettore (es. "div.boxgrid:not(#slider div.boxgrid)")
-    if (gridItems.isNotEmpty()) {
-        val gridResults = gridItems.mapNotNull { card ->
-            parseCard(card)
-        }
-        if (gridResults.isNotEmpty()) {
-            homePageList.add(HomePageRequestData("Ultimi Arrivi", gridResults, isMainEntries = false))
-        }
-    }
-
-    return newHomePageList(homePageList, false)
-}
     private fun parseCard(card: org.jsoup.nodes.Element): SearchResponse? {
-    // Estrazione Titolo e URL (il tag può essere h2 o h3 a seconda del CSS, cerchiamo l'anchor direttamente nella maschera)
-    val titleElement = card.selectFirst(".ml-mask h3 a, .ml-mask h2 a, h2 a, h3 a")
-    val title = titleElement?.text()?.trim() ?: return null
-    val url = titleElement.attr("href") ?: return null
+        val titleElement = card.selectFirst(".ml-mask h3 a, .ml-mask h2 a, h2 a, h3 a")
+        val title = titleElement?.text()?.trim() ?: return null
+        val url = titleElement.attr("href") ?: return null
 
-    // Gestione Immagine (Lazyload)
-    val imgElement = card.selectFirst("img")
-    val posterRaw = imgElement?.attr("data-src")?.ifBlank { imgElement.attr("src") } ?: ""
-    val posterUrl = fixUrl(posterRaw)
+        val imgElement = card.selectFirst("img")
+        val posterRaw = imgElement?.attr("data-src")?.ifBlank { imgElement.attr("src") } ?: ""
+        val posterUrl = fixUrl(posterRaw)
 
-    // Riconoscimento automatico tra Film e Serie TV
-    // Nel tuo HTML, tag come "Spider-Noir" o "Euphoria" hanno il genere <a href=".../serie-tv/">Serie TV</a>
-    val genres = card.select(".ml-cat a").map { it.text().lowercase() }
-    val isSerie = genres.contains("serie tv") || card.selectFirst(".se_num") != null
-    val type = if (isSerie) TvType.TvSeries else TvType.Movie
+        val genres = card.select(".ml-cat a").map { it.text().lowercase() }
+        val isSerie = genres.contains("serie tv") || card.selectFirst(".se_num") != null
+        val type = if (isSerie) TvType.TvSeries else TvType.Movie
 
-    // Estrazione del voto (es: 7.9)
-    val ratingRaw = card.selectFirst(".ml-imdb b")?.text()?.trim()
-    val rating = ratingRaw?.toRatingInt()
+        // FIX RATING DEPRECATO: Calcoliamo il punteggio su base 1000 usando l'API corretta (score)
+        val ratingRaw = card.selectFirst(".ml-imdb b")?.text()?.trim()
+        val floatRating = ratingRaw?.toFloatOrNull()
+        val calculatedScore = if (floatRating != null) (floatRating * 100).toInt() else null
 
-    // Estrazione della qualità (se presente, altrimenti default HD)
-    val qualityRaw = card.selectFirst(".trdublaj")?.text()?.trim() ?: "HD"
-    val quality = getQualityFromString(qualityRaw)
+        val qualityRaw = card.selectFirst(".trdublaj")?.text()?.trim() ?: "HD"
+        val quality = getQualityFromString(qualityRaw)
 
-    // Creazione della SearchResponse corretta per CloudStream
-    return if (type == TvType.TvSeries) {
-        newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
-            this.posterUrl = posterUrl
-            this.rating = rating
-            this.quality = quality
-        }
-    } else {
-        newMovieSearchResponse(title, url, TvType.Movie) {
-            this.posterUrl = posterUrl
-            this.rating = rating
-            this.quality = quality
+        return if (type == TvType.TvSeries) {
+            newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
+                this.posterUrl = posterUrl
+                this.score = calculatedScore // Sostituito .rating con .score richiesto dal nuovo compiler
+                this.quality = quality
+            }
+        } else {
+            newMovieSearchResponse(title, url, TvType.Movie) {
+                this.posterUrl = posterUrl
+                this.score = calculatedScore // Sostituito .rating con .score richiesto dal nuovo compiler
+                this.quality = quality
+            }
         }
     }
-}
 
     // 2. RICERCA
     override suspend fun search(query: String): List<SearchResponse> {
