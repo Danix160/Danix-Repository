@@ -7,12 +7,12 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+        maven("https://repo.cloudstream.cf/releases")
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.1.1")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        classpath("com.lagradost.cloudstream3:gradle:0.0.1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
     }
 }
@@ -21,7 +21,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+        maven("https://repo.cloudstream.cf/releases")
     }
 }
 
