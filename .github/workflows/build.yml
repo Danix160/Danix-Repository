@@ -42,17 +42,19 @@ jobs:
 
       - name: Build Plugins
         run: |
-          ./gradlew make --refresh-dependencies
+          # 1. Entriamo prima nella cartella corretta
           cd $GITHUB_WORKSPACE/src
-           chmod +x gradlew
-          ./gradlew clean :ToonItaliaProvider:make
-          # Eseguiamo il build e la creazione del JSON
-          ./gradlew make makePluginsJson --stacktrace
           
-          # Copia intelligente: cerca tutti i file .cs3 ovunque siano e li mette in builds
+          # 2. Diamo i permessi di esecuzione allo script di Gradle
+          chmod +x gradlew
+          
+          # 3. Puliamo ed eseguiamo la build forzando l'aggiornamento delle dipendenze (Opzione B)
+          ./gradlew clean make makePluginsJson --refresh-dependencies --stacktrace
+          
+          # 4. Copia intelligente: cerca tutti i file .cs3 ovunque siano e li mette in builds
           find . -name "*.cs3" -exec cp {} $GITHUB_WORKSPACE/builds/ \;
           
-          # Copia il plugins.json (di solito sta nella root della build o in build/)
+          # 5. Copia il plugins.json (di solito sta nella root della build o in build/)
           cp build/plugins.json $GITHUB_WORKSPACE/builds/ || cp plugins.json $GITHUB_WORKSPACE/builds/ || true
 
       - name: Push builds
@@ -61,6 +63,5 @@ jobs:
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           git add .
-          # Il commit --amend pulisce la cronologia, --allow-empty evita errori
           git commit -m "Build $GITHUB_SHA" || exit 0
           git push --force origin builds
