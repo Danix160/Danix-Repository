@@ -73,10 +73,10 @@ class VidxGoExtractor : ExtractorApi() {
         )
 
         if (isM3u8) {
-            // Utilizzo esplicito dei parametri nominali corretti dell'SDK di CloudStream per evitare conflitti di signature
+            // Corretto il nome del parametro in 'source' per l'SDK aggiornato
             M3u8Helper.generateM3u8(
                 name = this.name,
-                streamUrl = videoUrl, // Forzato in modo esplicito come richiesto dal compilatore
+                source = videoUrl,
                 referer = refererUrl,
                 headers = playbackHeaders
             ).forEach { link ->
