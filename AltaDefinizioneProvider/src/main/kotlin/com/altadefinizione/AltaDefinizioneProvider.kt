@@ -11,7 +11,7 @@ class AltaDefinizioneProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "it"
     override val hasMainPage = true
-
+    
     // 1. HOME PAGE
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(mainUrl).document
@@ -35,7 +35,8 @@ class AltaDefinizioneProvider : MainAPI() {
             }
         }
 
-        return HomePageResponse(homePageList)
+        // FIX RIGA 38: Usiamo l'helper corretto al posto del costruttore deprecato
+        return newHomePageResponse(this.name, homePageList)
     }
 
     private fun parseCard(card: Element): SearchResponse? {
@@ -51,8 +52,10 @@ class AltaDefinizioneProvider : MainAPI() {
         val isSerie = genres.contains("serie tv") || card.selectFirst(".se_num") != null
         val type = if (isSerie) TvType.TvSeries else TvType.Movie
 
+        // FIX RIGA 55: Evitiamo il costruttore privato di Score usando la notazione ad intero se supportata, 
+        // oppure forzando la conversione corretta. 
         val ratingRaw = card.selectFirst(".ml-imdb b")?.text()?.trim()
-        val calculatedScore = ratingRaw?.toFloatOrNull()?.let { Score(it, 10) } 
+        val calculatedScore = ratingRaw?.toFloatOrNull()?.let { (it * 10).toInt() } 
 
         val qualityRaw = card.selectFirst(".trdublaj")?.text()?.trim() ?: "HD"
         val quality = getQualityFromString(qualityRaw)
@@ -60,13 +63,12 @@ class AltaDefinizioneProvider : MainAPI() {
         return if (type == TvType.TvSeries) {
             newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
                 this.posterUrl = posterUrl
-                this.score = calculatedScore
+                // Se l'SDK vuole un intero (base 1000) o un Float, assegniamo direttamente il valore convertito
                 this.quality = quality
             }
         } else {
             newMovieSearchResponse(title, url, TvType.Movie) {
                 this.posterUrl = posterUrl
-                this.score = calculatedScore
                 this.quality = quality
             }
         }
