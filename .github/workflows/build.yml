@@ -42,6 +42,7 @@ jobs:
 
       - name: Build Plugins
         run: |
+          ./gradlew make --refresh-dependencies
           cd $GITHUB_WORKSPACE/src
            chmod +x gradlew
           ./gradlew clean :ToonItaliaProvider:make
