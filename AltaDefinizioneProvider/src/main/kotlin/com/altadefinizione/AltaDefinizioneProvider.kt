@@ -3,10 +3,6 @@ package com.altadefinizione
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.newTvSeriesSearchResponse
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.TvType
 import org.jsoup.nodes.Element
 
 class AltaDefinizioneProvider : MainAPI() {
@@ -16,7 +12,7 @@ class AltaDefinizioneProvider : MainAPI() {
     override var lang = "it"
     override val hasMainPage = true
 
-    // 1. HOME PAGE
+    // 1. HOME PAGE (Risolto l'errore newHomePageResponse)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(mainUrl).document
         val homePages = mutableListOf<HomePageList>()
@@ -29,7 +25,7 @@ class AltaDefinizioneProvider : MainAPI() {
             homePages.add(HomePageList("Ultime Uscite", items))
         }
 
-        return HomePageResponse(homePages, hasNext = false)
+        return newHomePageResponse(homePages, hasNext = false)
     }
 
     // 2. RICERCA
@@ -42,7 +38,7 @@ class AltaDefinizioneProvider : MainAPI() {
         }
     }
 
-    // 3. DETTAGLI DELLA PAGINA (LOAD)
+    // 3. DETTAGLI DELLA PAGINA (Risolto l'errore newEpisode)
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
@@ -58,11 +54,12 @@ class AltaDefinizioneProvider : MainAPI() {
             document.select(".episode-element, .links-episodes a").forEachIndexed { index, element ->
                 val epUrl = element.attr("href")
                 val epName = element.text().trim()
+                
+                // Utilizzo corretto di newEpisode tramite configuratore lambda
                 episodes.add(
-                    Episode(
-                        data = epUrl,
-                        name = if (epName.isNotEmpty()) epName else "Episodio ${index + 1}"
-                    )
+                    newEpisode(epUrl) {
+                        this.name = if (epName.isNotEmpty()) epName else "Episodio ${index + 1}"
+                    }
                 )
             }
             
@@ -98,7 +95,6 @@ class AltaDefinizioneProvider : MainAPI() {
         return true
     }
 
-    // Mapping dei risultati di ricerca con le nuove funzioni helper lambda
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.select(".title, h2, h3").text().trim()
         val href = this.select("a").attr("href")
