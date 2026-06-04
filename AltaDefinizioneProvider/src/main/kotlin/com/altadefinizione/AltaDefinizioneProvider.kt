@@ -6,12 +6,13 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class AltaDefinizioneProvider : MainAPI() {
-    override var mainUrl = "https://altadefinizione.casino"
+    override var mainUrl = "https://altadefinizione-01.forum"
     override var name = "AltaDefinizione"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "it"
     override val hasMainPage = true
 
+    // 1. HOME PAGE
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val document = app.get(mainUrl).document
         val homePages = mutableListOf<HomePageList>()
@@ -27,6 +28,7 @@ class AltaDefinizioneProvider : MainAPI() {
         return HomePageResponse(homePages, hasNext = false)
     }
 
+    // 2. RICERCA
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/?s=$query"
         val document = app.get(searchUrl).document
@@ -36,6 +38,7 @@ class AltaDefinizioneProvider : MainAPI() {
         }
     }
 
+    // 3. DETTAGLI DELLA PAGINA (LOAD)
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
@@ -59,28 +62,19 @@ class AltaDefinizioneProvider : MainAPI() {
                 )
             }
             
-            TvSeriesLoadResponse(
-                name = title,
-                url = url,
-                apiName = this.name,
-                type = TvType.TvSeries,
-                posterUrl = poster,
-                plot = plot,
-                episodes = episodes
-            )
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
         } else {
-            MovieLoadResponse(
-                name = title,
-                url = url,
-                apiName = this.name,
-                type = TvType.Movie,
-                dataUrl = url,
-                posterUrl = poster,
-                plot = plot
-            )
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
         }
     }
 
+    // 4. ESTRAZIONE LINK
     override suspend fun loadLinks(
         data: String,
         isCouchtuner: Boolean,
@@ -89,12 +83,10 @@ class AltaDefinizioneProvider : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        // Individua i nodi iframe o link che contengono url riferibili a vidxgo
         document.select("iframe[src*=\"vidxgo\"], a[href*=\"vidxgo\"], iframe[data-src*=\"vidxgo\"]").forEach { element ->
             val iframeUrl = element.attr("src").ifEmpty { element.attr("data-src") }.ifEmpty { element.attr("href") }
             
             if (iframeUrl.isNotEmpty()) {
-                // Esegue l'estrazione delegando all'istanza di VidxGoExtractor registrata
                 loadExtractor(iframeUrl, data, subtitleCallback, callback)
             }
         }
@@ -102,6 +94,7 @@ class AltaDefinizioneProvider : MainAPI() {
         return true
     }
 
+    // Mapping dei risultati di ricerca con le nuove funzioni helper lambda
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.select(".title, h2, h3").text().trim()
         val href = this.select("a").attr("href")
@@ -109,12 +102,16 @@ class AltaDefinizioneProvider : MainAPI() {
 
         if (title.isEmpty() || href.isEmpty()) return null
 
-        return MovieSearchResponse(
-            name = title,
-            url = fixUrl(href),
-            apiName = this@AltaDefinizioneProvider.name,
-            type = TvType.Movie,
-            posterUrl = fixUrlNull(posterUrl)
-        )
+        val isTv = href.contains("/serie/") || href.contains("/serietv/") || this.select(".badge-tv, .season-tag").isNotEmpty()
+
+        return if (isTv) {
+            newTvSeriesSearchResponse(title, fixUrl(href), TvType.TvSeries) {
+                this.posterUrl = fixUrlNull(posterUrl)
+            }
+        } else {
+            newMovieSearchResponse(title, fixUrl(href), TvType.Movie) {
+                this.posterUrl = fixUrlNull(posterUrl)
+            }
+        }
     }
 }
