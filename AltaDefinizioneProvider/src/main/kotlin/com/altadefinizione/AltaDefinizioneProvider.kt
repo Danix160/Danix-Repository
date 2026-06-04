@@ -35,7 +35,6 @@ class AltaDefinizioneProvider : MainAPI() {
             }
         }
 
-        // FIX RIGA 38: Usiamo l'helper corretto al posto del costruttore deprecato
         return newHomePageResponse(homePageList)
     }
 
@@ -49,11 +48,9 @@ class AltaDefinizioneProvider : MainAPI() {
         val posterUrl = fixUrl(posterRaw)
 
         val genres = card.select(".ml-cat a").map { it.text().lowercase() }
-        val isSerie = genres.contains("serie tv") || card.selectFirst(".se_num") != null
+        val isSerie = genres.contains("serie tv") || card.selectFirst(".se_num") != null || url.contains("-streaming-community")
         val type = if (isSerie) TvType.TvSeries else TvType.Movie
 
-        // FIX RIGA 55: Evitiamo il costruttore privato di Score usando la notazione ad intero se supportata, 
-        // oppure forzando la conversione corretta. 
         val ratingRaw = card.selectFirst(".ml-imdb b")?.text()?.trim()
         val calculatedScore = ratingRaw?.toFloatOrNull()?.let { (it * 10).toInt() } 
 
@@ -63,7 +60,6 @@ class AltaDefinizioneProvider : MainAPI() {
         return if (type == TvType.TvSeries) {
             newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
                 this.posterUrl = posterUrl
-                // Se l'SDK vuole un intero (base 1000) o un Float, assegniamo direttamente il valore convertito
                 this.quality = quality
             }
         } else {
@@ -79,40 +75,58 @@ class AltaDefinizioneProvider : MainAPI() {
         val searchUrl = "$mainUrl/?s=$query"
         val document = app.get(searchUrl).document
 
-        // Riutilizziamo la struttura nativa dei boxgrid usata dal tema anche nella ricerca
         return document.select("div.boxgrid").mapNotNull {
             parseCard(it)
         }
     }
 
-    // 3. DETTAGLI DELLA PAGINA
+    // 3. DETTAGLI DELLA PAGINA (Adattato sull'HTML reale fornito per le Serie)
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
-        val title = document.selectFirst("h1, .mvi-desc h3")?.text()?.trim() ?: return null
+        // Estrae il titolo pulito isolandolo da eventuali diciture tra parentesi come (2019 - In Lavorazione)
+        val rawTitle = document.selectFirst("div.single_head h1[itemprop=name], div.single_head h1")?.text()?.trim() ?: return null
+        val title = rawTitle.substringBefore("(").trim()
         
-        // Controllo incrociato per il poster (gestisce sia lazyload che src classico)
-        val imgElement = document.selectFirst(".poster img, .movie-poster img, .mvi-thumb img")
-        val poster = imgElement?.attr("data-src")?.ifBlank { imgElement.attr("src") }?.let { fixUrl(it) }
+        // Recupera il poster dai tag Open Graph della pagina
+        val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
+            ?.ifBlank { document.selectFirst(".poster img, .movie-poster img")?.attr("src") }?.let { fixUrl(it) }
         
-        val plot = document.selectFirst(".plot, .story, #description, .description, .mvi-desc .p-ftext")?.text()?.trim()
+        // Estrae la sinossi direttamente dal meta description dell'HTML analizzato
+        val plot = document.selectFirst("meta[name=description]")?.attr("content")?.trim()
+            ?: document.selectFirst("#main-player p")?.text()?.trim()
         
-        // Verifica se si tratta di una Serie TV controllando i tab degli episodi o l'URL
-        val isTvSeries = url.contains("/serie-tv/") || document.select(".episodes, .season-list, #links-series, .les-title").isNotEmpty()
+        // Controllo se l'URL o la struttura delle stagioni indicano una Serie TV
+        val seasonContainers = document.select("ul.id-season")
+        val isTvSeries = url.contains("-streaming-community") || seasonContainers.isNotEmpty()
 
         return if (isTvSeries) {
             val episodes = mutableListOf<Episode>()
             
-            // Selettore flessibile per catturare i link degli episodi del tema PsyPlay/Darktemplate
-            document.select(".episode-element, .links-episodes a, .les-content a").forEachIndexed { index, element ->
-                val epUrl = element.attr("href")
-                if (!epUrl.isNullOrBlank()) {
-                    val epName = element.text().trim()
-                    episodes.add(
-                        newEpisode(epUrl) {
-                            this.name = if (epName.isNotEmpty()) epName else "Episodio ${index + 1}"
-                        }
-                    )
+            // Cicla attraverso ciascun blocco di stagioni mappato nell'HTML
+            seasonContainers.forEach { seasonElement ->
+                // Estrae il numero di stagione dall'intestazione o dall'attributo data (es: "Stagione 1")
+                val seasonName = seasonElement.previousElementSibling()?.text() ?: ""
+                val seasonNumber = seasonName.filter { it.isDigit() }.toIntOrNull() ?: 1
+                
+                // Naviga tra gli elementi della lista corrispondenti agli episodi (li.id-episode)
+                seasonElement.select("li.id-episode").forEach { episodeElement ->
+                    val linkElement = episodeElement.selectFirst("a")
+                    val epUrl = linkElement?.attr("href")
+                    
+                    if (!epUrl.isNullOrBlank()) {
+                        // Ricava il testo dell'episodio (es. "Episodio 1") e calcola l'indice numerico
+                        val epText = linkElement.text().trim()
+                        val episodeNumber = epText.filter { it.isDigit() }.toIntOrNull()
+                        
+                        episodes.add(
+                            newEpisode(epUrl) {
+                                this.name = epText
+                                this.season = seasonNumber
+                                this.episode = episodeNumber
+                            }
+                        )
+                    }
                 }
             }
             
@@ -131,13 +145,13 @@ class AltaDefinizioneProvider : MainAPI() {
     // 4. ESTRAZIONE LINK VIDEO
     override suspend fun loadLinks(
         data: String,
-        isCdn: Boolean, // Aggiornato per riflettere il boolean corretto dell'SDK base
+        isCdn: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
 
-        // Cattura gli iframe o i player video (sia con src che con data-src del lazyload)
+        // Intercetta sia iframe che player adibiti allo streaming (incluso l'anchor alternativo)
         document.select("iframe[src*=\"vidxgo\"], a[href*=\"vidxgo\"], iframe[data-src*=\"vidxgo\"], iframe[src*=\"embed\"]").forEach { element ->
             val iframeUrl = element.attr("data-src").ifEmpty { element.attr("src") }.ifEmpty { element.attr("href") }
             
