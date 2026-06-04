@@ -1,3 +1,11 @@
+import com.android.build.api.dsl.LibraryExtension
+import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.kotlin.dsl.register
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+
 buildscript {
     repositories {
         google()
@@ -21,15 +29,33 @@ allprojects {
 }
 
 subprojects {
+    tasks.withType<KotlinCompile>().configureEach {
+        compilerOptions {
+            freeCompilerArgs.add("-Xannotation-default-target=param-property")
+        }
+    }
+}
+
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
+    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+
+fun Project.android(configuration: LibraryExtension.() -> Unit) {
+    extensions.getByName<LibraryExtension>("android").apply {
+        configuration()
+    }
+}
+
+subprojects {
     apply(plugin = "com.android.library")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
+        authors = listOf("Daniele")
     }
 
     android {
-        namespace = "com.example"
+        namespace = "com.danix.provider"
         compileSdk = 36
 
         defaultConfig {
@@ -44,11 +70,23 @@ subprojects {
             sourceCompatibility = JavaVersion.VERSION_1_8
             targetCompatibility = JavaVersion.VERSION_1_8
         }
+
+        tasks.withType<KotlinJvmCompile> {
+            compilerOptions {
+                jvmTarget.set(JvmTarget.JVM_1_8)
+                freeCompilerArgs.addAll(
+                    "-Xno-call-assertions",
+                    "-Xno-param-assertions",
+                    "-Xno-receiver-assertions",
+                    "-Xannotation-default-target=param-property"
+                )
+            }
+        }
     }
 
     dependencies {
-        val cloudstream by configurations
         val implementation by configurations
+        val cloudstream by configurations
 
         cloudstream("com.lagradost:cloudstream3:pre-release")
         implementation(kotlin("stdlib"))
@@ -57,4 +95,8 @@ subprojects {
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.0")
         implementation("com.fasterxml.jackson.core:jackson-databind:2.16.0")
     }
+}
+
+tasks.register<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
 }
