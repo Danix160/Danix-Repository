@@ -1,25 +1,5 @@
 rootProject.name = "CloudstreamPlugins"
 
-// NECESSARIO per far funzionare Cloudstream
-pluginManagement {
-    repositories {
-        gradlePluginPortal()
-        google()
-        mavenCentral()
-        maven("https://repo.cloudstream.cf/releases")
-    }
-}
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        google()
-        mavenCentral()
-        maven("https://repo.cloudstream.cf/releases")
-    }
-}
-
-// Include automatico dei moduli
 val disabled = listOf<String>()
 
 File(rootDir, ".").eachDir { dir ->
