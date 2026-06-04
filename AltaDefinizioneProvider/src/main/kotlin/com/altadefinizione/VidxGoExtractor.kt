@@ -73,10 +73,10 @@ class VidxGoExtractor : ExtractorApi() {
         )
 
         if (isM3u8) {
-            // Verifica che qui ci sia 'source = videoUrl' e NON 'streamUrl = videoUrl'
+            // Ripristinato 'streamUrl' richiesto dal tuo attuale SDK
             M3u8Helper.generateM3u8(
                 name = this.name,
-                source = videoUrl,
+                streamUrl = videoUrl,
                 referer = refererUrl,
                 headers = playbackHeaders
             ).forEach { link ->
