@@ -97,33 +97,37 @@ class AltaDefinizioneProvider : MainAPI() {
             ?: document.selectFirst("#main-player p")?.text()?.trim()
         
         // Controllo se l'URL o la struttura delle stagioni indicano una Serie TV
-        val seasonContainers = document.select("ul.id-season")
-        val isTvSeries = url.contains("-streaming-community") || seasonContainers.isNotEmpty()
+        val episodesContainer = document.select("#episodesList a.ep-item")
+        val isTvSeries = url.contains("-streaming-community") || episodesContainer.isNotEmpty()
 
         return if (isTvSeries) {
             val episodes = mutableListOf<Episode>()
             
-            // Cicla attraverso ciascun blocco di stagioni mappato nell'HTML
-            seasonContainers.forEach { seasonElement ->
-                // Estrae il numero di stagione dall'intestazione o dall'attributo data (es: "Stagione 1")
-                val seasonName = seasonElement.previousElementSibling()?.text() ?: ""
-                val seasonNumber = seasonName.filter { it.isDigit() }.toIntOrNull() ?: 1
-                
-                // Naviga tra gli elementi della lista corrispondenti agli episodi (li.id-episode)
-                seasonElement.select("li.id-episode").forEach { episodeElement ->
-                    val linkElement = episodeElement.selectFirst("a")
-                    val epUrl = linkElement?.attr("href")
+            episodesContainer.forEach { element ->
+                val epUrl = element.attr("href")
+                if (!epUrl.isNullOrBlank()) {
+                    // Estrarre i dati dall'URL. Es: /8772296/1/2 -> ["", "8772296", "1", "2"]
+                    val segments = epUrl.split("/").filter { it.isNotEmpty() }
                     
-                    if (!epUrl.isNullOrBlank()) {
-                        // Ricava il testo dell'episodio (es. "Episodio 1") e calcola l'indice numerico
-                        val epText = linkElement.text().trim()
-                        val episodeNumber = epText.filter { it.isDigit() }.toIntOrNull()
+                    // Verifichiamo che l'URL abbia la struttura attesa (almeno id, stagione ed episodio)
+                    if (segments.size >= 3) {
+                        val seasonNumber = segments[1].toIntOrNull() ?: 1
+                        val episodeNumber = segments[2].toIntOrNull()
                         
+                        val epName = element.selectFirst(".ep-name")?.text()?.trim() 
+                            ?: "Episodio ${episodeNumber ?: ""}"
+                        
+                        // Opzionale: puoi estrarre anche il plot e il thumb dell'episodio se vuoi arricchire la UI
+                        val epPlot = element.selectFirst(".ep-plot")?.text()?.trim()
+                        val epThumb = element.selectFirst("img.ep-thumb")?.attr("src")
+
                         episodes.add(
                             newEpisode(epUrl) {
-                                this.name = epText
+                                this.name = epName
                                 this.season = seasonNumber
                                 this.episode = episodeNumber
+                                this.description = epPlot
+                                this.posterUrl = epThumb
                             }
                         )
                     }
