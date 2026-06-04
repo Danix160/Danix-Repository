@@ -41,11 +41,9 @@ class VidxGoExtractor : ExtractorApi() {
         val videoUrl: String
 
         if (url.contains("/t/")) {
-            // Path A: Endpoint Serie TV
             val videoUrlRaw = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(html)?.groupValues?.get(1) ?: return
             videoUrl = videoUrlRaw.replace("\\/", "/")
         } else {
-            // Path B: Parsing dello Script Cifrato per i Film
             val scriptRegex = Regex("<script[\\s\\S]*?>[\\s\\S]*?\\(function\\(\\)\\s*\\{[\\s\\S]*?\\}\\s*\\)\\(\\);[\\s\\S]*?</script>", RegexOption.IGNORE_CASE)
             val scriptMatches = scriptRegex.findAll(html).toList()
             
@@ -67,7 +65,6 @@ class VidxGoExtractor : ExtractorApi() {
 
         val isM3u8 = videoUrl.contains(".m3u8")
 
-        // Mappa degli header di riproduzione per ExoPlayer
         val playbackHeaders = mapOf(
             "origin" to "https://v.vidxgo.co",
             "referer" to "https://v.vidxgo.co/",
@@ -76,7 +73,7 @@ class VidxGoExtractor : ExtractorApi() {
         )
 
         if (isM3u8) {
-            // Se è un file M3u8 adattivo, sfruttiamo l'helper nativo che mappa le singole qualità
+            // Risolto l'errore passando correttamente i parametri nominali richiesti dall'SDK attuale
             M3u8Helper.generateM3u8(
                 name = this.name,
                 source = videoUrl,
@@ -86,7 +83,6 @@ class VidxGoExtractor : ExtractorApi() {
                 callback.invoke(link)
             }
         } else {
-            // Se si tratta di un video diretto (es. mp4), usiamo l'esatta sintassi nuova richiesta
             val link = newExtractorLink(
                 source = this.name,
                 name = this.name,
