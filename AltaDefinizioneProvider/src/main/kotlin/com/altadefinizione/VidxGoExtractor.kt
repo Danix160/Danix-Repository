@@ -3,6 +3,9 @@ package com.altadefinizione
 import android.util.Base64
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.app
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -13,9 +16,12 @@ class VidxGoExtractor : ExtractorApi() {
     override val mainUrl = "https://v.vidxgo.co"
     override val requiresReferer = true
 
-    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink> {
-        val links = mutableListOf<ExtractorLink>()
-        
+    override suspend fun getUrl(
+        url: String, 
+        referer: String?, 
+        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit, 
+        callback: (ExtractorLink) -> Unit
+    ) {
         val refererUrl = "${url.toHttpUrl().scheme}://${url.toHttpUrl().host}/"
         val requestBuilder = Request.Builder()
             .url(url)
@@ -36,19 +42,18 @@ class VidxGoExtractor : ExtractorApi() {
 
         if (url.contains("/t/")) {
             // Path A: Endpoint Serie TV
-            val videoUrlRaw = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(html)?.groupValues?.get(1)
-                ?: return emptyList()
+            val videoUrlRaw = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(html)?.groupValues?.get(1) ?: return
             videoUrl = videoUrlRaw.replace("\\/", "/")
         } else {
             // Path B: Parsing dello Script Cifrato per i Film
             val scriptRegex = Regex("<script[\\s\\S]*?>[\\s\\S]*?\\(function\\(\\)\\s*\\{[\\s\\S]*?\\}\\s*\\)\\(\\);[\\s\\S]*?</script>", RegexOption.IGNORE_CASE)
             val scriptMatches = scriptRegex.findAll(html).toList()
             
-            if (scriptMatches.size < 3) return emptyList()
+            if (scriptMatches.size < 3) return
 
             val targetScript = scriptMatches[2].value
-            val k = Regex("var\\s+k\\s*=\\s*['\"]([^'\"]+)['\"]").find(targetScript)?.groupValues?.get(1) ?: return emptyList()
-            val d = Regex("atob\\(['\"]([^'\"]+)['\"]\\)").find(targetScript)?.groupValues?.get(1) ?: return emptyList()
+            val k = Regex("var\\s+k\\s*=\\s*['\"]([^'\"]+)['\"]").find(targetScript)?.groupValues?.get(1) ?: return
+            val d = Regex("atob\\(['\"]([^'\"]+)['\"]\\)").find(targetScript)?.groupValues?.get(1) ?: return
 
             val decodedD = Base64.decode(d, Base64.DEFAULT)
             val decrypted = ByteArray(decodedD.size) { i ->
@@ -56,10 +61,13 @@ class VidxGoExtractor : ExtractorApi() {
             }
             val decryptedText = String(decrypted)
             
-            val videoUrlRaw = Regex("currentSrc\\s*=\\s*['\"]([^'\"]+)['\"]").find(decryptedText)?.groupValues?.get(1) ?: return emptyList()
+            val videoUrlRaw = Regex("currentSrc\\s*=\\s*['\"]([^'\"]+)['\"]").find(decryptedText)?.groupValues?.get(1) ?: return
             videoUrl = videoUrlRaw.replace("\\/", "/")
         }
 
+        val isM3u8 = videoUrl.contains(".m3u8")
+
+        // Mappa degli header di riproduzione per ExoPlayer
         val playbackHeaders = mapOf(
             "origin" to "https://v.vidxgo.co",
             "referer" to "https://v.vidxgo.co/",
@@ -67,27 +75,29 @@ class VidxGoExtractor : ExtractorApi() {
             "sec-fetch-site" to "cross-site"
         )
 
-        if (videoUrl.contains(".m3u8")) {
+        if (isM3u8) {
+            // Se è un file M3u8 adattivo, sfruttiamo l'helper nativo che mappa le singole qualità
             M3u8Helper.generateM3u8(
-                name,
-                videoUrl,
-                refererUrl,
+                name = this.name,
+                source = videoUrl,
+                referer = refererUrl,
                 headers = playbackHeaders
-            ).forEach { links.add(it) }
+            ).forEach { link ->
+                callback.invoke(link)
+            }
         } else {
-            links.add(
-                ExtractorLink(
-                    source = name,
-                    name = name,
-                    url = videoUrl,
-                    referer = refererUrl,
-                    quality = com.lagradost.cloudstream3.utils.Qualities.Unknown.value,
-                    isM3u8 = false,
-                    headers = playbackHeaders
-                )
-            )
+            // Se si tratta di un video diretto (es. mp4), usiamo l'esatta sintassi nuova richiesta
+            val link = newExtractorLink(
+                source = this.name,
+                name = this.name,
+                url = videoUrl,
+                type = ExtractorLinkType.VIDEO
+            ) {
+                this.referer = refererUrl
+                this.quality = Qualities.Unknown.value
+                this.headers = playbackHeaders
+            }
+            callback.invoke(link)
         }
-
-        return links
     }
 }
