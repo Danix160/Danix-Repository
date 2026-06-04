@@ -1,4 +1,7 @@
 android {
+
+    namespace = "com.cb"
+
     kotlinOptions {
         jvmTarget = "1.8"
         freeCompilerArgs = freeCompilerArgs + "-Xskip-metadata-version-check"
