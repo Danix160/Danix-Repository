@@ -1,20 +1,35 @@
+plugins {
+    id("com.android.library")
+    kotlin("android")
+    id("cloudstream")
+}
+
 android {
-    // ... altre configurazioni (compileSdk, ecc.) ...
+    namespace = "com.altadefinizione"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 21
+    }
+
+    buildFeatures {
+        buildConfig = false
+    }
 
     kotlinOptions {
         jvmTarget = "1.8"
-        // Questa riga dice al compilatore di ignorare che la libreria è "troppo nuova"
         freeCompilerArgs = freeCompilerArgs + "-Xskip-metadata-version-check"
     }
 }
+
 cloudstream {
     extra["prefix"] = "AltaDefinizione"
     extra["displayName"] = "AltaDefinizione"
-    
+
     version = 1
     description = "AltaDefinizione-01"
     authors = listOf("Danix")
-    
+
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
     requiresResources = false
