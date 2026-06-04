@@ -73,13 +73,12 @@ class VidxGoExtractor : ExtractorApi() {
         )
 
         if (isM3u8) {
-            // Parametri passati unicamente per posizione ordinata dell'SDK standard:
-            // 1. nome, 2. url dello stream, 3. referer, 4. headers della richiesta
+            // Configurazione esatta per le vecchie versioni dell'SDK di CloudStream
             M3u8Helper.generateM3u8(
-                this.name,
-                videoUrl,
-                refererUrl,
-                playbackHeaders
+                name = this.name,
+                url = videoUrl,
+                referer = refererUrl,
+                headers = playbackHeaders
             ).forEach { link ->
                 callback.invoke(link)
             }
