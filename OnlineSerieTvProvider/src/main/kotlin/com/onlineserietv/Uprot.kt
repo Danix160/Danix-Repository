@@ -11,93 +11,62 @@ class Uprot : ExtractorApi() {
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
 
+    private val headers = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language" to "it-IT,it;q=0.9",
+        "X-Requested-With" to "XMLHttpRequest",
+        "Referer" to "https://uprot.net/"
+    )
+
     override suspend fun getUrl(
         url: String,
         referer: String?,
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        var targetLink = url
-        var maxStreamUrl: String? = null
+        var target = normalize(url)
 
-        val baseHeaders = mapOf(
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "en-US,en;q=0.5",
-            "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1",
-            "Sec-GPC" to "1"
-        )
+        // 1️⃣ Primo GET — ottieni cookie di sessione
+        val init = app.get(target, headers = headers, referer = mainUrl)
+        val cookies = init.cookies
 
-        if (!targetLink.contains("msfi")) {
-            if (targetLink.contains("msf")) {
-                targetLink = targetLink.replace("msf", "mse")
-            }
+        if (init.code == 403) return
 
-            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
-            if (response.code != 403) {
-                maxStreamUrl = findLinkInHtml(response.text)
-            }
-        } else {
-            if (targetLink.contains("mse")) {
-                targetLink = targetLink.replace("mse", "msf")
-            }
+        // 2️⃣ Cerca il link CONTINUE
+        val continueUrl = findContinue(init.text) ?: return
 
-            val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
-            val cookies = initResponse.cookies
+        // 3️⃣ Segui i redirect UPROTS
+        val finalUrl = followRedirects(continueUrl, cookies) ?: return
 
-            val doc = Jsoup.parse(initResponse.text)
-            val imgCaptcha = doc.selectFirst("img")?.attr("src")
-            val captchaNumber = imgCaptcha?.substringAfter("captcha=", "")?.substringBefore("&") ?: ""
+        // 4️⃣ Se è Maxstream → estrai
+        loadExtractor(finalUrl, url, subtitleCallback, callback)
+    }
 
-            val postResponse = app.post(
-                targetLink,
-                cookies = cookies,
-                headers = baseHeaders.plus("Content-Type" to "application/x-www-form-urlencoded"),
-                data = mapOf("captcha" to captchaNumber),
-                referer = targetLink
-            )
-
-            if (postResponse.code != 403) {
-                maxStreamUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
-            }
-        }
-
-        if (!maxStreamUrl.isNullOrEmpty()) {
-            loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
+    private fun normalize(url: String): String {
+        return when {
+            url.contains("/msfi/") -> url.replace("/msfi/", "/msf/")
+            url.contains("/msf/") -> url.replace("/msf/", "/mse/")
+            else -> url
         }
     }
 
-    private fun findLinkInHtml(html: String): String? {
+    private fun findContinue(html: String): String? {
         val doc = Jsoup.parse(html)
-        doc.select("a").forEach { tag ->
-            val text = tag.text().uppercase()
-            if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
-                return tag.attr("href")
-            }
+        return doc.select("a")
+            .firstOrNull { it.text().contains("CONTINUE", ignoreCase = true) }
+            ?.attr("href")
+    }
+
+    private suspend fun followRedirects(url: String, cookies: Map<String, String>): String? {
+        var current = url
+        repeat(10) {
+            val res = app.get(current, headers = headers, cookies = cookies, allowRedirects = true)
+            current = res.url
+
+            // Se non è più un dominio UPROTS → è il link finale
+            if (!current.contains("uprots")) return current
         }
         return null
-    }
-
-    private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-        var redirectUrl = findLinkInHtml(html) ?: return null
-        var time = 0
-
-        while (redirectUrl.contains("uprots")) {
-            val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
-            redirectUrl = headResponse.url
-            time++
-            if (time == 10) return null
-        }
-
-        return if (redirectUrl.contains("watchfree/")) {
-            val parts = redirectUrl.split("watchfree/")[1].split("/")
-            if (parts.size > 1) {
-                "https://maxstream.video/emvvv/${parts[1]}"
-            } else {
-                redirectUrl
-            }
-        } else {
-            redirectUrl
-        }
     }
 }
