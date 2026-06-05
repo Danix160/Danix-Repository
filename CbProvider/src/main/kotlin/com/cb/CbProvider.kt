@@ -185,7 +185,7 @@ private fun parseElement(element: Element, isTvSeriesSearch: Boolean): SearchRes
     }
 
     // ---------------------------------------------------------
-    //  LOAD()
+    //  LOAD() - Versione Aggiornata e Ottimizzata
     // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse {
         Log.d("CB01", "Caricamento pagina: $url")
@@ -226,70 +226,68 @@ private fun parseElement(element: Element, isTvSeriesSearch: Boolean): SearchRes
         }
 
         // ---------------------------------------------------------
-        //  SERIE TV
+        //  SERIE TV (Codice Ottimizzato per strutture stayonline / Scooby-Doo)
         // ---------------------------------------------------------
         Log.d("CB01", "Rilevata SERIE TV")
         val seasonsData = mutableListOf<SeasonData>()
+        val validHostsForLoading = supportedHosts + listOf("stayonline", "uprot")
 
         document.select("div.sp-wrap, div.bb-spoiler").forEachIndexed { index, wrap ->
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
             val currentSeason = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
 
             val cleanSeasonName = seasonHead
-            .replace(Regex("(?i)ITA|HD|COMPLETA|TUTTA LA SERIE|TUTTI GLI EPISODI"), "")
-            .trim()
+                .replace(Regex("(?i)ITA|HD|COMPLETA|TUTTA LA SERIE|TUTTI GLI EPISODI"), "")
+                .trim()
             
             seasonsData.add(SeasonData(currentSeason, cleanSeasonName.ifBlank { "Stagione $currentSeason" }))
 
-
-            wrap.select(".sp-body *").forEach { row ->
+            // Selezioniamo i paragrafi, elementi di liste o div interni allo spoiler che contengono i link
+            wrap.select(".sp-body p, .sp-body li, .sp-body div").forEachIndexed { rowIdx, row ->
                 val anchors = row.select("a[href]")
-                if (anchors.isEmpty()) return@forEach
+                if (anchors.isEmpty()) return@forEachIndexed
 
                 val rowText = row.text().trim()
 
-                // ---------------------------------------------------------
-                //  CASO SPECIALE: TUTTA LA SERIE → UPROT FOLDER
-                // ---------------------------------------------------------
+                // 1. CASO SPECIALE: CARTELLE UPROT (TUTTA LA SERIE)
                 if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
                     val folderLink = anchors.first().attr("href")
-
                     if (folderLink.contains("uprot.net/msfld")) {
                         val realEpisodes = parseUprotFolder(folderLink, currentSeason)
-
-                        // Assicuriamo che ogni episodio abbia stagione corretta
-                        realEpisodes.forEachIndexed { index, ep ->
+                        realEpisodes.forEachIndexed { i, ep ->
                             ep.season = currentSeason
-                            ep.episode = index + 1
-                            ep.name = "${currentSeason}x${String.format("%02d", index + 1)}"
+                            ep.episode = i + 1
+                            ep.name = "${currentSeason}x${String.format("%02d", i + 1)}"
                         }
-                         episodes.addAll(realEpisodes)
+                        episodes.addAll(realEpisodes)
                     }
-
-                    return@forEach
+                    return@forEachIndexed
                 }
 
-                // ---------------------------------------------------------
-                //  EPISODI NORMALI
-                // ---------------------------------------------------------
+                // 2. ESTRAZIONE NUMERO EPISODIO ROBUSTA
                 val epMatch = Regex("(\\d+)\\s*[x×]\\s*(\\d+)").find(rowText)
                 val fallbackMatch = Regex("(?i)(?:Episodio\\s*)?(\\d+)").find(rowText)
-
-                if (epMatch == null && fallbackMatch == null) return@forEach
-
+                
                 val sNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
-                val eNum = epMatch?.groupValues?.get(2)?.toIntOrNull()
+                var eNum = epMatch?.groupValues?.get(2)?.toIntOrNull() 
                     ?: fallbackMatch?.groupValues?.get(1)?.toIntOrNull()
-                    ?: return@forEach
 
+                // Fallback di sicurezza basato sulla posizione nell'HTML se la riga non ha numeri chiari
+                if (eNum == null) {
+                    eNum = rowIdx + 1
+                }
+
+                // Filtriamo i link accettando ora anche stayonline per estrarli successivamente in loadLinks()
                 val linksForEpisode = anchors.map { it.attr("href") }.filter { link ->
-                    supportedHosts.any { host -> link.contains(host) }
+                    validHostsForLoading.any { host -> link.contains(host) }
                 }
 
                 if (linksForEpisode.isNotEmpty()) {
                     episodes.add(
                         newEpisode(linksForEpisode.joinToString("###")) {
-                            this.name = "${sNum}x${String.format("%02d", eNum)}"
+                            // Se la riga ha un titolo descrittivo, lo usa come nome dell'episodio
+                            this.name = rowText.substringBefore("–").substringBefore("-").trim().takeIf { it.length > 3 } 
+                                ?: "${sNum}x${String.format("%02d", eNum)}"
                             this.season = sNum
                             this.episode = eNum
                         }
@@ -304,7 +302,6 @@ private fun parseElement(element: Element, isTvSeriesSearch: Boolean): SearchRes
             addSeasonNames(seasonsData)
         }
     }
-
     // ---------------------------------------------------------
     //  LOAD LINKS
     // ---------------------------------------------------------
