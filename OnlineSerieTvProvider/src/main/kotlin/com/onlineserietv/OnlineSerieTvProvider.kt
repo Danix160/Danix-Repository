@@ -459,13 +459,12 @@ var globalIndex = 0
 rows.forEach { row ->
     // FIX 2026 — trova TUTTI i link UPROT
     val linkEl = row.select(
-        "a[href*=/msf/], a[href*=/msfi/], a[href*=/mse/], " +
-        "a[data-href*=/msf/], a[data-href*=/msfi/], a[data-href*=/mse/]"
+    "a[href*=/msf/], a[href*=/msd/], a[href*=/fxf/]"
     ).firstOrNull() ?: return@forEach
-
-    // FIX 2026 — estrai href o data-href
-    val linkUrl = linkEl.attr("href").ifBlank { linkEl.attr("data-href") }
+    
+    val linkUrl = linkEl.attr("href")
     if (linkUrl.isBlank()) return@forEach
+
 
     val fullText = row.selectFirst("td")?.text() ?: ""
 
