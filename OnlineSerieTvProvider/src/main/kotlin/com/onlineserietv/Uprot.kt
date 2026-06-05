@@ -4,12 +4,17 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
-import org.jsoup.Jsoup
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
+
+    private val headers = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language" to "it-IT,it;q=0.9"
+    )
 
     override suspend fun getUrl(
         url: String,
@@ -17,87 +22,30 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        var targetLink = url
-        var maxStreamUrl: String? = null
+        // 1️⃣ Trasformiamo l'URL in /mse/ per attivare lo shortcut
+        val target = normalize(url)
 
-        val baseHeaders = mapOf(
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "en-US,en;q=0.5",
-            "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1",
-            "Sec-GPC" to "1"
-        )
+        // 2️⃣ Eseguiamo la richiesta disattivando il redirect automatico.
+        // Vogliamo intercettare subito l'header "Location" che contiene il link di MaxStream.
+        val res = app.get(target, headers = headers, referer = referer ?: mainUrl, allowRedirects = false)
+        
+        val redirectUrl = res.headers["Location"] ?: res.url
 
-        if (!targetLink.contains("msfi")) {
-            if (targetLink.contains("msf")) {
-                targetLink = targetLink.replace("msf", "mse")
-            }
-
-            val response = app.get(targetLink, headers = baseHeaders, referer = referer)
-            if (response.code != 403) {
-                maxStreamUrl = findLinkInHtml(response.text)
-            }
+        // 3️⃣ Se l'URL ottenuto (da Location o finale) è di MaxStream, lo passiamo al core di CloudStream
+        if (redirectUrl.contains("maxstream")) {
+            loadExtractor(redirectUrl, target, subtitleCallback, callback)
         } else {
-            if (targetLink.contains("mse")) {
-                targetLink = targetLink.replace("mse", "msf")
-            }
-
-            val initResponse = app.post(targetLink, headers = baseHeaders, referer = targetLink)
-            val cookies = initResponse.cookies
-
-            val doc = Jsoup.parse(initResponse.text)
-            val imgCaptcha = doc.selectFirst("img")?.attr("src")
-            val captchaNumber = imgCaptcha?.substringAfter("captcha=", "")?.substringBefore("&") ?: ""
-
-            val postResponse = app.post(
-                targetLink,
-                cookies = cookies,
-                headers = baseHeaders.plus("Content-Type" to "application/x-www-form-urlencoded"),
-                data = mapOf("captcha" to captchaNumber),
-                referer = targetLink
-            )
-
-            if (postResponse.code != 403) {
-                maxStreamUrl = getFinalMaxstreamLink(postResponse.text, baseHeaders)
-            }
-        }
-
-        if (!maxStreamUrl.isNullOrEmpty()) {
-            loadExtractor(maxStreamUrl, url, subtitleCallback, callback)
+            // Fallback: se per qualche motivo il trucco di /mse/ non reindirizza subito,
+            // usiamo il vecchio rimpiazzo e carichiamo l'URL (es. se gestito da altri estrattori interni)
+            loadExtractor(redirectUrl, url, subtitleCallback, callback)
         }
     }
 
-    private fun findLinkInHtml(html: String): String? {
-        val doc = Jsoup.parse(html)
-        doc.select("a").forEach { tag ->
-            val text = tag.text().uppercase()
-            if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
-                return tag.attr("href")
-            }
-        }
-        return null
-    }
-
-    private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-        var redirectUrl = findLinkInHtml(html) ?: return null
-        var time = 0
-
-        while (redirectUrl.contains("uprots")) {
-            val headResponse = app.get(redirectUrl, headers = headers, allowRedirects = true)
-            redirectUrl = headResponse.url
-            time++
-            if (time == 10) return null
-        }
-
-        return if (redirectUrl.contains("watchfree/")) {
-            val parts = redirectUrl.split("watchfree/")[1].split("/")
-            if (parts.size > 1) {
-                "https://maxstream.video/emvvv/${parts[1]}"
-            } else {
-                redirectUrl
-            }
-        } else {
-            redirectUrl
+    private fun normalize(url: String): String {
+        return when {
+            url.contains("/msf/") -> url.replace("/msf/", "/mse/")
+            url.contains("/msfi/") -> url.replace("/msfi/", "/mse/")
+            else -> url
         }
     }
 }
