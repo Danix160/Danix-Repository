@@ -74,38 +74,44 @@ class Uprot : ExtractorApi() {
     }
 
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-        var currentHtml = html
-        var redirectUrl = findLinkInHtml(currentHtml) ?: return null
-        var time = 0
+    var currentHtml = html
+    var redirectUrl = findLinkInHtml(currentHtml) ?: return null
+    var time = 0
 
-        // Continuiamo finché l'URL contiene la protezione di uprot
-        while (redirectUrl.contains("uprot")) {
-            time++
-            if (time == 10) return null
+    while (redirectUrl.contains("uprot")) {
+        time++
+        if (time == 5) return null // Riduciamo i tentativi a 5 per non freezare l'app
 
-            val response = app.get(redirectUrl, headers = headers, allowRedirects = true)
-            
-            val nextUrl = response.url
-            currentHtml = response.text 
+        // Log di debug per capire dove si pianta
+        println("DEBUG_UPROT: Tentativo $time su URL: $redirectUrl")
 
-            if (!nextUrl.contains("uprot")) {
-                redirectUrl = nextUrl
-                break
-            }
+        val response = app.get(redirectUrl, headers = headers, allowRedirects = true)
+        val nextUrl = response.url
+        currentHtml = response.text 
 
-            redirectUrl = findLinkInHtml(currentHtml) ?: nextUrl
+        if (!nextUrl.contains("uprot")) {
+            redirectUrl = nextUrl
+            break
         }
 
-        // Parsing finale per estrarre l'ID di maxstream
-        return if (redirectUrl.contains("watchfree/")) {
-            val parts = redirectUrl.split("watchfree/")[1].split("/")
-            if (parts.size > 1) {
-                "https://maxstream.video/emvvv/${parts[1]}"
-            } else {
-                redirectUrl
-            }
+        // CORREZIONE CRUCIALE: Se non trova il tasto CONTINUE nel nuovo HTML, 
+        // usciamo immediatamente invece di usare 'nextUrl' e rischiare il loop infinito.
+        val nextStep = findLinkInHtml(currentHtml)
+        if (nextStep == null) {
+            println("DEBUG_UPROT: Tasto CONTINUE non trovato nell'HTML al tentativo $time. Blocco anti-bot?")
+            redirectUrl = nextUrl
+            break 
         } else {
-            redirectUrl
+            redirectUrl = nextStep
         }
     }
+
+    // Parsing finale maxstream...
+    return if (redirectUrl.contains("watchfree/")) {
+        val parts = redirectUrl.split("watchfree/")[1].split("/")
+        if (parts.size > 1) "https://maxstream.video/emvvv/${parts[1]}" else redirectUrl
+    } else {
+        redirectUrl
+    }
+}
 }
