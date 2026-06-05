@@ -4,6 +4,8 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.network.WebViewResolver // 1️⃣ IMPORTATO WEBVIEW RESOLVER
+import okhttp3.Request
 import org.jsoup.Jsoup
 
 class Uprot : ExtractorApi() {
@@ -11,16 +13,11 @@ class Uprot : ExtractorApi() {
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
 
-    // Header accurati emulati dal codice Python (fondamentali per evitare il 403)
-    private val headers = mapOf(
-        "User-Agent" to "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
-        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    private val baseHeaders = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language" to "it-IT,it;q=0.9",
-        "Connection" to "keep-alive",
-        "Upgrade-Insecure-Requests" to "1",
-        "Sec-Fetch-Dest" to "document",
-        "Sec-Fetch-Mode" to "navigate",
-        "Sec-Fetch-Site" to "same-origin"
+        "Connection" to "keep-alive"
     )
 
     override suspend fun getUrl(
@@ -29,24 +26,38 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // Conversione iniziale da msf/msfi a mse (come fa Python)
         val target = normalize(url)
-        println("DEBUG_UPROT: URL normalizzato di partenza -> $target")
+        println("DEBUG_UPROT: URL normalizzato -> $target")
 
-        val dynamicHeaders = headers.toMutableMap()
+        val dynamicHeaders = baseHeaders.toMutableMap()
         dynamicHeaders["Referer"] = url
         dynamicHeaders["Origin"] = url.split("/msf/")[0].split("/mse/")[0]
 
-        // Eseguiamo la GET sulla pagina intermedia mse
-        val res = app.get(target, headers = dynamicHeaders, allowRedirects = true)
-        
-        if (res.code == 403) {
-            println("DEBUG_UPROT: Errore 403! Il server ha bloccato la richiesta (Cloudflare o Bot-check).")
-            return
+        // Primo tentativo standard
+        var res = app.get(target, headers = dynamicHeaders, allowRedirects = true)
+        var htmlText = res.text
+
+        // 2️⃣ SE C'È BLOCCO 403, SBLOCCHIAMO CON LA WEBVIEW DI CLOUDSTREAM
+        if (res.code == 403 || htmlText.contains("cloudflare") || htmlText.contains("challenge-platform")) {
+            println("DEBUG_UPROT: Rilevato blocco 403 o Cloudflare. Avvio WebViewResolver...")
+            
+            try {
+                // Intercettiamo la richiesta tramite WebView simulando il browser di sistema
+                val webViewResponse = app.get(
+                    target,
+                    headers = dynamicHeaders,
+                    interceptor = WebViewResolver(dynamicHeaders)
+                )
+                htmlText = webViewResponse.text
+                println("DEBUG_UPROT: WebViewResolver completato. Status Code: ${webViewResponse.code}")
+            } catch (e: Exception) {
+                println("DEBUG_UPROT: Errore durante l'uso di WebViewResolver: ${e.message}")
+                return
+            }
         }
 
-        // Estraiamo il link finale di MaxStream seguendo i passaggi
-        val finalUrl = getFinalMaxstreamLink(res.text, res.url, dynamicHeaders) ?: res.url
+        // Procediamo con l'estrazione del link dal DOM sbloccato
+        val finalUrl = getFinalMaxstreamLink(htmlText, dynamicHeaders) ?: res.url
         println("DEBUG_UPROT: URL finale ottenuto -> $finalUrl")
 
         if (finalUrl.contains("maxstream")) {
@@ -67,7 +78,6 @@ class Uprot : ExtractorApi() {
     private fun findLinkInHtml(html: String): String? {
         val doc = Jsoup.parse(html)
         
-        // 1. Cerca il tag 'a' con il testo CONTINUE (Case Insensitive)
         doc.select("a").forEach { tag ->
             val text = tag.text().uppercase().replace(" ", "")
             if (text.contains("CONTINUE")) {
@@ -78,7 +88,6 @@ class Uprot : ExtractorApi() {
             }
         }
 
-        // 2. Cerca l'eventuale FORM di sblocco (se presente)
         val form = doc.select("form").firstOrNull { formElement ->
             formElement.text().uppercase().replace(" ", "").contains("CONTINUE")
         }
@@ -93,20 +102,18 @@ class Uprot : ExtractorApi() {
         return null
     }
 
-    private suspend fun getFinalMaxstreamLink(html: String, currentUrl: String, currentHeaders: Map<String, String>): String? {
+    private suspend fun getFinalMaxstreamLink(html: String, currentHeaders: Map<String, String>): String? {
         var currentHtml = html
         var redirectUrl = findLinkInHtml(currentHtml) ?: return null
         var time = 0
 
-        // Ciclo analogo al "while 'uprots' in redirect" del codice Python, 
-        // esteso per coprire i domini uprot e i link intermedi /uprotem/
         while (redirectUrl.contains("uprot") || redirectUrl.contains("uprots") || redirectUrl.contains("/uprotem/")) {
             time++
-            if (time == 8) return null // Timeout per evitare loop infiniti
+            if (time == 8) return null
 
             println("DEBUG_UPROT: Salto intermedio $time -> $redirectUrl")
 
-            // Eseguiamo una chiamata per seguire il redirect (Python usa .head, noi usiamo una GET veloce)
+            // Usiamo l'intercettore anche nei salti intermedi se necessario
             val response = app.get(redirectUrl, headers = currentHeaders, allowRedirects = true)
             val nextUrl = response.url
             currentHtml = response.text 
@@ -125,7 +132,6 @@ class Uprot : ExtractorApi() {
             }
         }
 
-        // Formattazione finale dell'URL (Traduzione della riga Python: 'https://maxstream.video/emvvv/' + ...split...)
         return when {
             redirectUrl.contains("watchfree/") -> {
                 val parts = redirectUrl.split("watchfree/")[1].split("/")
