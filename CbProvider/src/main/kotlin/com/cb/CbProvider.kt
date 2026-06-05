@@ -232,7 +232,7 @@ class CbProvider : MainAPI() {
         }
 
         // ---------------------------------------------------------
-        //  SERIE TV & CARTOONS
+        //  SERIE TV & CARTOONS (Parser Universale Anti-Prossimamente)
         // ---------------------------------------------------------
         Log.d("CB01", "Rilevata SERIE TV / ANIMAZIONE")
         val seasonsData = mutableListOf<SeasonData>()
@@ -241,7 +241,7 @@ class CbProvider : MainAPI() {
         document.select("div.sp-wrap, div.bb-spoiler").forEachIndexed { index, wrap ->
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
             
-            // Fix Mirato: Estrae il numero dopo "Stagione", evitando di confondersi con zeri o numeri nel nome del cartone
+            // Estrae accuratamente la stagione numerica dopo la parola "Stagione"
             val seasonRegex = Regex("(?i)Stagione\\s*(\\d+)")
             val matchSeason = seasonRegex.find(seasonHead)
             val currentSeason = matchSeason?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
@@ -252,72 +252,89 @@ class CbProvider : MainAPI() {
             
             seasonsData.add(SeasonData(currentSeason, cleanSeasonName.ifBlank { "Stagione $currentSeason" }))
 
-            val anchors = wrap.select(".sp-body a[href]")
-            val rows = wrap.select(".sp-body p, .sp-body li, .sp-body tr, .sp-body div").filter { it.select("a[href]").isNotEmpty() }
+            val body = wrap.selectFirst(".sp-body") ?: return@forEachIndexed
             
-            if (rows.isNotEmpty()) {
-                rows.forEachIndexed { rowIdx, row ->
-                    val rowAnchors = row.select("a[href]")
-                    val rowText = row.text().trim()
+            // 1. VERIFICA SE È PRESENTE UNA CARTELLA MULTIPLA (TUTTA LA SERIE / INTERA STAGIONE)
+            val bodyText = body.text().trim()
+            if (bodyText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
+                val folderLink = body.selectFirst("a[href*=uprot.net/msfld]")?.attr("href")
+                if (!folderLink.isNullOrBlank()) {
+                    val realEpisodes = parseUprotFolder(folderLink, currentSeason)
+                    realEpisodes.forEachIndexed { i, ep ->
+                        ep.season = currentSeason
+                        ep.episode = i + 1
+                        ep.name = "${currentSeason}x${String.format("%02d", i + 1)}"
+                    }
+                    episodes.addAll(realEpisodes)
+                    return@forEachIndexed // Passa alla prossima stagione se questa era in cartella uprot
+                }
+            }
 
-                    // CASO SPECIALE: CARTELLE UPROT (TUTTA LA SERIE)
-                    if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
-                        val folderLink = rowAnchors.first().attr("href")
-                        if (folderLink.contains("uprot.net/msfld")) {
-                            val realEpisodes = parseUprotFolder(folderLink, currentSeason)
-                            realEpisodes.forEachIndexed { i, ep ->
-                                ep.season = currentSeason
-                                ep.episode = i + 1
-                                ep.name = "${currentSeason}x${String.format("%02d", i + 1)}"
+            // 2. PARSING DEI LINK INDIVIDUALI (Gestione flessibile per righe text, p, br, li)
+            // Estraiamo tutti i link validi all'interno del corpo dello spoiler
+            val allAnchors = body.select("a[href]").filter { a ->
+                val href = a.attr("href")
+                validHostsForLoading.any { host -> href.contains(host) }
+            }
+
+            if (allAnchors.isNotEmpty()) {
+                // Raggruppiamo i nodi o li separiamo per capire a quale episodio appartengono.
+                // Spesso gli host dello stesso episodio sono vicini (es. "01. Titolo - Mixdrop - Voe").
+                // Approccio solido: se i link sono separati da un testo che contiene un nuovo numero di episodio, o se usiamo l'elemento genitore.
+                
+                var currentEpisodeNum = 1
+                val tempLinks = mutableListOf<String>()
+                var lastEpName = ""
+
+                allAnchors.forEachIndexed { anchorIdx, anchor ->
+                    val href = anchor.attr("href")
+                    
+                    // Recuperiamo il testo circostante (il paragrafo o l'elemento contenitore) per capire il nome/numero
+                    val parentRowText = anchor.parent()?.text()?.trim().orEmpty()
+                    
+                    tempLinks.add(href)
+
+                    // Se è l'ultimo link dello spoiler, o se il prossimo link appartiene a un elemento/paragrafo diverso,
+                    // oppure se il link successivo è preceduto da una dicitura numerica nuova (es. "02."), salviamo l'episodio corrente.
+                    val isLast = anchorIdx == allAnchors.lastIndex
+                    var shouldFlush = isLast
+
+                    if (!isLast) {
+                        val nextAnchor = allAnchors[anchorIdx + 1]
+                        // Se il link successivo ha un genitore differente ed esso contiene un pattern numerico di inizio riga (es: "02. Nome")
+                        if (anchor.parent() != nextAnchor.parent()) {
+                            shouldFlush = true
+                        } else {
+                            // Se condividono lo stesso parent ma nel testo successivo c'è un separatore di episodio evidente
+                            val textBetween = body.text().substringAfter(anchor.text()).substringBefore(nextAnchor.text())
+                            if (textBetween.contains(Regex("""\b\d+[\s.-]"""))) {
+                                shouldFlush = true
                             }
-                            episodes.addAll(realEpisodes)
                         }
-                        return@forEachIndexed
                     }
 
-                    val linksForEpisode = rowAnchors.map { it.attr("href") }.filter { link ->
-                        validHostsForLoading.any { host -> link.contains(host) }
-                    }
+                    if (shouldFlush) {
+                        // Tentiamo di ricavare il numero dell'episodio dal testo della riga
+                        val epMatch = Regex("""\b(\d+)\s*[\s.-]""").find(parentRowText)
+                        val eNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentEpisodeNum
 
-                    if (linksForEpisode.isNotEmpty()) {
-                        val epMatch = Regex("^(\\d+)").find(rowText)
-                        val eNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: (rowIdx + 1)
+                        val epName = parentRowText.substringBefore("–").substringBefore("-").trim()
+                            .takeIf { it.length > 3 && !it.contains("http") }
+                            ?: "${currentSeason}x${String.format("%02d", eNum)}"
 
                         episodes.add(
-                            newEpisode(linksForEpisode.joinToString("###")) {
-                                this.name = rowText.substringBefore("–").substringBefore("-").trim().takeIf { it.length > 3 } 
-                                    ?: "${currentSeason}x${String.format("%02d", eNum)}"
+                            newEpisode(tempLinks.joinToString("###")) {
+                                this.name = epName
                                 this.season = currentSeason
                                 this.episode = eNum
                             }
                         )
-                    }
-                }
-            } else {
-                // Fallback se i link sono separati semplicemente da dei <br> liberi
-                var episodeCounter = 1
-                anchors.forEach { a ->
-                    val link = a.attr("href")
-                    if (validHostsForLoading.any { host -> link.contains(host) }) {
-                        val hostName = a.text().trim()
                         
-                        episodes.add(
-                            newEpisode(link) {
-                                this.name = "Episodio $episodeCounter ($hostName)"
-                                this.season = currentSeason
-                                this.episode = episodeCounter
-                            }
-                        )
-                        episodeCounter++
+                        tempLinks.clear()
+                        currentEpisodeNum++
                     }
                 }
             }
-        }
-
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-            this.posterUrl = poster
-            this.plot = plot
-            addSeasonNames(seasonsData)
         }
     }
 
