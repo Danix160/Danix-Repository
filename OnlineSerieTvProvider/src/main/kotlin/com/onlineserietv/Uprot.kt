@@ -4,8 +4,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.network.WebViewResolver // 1️⃣ IMPORTATO WEBVIEW RESOLVER
-import okhttp3.Request
+import com.lagradost.cloudstream3.network.WebViewResolver
 import org.jsoup.Jsoup
 
 class Uprot : ExtractorApi() {
@@ -37,16 +36,16 @@ class Uprot : ExtractorApi() {
         var res = app.get(target, headers = dynamicHeaders, allowRedirects = true)
         var htmlText = res.text
 
-        // 2️⃣ SE C'È BLOCCO 403, SBLOCCHIAMO CON LA WEBVIEW DI CLOUDSTREAM
+        // Se c'è blocco 403 o Cloudflare, sblocchiamo con WebViewResolver passandogli l'istanza corretta
         if (res.code == 403 || htmlText.contains("cloudflare") || htmlText.contains("challenge-platform")) {
             println("DEBUG_UPROT: Rilevato blocco 403 o Cloudflare. Avvio WebViewResolver...")
             
             try {
-                // Intercettiamo la richiesta tramite WebView simulando il browser di sistema
+                // CORRETTO: Inizializziamo WebViewResolver senza passargli la mappa direttamente nel costruttore
                 val webViewResponse = app.get(
                     target,
                     headers = dynamicHeaders,
-                    interceptor = WebViewResolver(dynamicHeaders)
+                    interceptor = WebViewResolver() 
                 )
                 htmlText = webViewResponse.text
                 println("DEBUG_UPROT: WebViewResolver completato. Status Code: ${webViewResponse.code}")
@@ -113,7 +112,6 @@ class Uprot : ExtractorApi() {
 
             println("DEBUG_UPROT: Salto intermedio $time -> $redirectUrl")
 
-            // Usiamo l'intercettore anche nei salti intermedi se necessario
             val response = app.get(redirectUrl, headers = currentHeaders, allowRedirects = true)
             val nextUrl = response.url
             currentHtml = response.text 
