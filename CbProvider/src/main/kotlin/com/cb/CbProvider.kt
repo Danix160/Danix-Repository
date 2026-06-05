@@ -350,7 +350,7 @@ class CbProvider : MainAPI() {
                     }
                 } else if (cleanLink.contains("uprot.net")) {
                     val uprotExtractor = Uprot()
-                    urotExtractor.getUrl(cleanLink, referer = "$mainUrl/", subtitleCallback, callback)
+                    uprotExtractor.getUrl(cleanLink, referer = "$mainUrl/", subtitleCallback, callback)
                 } else {
                     loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
