@@ -43,31 +43,6 @@ class CbProvider : MainAPI() {
         return t.trim()
     }
 
-    private fun parseElement(element: Element, isTvSeriesSearch: Boolean = false): SearchResponse? {
-        val titleElement = element.selectFirst("h2 a, h3 a, .card-title a, .post-title a, a[title]") ?: return null
-        val href = titleElement.attr("abs:href").ifBlank { titleElement.attr("href") }
-        if (href.contains("/tag/") || href.contains("/category/") || href.length < 15) return null
-
-        val rawTitle = titleElement.text()
-        val isSeries = isTvSeriesSearch ||
-                href.contains("/serietv/") ||
-                href.contains("/serie/") ||
-                rawTitle.contains("Stagion", ignoreCase = true) ||
-                rawTitle.contains("Serie", ignoreCase = true) ||
-                rawTitle.contains("Episodio", ignoreCase = true)
-
-        val title = fixTitle(rawTitle, !isSeries)
-
-        val posterUrl = element.selectFirst("img")?.let { img ->
-            img.attr("abs:data-lazy-src").ifBlank {
-                img.attr("abs:data-src").ifBlank { img.attr("abs:src") }
-            }
-        }
-
-        return newMovieSearchResponse(title, href, if (isSeries) TvType.TvSeries else TvType.Movie) {
-            this.posterUrl = posterUrl
-        }
-    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         Log.d("CB01", "Caricamento main page: ${request.data} pagina $page")
@@ -84,54 +59,103 @@ class CbProvider : MainAPI() {
     ///////////////////////
     // SEARCH ////////////
     /////////////////////
-    
     override suspend fun search(query: String): List<SearchResponse> {
-    Log.d("CB01", "Ricerca multipagina: $query")
-
     val results = mutableListOf<SearchResponse>()
-    var page = 1
+    
+    // Lista dei due endpoint di ricerca separati (Film e Serie TV)
+    val searchUrls = listOf(
+        "$mainUrl/?s=$query",
+        "$mainUrl/serietv/?s=$query"
+    )
 
-    while (true) {
-        val searchUrl = if (page == 1)
-            "$mainUrl/?s=$query"
-        else
-            "$mainUrl/?s=$query&paged=$page"
+    for (baseUrl in searchUrls) {
+        var currentUrl: String? = baseUrl
+        var pageCount = 1
+        
+        // Limite di salvaguardia per evitare loop infiniti (es. max 5 pagine per sorgente)
+        while (currentUrl != null && pageCount <= 5) {
+            val response = app.get(currentUrl).text
+            val document = Jsoup.parse(response, currentUrl)
+            
+            // Entrambi i file usano la classe degli articoli standard di WP o i box card
+            // Il selettore .card-content o .mp-post intercetta perfettamente i blocchi
+            val blocks = document.select(".card-content, .mp-post")
+            if (blocks.isEmpty()) break
 
-        Log.d("CB01", "Search URL: $searchUrl")
+            blocks.forEach { el ->
+                // Passiamo l'URL corrente per capire se siamo nel motore di ricerca delle serie TV
+                parseElement(el, currentUrl.contains("/serietv/"))?.let { 
+                    results.add(it) 
+                }
+            }
 
-        val document = app.get(searchUrl, headers = commonHeaders).document
-
-        // Se non ci sono risultati → stop
-        val blocks = document.select(
-            """
-            article, 
-            div.card, 
-            div.post-video, 
-            .result-item, 
-            .post, 
-            .entry, 
-            .post-content, 
-            .post-box, 
-            .post-list article,
-            .cbtable a[title]
-            """.trimIndent()
-        )
-
-        if (blocks.isEmpty()) break
-
-        blocks.forEach { el ->
-            parseElement(el)?.let { results.add(it) }
+            // Paginazione robusta per questo specifico tema di CB01
+            // Cerca il link che contiene la freccia avanti, "Next", "Avanti" o l'elemento successivo dopo la pagina corrente
+            val nextAnchor = document.selectFirst(".pagination a.next, .navigation a.next, .nav-links a.next, a:contains(Successivo), a:contains(Next)")
+            
+            currentUrl = if (nextAnchor != null) {
+                nextAnchor.attr("abs:href")
+            } else {
+                // Sotto-fallback manuale se il pulsante "Next" non ha classi specifiche ma si trova nella struttura numerica:
+                // Se siamo a pagina 1 e sappiamo che ci sono altre pagine, possiamo calcolare l'URL della pagina 2
+                val hasPagination = document.selectFirst(".pagination, .navigation, .nav-links") != null
+                if (hasPagination && currentUrl == baseUrl) {
+                    if (baseUrl.contains("/serietv/")) {
+                        "$mainUrl/serietv/page/2/?s=$query"
+                    } else {
+                        "$mainUrl/page/2/?s=$query"
+                    }
+                } else if (hasPagination && currentUrl.contains("/page/")) {
+                    // Estrae il numero di pagina corrente e lo incrementa
+                    val pageRegex = "page/(\\d+)".toRegex()
+                    val match = pageRegex.find(currentUrl)
+                    if (match != null) {
+                        val nextPageNum = match.groupValues[1].toInt() + 1
+                        currentUrl.replace("page/${nextPageNum - 1}", "page/$nextPageNum")
+                    } else null
+                } else null
+            }
+            
+            pageCount++
         }
-
-        // Se non esiste il link "pagina successiva", fermati
-        val nextPage = document.selectFirst("a.next, a.nextpostslink, .pagination a[rel=next]")
-        if (nextPage == null) break
-
-        page++
-        if (page > 10) break // sicurezza
     }
 
+    // Ritorna i risultati rimuovendo eventuali duplicati per URL
     return results.distinctBy { it.url }
+}
+
+private fun parseElement(element: Element, isTvSeriesSearch: Boolean): SearchResponse? {
+    // Cerchiamo il tag del titolo all'interno del blocco (.card-title a o semplicemente h3 a / h2 a)
+    val titleElement = element.selectFirst(".card-title a, h3 a, h2 a") ?: return null
+    val href = titleElement.attr("abs:href")
+    val rawTitle = titleElement.text()
+
+    if (href.isEmpty()) return null
+
+    // Verifica accurata basata sia sul contesto della ricerca che sulla struttura dell'URL trovato
+    val isSeries = isTvSeriesSearch || 
+                   href.contains("/serietv/") || 
+                   href.contains("/serie/") ||
+                   rawTitle.contains("Stagion", ignoreCase = true) || 
+                   rawTitle.contains("Serie TV", ignoreCase = true)
+
+    // Estrazione del poster (gestisce sia src normale che lazy-load da te descritto in precedenza)
+    val imgElement = element.selectFirst("img")
+    val posterUrl = imgElement?.attr("data-lazyloaded")?.takeIf { it.isNotEmpty() }
+        ?: imgElement?.attr("data-src")?.takeIf { it.isNotEmpty() }
+        ?: imgElement?.attr("abs:src")
+
+    val cleanTitle = fixTitle(rawTitle)
+
+    return if (isSeries) {
+        newTvSeriesSearchResponse(cleanTitle, href, TvType.TvSeries) {
+            this.posterUrl = posterUrl
+        }
+    } else {
+        newMovieSearchResponse(cleanTitle, href, TvType.Movie) {
+            this.posterUrl = posterUrl
+        }
+    }
 }
 
     // ---------------------------------------------------------
