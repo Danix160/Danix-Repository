@@ -551,9 +551,9 @@ class OnlineSerieTvProvider : MainAPI() {
             }
         }
     }
-
+    
     // -----------------------------
-    // LOAD LINKS
+    // LOAD LINKS (CORRETTO)
     // -----------------------------
     override suspend fun loadLinks(
         data: String,
@@ -561,19 +561,65 @@ class OnlineSerieTvProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        
+        // Variabile di controllo per verificare se abbiamo effettivamente inviato dei link al player
+        var linksFound = false
 
-        if (data.contains("/film/")) {
-            val document = app.get(data).document
-            document.select("a").forEach { element ->
-                val link = element.attr("href")
-                if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
-                    loadExtractor(link, mainUrl, subtitleCallback, callback)
+        try {
+            // Controlliamo se si tratta di un Film (l'URL contiene /film/)
+            if (data.contains("/film/")) {
+                println("DEBUG OSTV — Estrazione link per FILM dall'URL: $data")
+                
+                val response = app.get(data)
+                if (response.code != 200) {
+                    println("DEBUG OSTV — Errore di rete nel caricamento della pagina del film: ${response.code}")
+                    return false
+                }
+
+                val document = response.document
+                // Seleziona tutti i possibili link della pagina (anche dentro iframe o wrapper comuni)
+                val elements = document.select("a[href], iframe[src]")
+                
+                if (elements.isEmpty()) {
+                    println("DEBUG OSTV — Nessun elemento a o iframe trovato nella pagina.")
+                    return false
+                }
+
+                elements.forEach { element ->
+                    // Recupera l'URL sia che si tratti di un href (a) sia di un src (iframe)
+                    val link = element.attr("href").ifEmpty { element.attr("src") }
+                    
+                    // Rileviamo i wrapper o gli host noti (esteso per includere ddownload, supervideo, mixdrop, ecc.)
+                    if (link.contains("uprot") || link.contains("stream") || 
+                        link.contains("tape") || link.contains("flexy") || 
+                        link.contains("video") || link.contains("drop") || 
+                        link.contains("/msf/")) {
+                        
+                        println("DEBUG OSTV — Tentativo di estrazione da Host/Redirect: $link")
+                        try {
+                            loadExtractor(link, mainUrl, subtitleCallback, callback)
+                            linksFound = true
+                        } catch (e: Exception) {
+                            println("DEBUG OSTV — Estrattore fallito per il link $link: ${e.message}")
+                        }
+                    }
+                }
+            } else {
+                // Se è una Serie TV, 'data' contiene direttamente il link dell'episodio estratto dalla tabella
+                println("DEBUG OSTV — Estrazione link per SERIE TV dall'URL: $data")
+                if (data.isNotEmpty() && (data.startsWith("http") || data.contains("/msf/"))) {
+                    loadExtractor(data, mainUrl, subtitleCallback, callback)
+                    linksFound = true
                 }
             }
-        } else {
-            loadExtractor(data, mainUrl, subtitleCallback, callback)
+        } catch (e: Exception) {
+            println("DEBUG OSTV — Errore critico nel metodo loadLinks: ${e.message}")
+            e.printStackTrace()
+            return false
         }
 
-        return true
+        // Se non è stato trovato o caricato alcun link valido, restituiamo false 
+        // per dire a CloudStream di fermare il caricamento e mostrare l'errore sulla UI
+        return linksFound
     }
 }
