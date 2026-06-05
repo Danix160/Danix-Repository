@@ -48,4 +48,70 @@ class Uprot : ExtractorApi() {
             else -> url
         }
     }
+    private fun findLinkInHtml(html: String): String? {
+    val doc = Jsoup.parse(html)
+    
+    // 1. Cerca prima se c'è un vero tag 'a' con il testo CONTINUE
+    doc.select("a").forEach { tag ->
+        val text = tag.text().uppercase()
+        if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
+            val href = tag.attr("href")
+            if (href.isNotEmpty() && !href.startsWith("#")) return href
+        }
+    }
+
+    // 2. Se non c'è il tag 'a', quasi sicuramente è un FORM. Cerchiamo il form di sblocco.
+    val form = doc.select("form").firstOrNull { form ->
+        form.text().uppercase().contains("CONTINUE")
+    }
+
+    if (form != null) {
+        // Ritorna l'action del form (dove inviare i dati)
+        return form.attr("action")
+    }
+
+    return null
+}
+
+private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
+    var currentHtml = html
+    var redirectUrl = findLinkInHtml(currentHtml) ?: return null
+    var time = 0
+
+    // Continuiamo finché l'URL contiene la protezione di uprot
+    while (redirectUrl.contains("uprot")) {
+        time++
+        if (time == 10) return null
+
+        // Eseguiamo la richiesta per superare lo step. 
+        // NOTA: Se era un form, idealmente andrebbe fatta una richiesta POST con i relativi input.
+        // Se basta una GET, carichiamo la nuova pagina:
+        val response = app.get(redirectUrl, headers = headers, allowRedirects = true)
+        
+        // AGGIORNAMENTO CRUCIALE: prendiamo il NUOVO URL e il NUOVO HTML della pagina
+        val nextUrl = response.url
+        currentHtml = response.text // Prende il codice della nuova pagina appena caricata
+
+        // Se l'URL è cambiato e siamo usciti da uprot, interrompiamo il ciclo
+        if (!nextUrl.contains("uprot")) {
+            redirectUrl = nextUrl
+            break
+        }
+
+        // Altrimenti, analizziamo il nuovo HTML per cercare il PROSSIMO tasto continue
+        redirectUrl = findLinkInHtml(currentHtml) ?: nextUrl
+    }
+
+    // parsing finale per estrarre l'ID di maxstream
+    return if (redirectUrl.contains("watchfree/")) {
+        val parts = redirectUrl.split("watchfree/")[1].split("/")
+        if (parts.size > 1) {
+            "https://maxstream.video/emvvv/${parts[1]}"
+        } else {
+            redirectUrl
+        }
+    } else {
+        redirectUrl
+    }
+}
 }
