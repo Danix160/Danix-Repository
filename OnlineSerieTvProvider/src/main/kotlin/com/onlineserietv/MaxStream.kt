@@ -19,49 +19,88 @@ class MaxStream : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            // Aggiungiamo uno user-agent standard per evitare blocchi base dall'host
+            val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            var currentUrl = url
+
+            // FORZATURA DA msf A mse: 
+            // Se l'URL contiene /msf/, lo trasformiamo subito in /mse/ per atterrare direttamente sulla pagina con il bottone "Continue"
+            if (currentUrl.contains("/msf/")) {
+                currentUrl = currentUrl.replace("/msf/", "/mse/")
+                println("DEBUG MAXSTREAM — Forzato cambio url da msf a mse: $currentUrl")
+            }
+
+            // FASE 1: Gestione della pagina Uprot (/mse/)
+            if (currentUrl.contains("uprot") || currentUrl.contains("/mse/")) {
+                println("DEBUG MAXSTREAM — Richiesta alla pagina intermedia Uprot: $currentUrl")
+                
+                val res = app.get(
+                    currentUrl,
+                    headers = mapOf(
+                        "User-Agent" to userAgent, 
+                        "Referer" to (referer ?: mainUrl)
+                    )
+                )
+                val htmlText = res.text
+
+                // Cerchiamo l'URL del pulsante "Continue" che punta a maxstream.video/uprotem/...
+                val matchTarget = """href=["'](https?://maxstream\.video/uprotem/[^"']+)["']""".toRegex().find(htmlText)
+                
+                if (matchTarget != null) {
+                    currentUrl = matchTarget.groupValues[1]
+                    println("DEBUG MAXSTREAM — Trovato link maxstream reale: $currentUrl")
+                } else {
+                    println("DEBUG MAXSTREAM — Pulsante Continue non trovato. Controlla se c'è blocco Cloudflare nell'HTML.")
+                    return
+                }
+            }
+
+            // FASE 2: Richiesta finale alla pagina di MaxStream per estrarre il video definitivo
+            println("DEBUG MAXSTREAM — Richiesta finale al player: $currentUrl")
             val response = app.get(
-                url, 
-                referer = referer ?: mainUrl,
-                headers = mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                currentUrl,
+                headers = mapOf(
+                    "User-Agent" to userAgent,
+                    "Referer" to url // Manteniamo l'URL di partenza originale come Referer richiesto dal server
+                )
             )
             val html = response.text
 
-            println("DEBUG MAXSTREAM — Pagina caricata, avvio parsing. Lunghezza HTML: ${html.length}")
+            if (html.isEmpty()) return
 
-            // Regex molto più flessibile per beccare il file video (m3u8 o mp4)
-            val pattern = """(?:file|src)\s*:\s*["']([^"']+)["']|src\s*=\s*["']([^"']+\.(?:mp4|m3u8)[^"']*)["']""".toRegex(RegexOption.IGNORE_CASE)
-            val match = pattern.find(html)
-
-            if (match != null) {
-                // Estraiamo il primo gruppo catturato che non sia nullo
-                val videoUrl = (match.groupValues[1].ifEmpty { match.groupValues[2] }).trim()
-                
-                if (videoUrl.isNotEmpty() && videoUrl.startsWith("http")) {
-                    println("DEBUG MAXSTREAM — Trovato URL Video valido: $videoUrl")
-                    
-                    val isM3u8 = videoUrl.contains(".m3u8")
-
-                    val link = newExtractorLink(
-                        source = this.name,
-                        name = this.name,
-                        url = videoUrl,
-                        type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = url
-                        this.quality = Qualities.Unknown.value
-                    }
-                    
-                    callback.invoke(link)
-                    return // Uscita pulita dopo aver inviato il link
+            // Estrazione pulita del file video
+            var videoUrl = ""
+            if (html.contains("sources:")) {
+                val segment = html.substringAfter("sources:")
+                if (segment.contains("src")) {
+                    videoUrl = segment.substringAfter("src").substringAfter("\"").substringBefore("\"")
                 }
+            } else if (html.contains("file:")) {
+                videoUrl = html.substringAfter("file:").substringAfter("\"").substringBefore("\"")
             }
-            
-            // Se arriva qui, la regex ha fallito o l'URL non era valido
-            println("DEBUG MAXSTREAM — Nessun link video estratto dall'HTML.")
+
+            videoUrl = videoUrl.trim().replace("\\", "")
+
+            if (videoUrl.isNotEmpty() && videoUrl.startsWith("http")) {
+                println("DEBUG MAXSTREAM — Streaming estratto con successo: $videoUrl")
+                
+                val isM3u8 = videoUrl.contains(".m3u8") || videoUrl.contains("master.m3u8")
+
+                val link = newExtractorLink(
+                    source = this.name,
+                    name = this.name,
+                    url = videoUrl,
+                    type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = currentUrl
+                    this.quality = Qualities.Unknown.value
+                }
+                callback.invoke(link)
+            } else {
+                println("DEBUG MAXSTREAM — Nessun URL video trovato nella pagina finale del player.")
+            }
 
         } catch (e: Exception) {
-            println("DEBUG MAXSTREAM — Eccezione durante l'estrazione: ${e.message}")
+            println("DEBUG MAXSTREAM — Errore durante il processo: ${e.message}")
         }
     }
 }
