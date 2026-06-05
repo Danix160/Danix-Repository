@@ -85,9 +85,6 @@ class CbProvider : MainAPI() {
         return newHomePageResponse(request.name, items)
     }
 
-    // ---------------------------------------------------------
-    //  SEARCH (Scansione sia di Film che di Serie TV)
-    // ---------------------------------------------------------
     override suspend fun search(query: String): List<SearchResponse> {
         Log.d("CB01", "Ricerca multipagina unificata: $query")
         val results = mutableListOf<SearchResponse>()
@@ -144,9 +141,6 @@ class CbProvider : MainAPI() {
         return results.distinctBy { it.url }
     }
 
-    // ---------------------------------------------------------
-    //  PARSER UPROT FOLDER (msfld) → Estrae episodi reali dalle tabelle Uprot
-    // ---------------------------------------------------------
     private suspend fun parseUprotFolder(url: String, season: Int): List<Episode> {
         Log.d("CB01", "Parsing Uprot folder: $url")
         val eps = mutableListOf<Episode>()
@@ -190,9 +184,6 @@ class CbProvider : MainAPI() {
         return eps
     }
 
-    // ---------------------------------------------------------
-    //  LOAD()
-    // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse {
         Log.d("CB01", "Caricamento pagina: $url")
         val document = app.get(url, headers = commonHeaders).document
@@ -232,7 +223,7 @@ class CbProvider : MainAPI() {
         }
 
         // ---------------------------------------------------------
-        //  SERIE TV & CARTOONS (Parser Universale Anti-Prossimamente)
+        //  SERIE TV & CARTOONS
         // ---------------------------------------------------------
         Log.d("CB01", "Rilevata SERIE TV / ANIMAZIONE")
         val seasonsData = mutableListOf<SeasonData>()
@@ -241,7 +232,6 @@ class CbProvider : MainAPI() {
         document.select("div.sp-wrap, div.bb-spoiler").forEachIndexed { index, wrap ->
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
             
-            // Estrae accuratamente la stagione numerica dopo la parola "Stagione"
             val seasonRegex = Regex("(?i)Stagione\\s*(\\d+)")
             val matchSeason = seasonRegex.find(seasonHead)
             val currentSeason = matchSeason?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
@@ -254,7 +244,6 @@ class CbProvider : MainAPI() {
 
             val body = wrap.selectFirst(".sp-body") ?: return@forEachIndexed
             
-            // 1. VERIFICA SE È PRESENTE UNA CARTELLA MULTIPLA (TUTTA LA SERIE / INTERA STAGIONE)
             val bodyText = body.text().trim()
             if (bodyText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
                 val folderLink = body.selectFirst("a[href*=uprot.net/msfld]")?.attr("href")
@@ -266,46 +255,33 @@ class CbProvider : MainAPI() {
                         ep.name = "${currentSeason}x${String.format("%02d", i + 1)}"
                     }
                     episodes.addAll(realEpisodes)
-                    return@forEachIndexed // Passa alla prossima stagione se questa era in cartella uprot
+                    return@forEachIndexed 
                 }
             }
 
-            // 2. PARSING DEI LINK INDIVIDUALI (Gestione flessibile per righe text, p, br, li)
-            // Estraiamo tutti i link validi all'interno del corpo dello spoiler
             val allAnchors = body.select("a[href]").filter { a ->
                 val href = a.attr("href")
                 validHostsForLoading.any { host -> href.contains(host) }
             }
 
             if (allAnchors.isNotEmpty()) {
-                // Raggruppiamo i nodi o li separiamo per capire a quale episodio appartengono.
-                // Spesso gli host dello stesso episodio sono vicini (es. "01. Titolo - Mixdrop - Voe").
-                // Approccio solido: se i link sono separati da un testo che contiene un nuovo numero di episodio, o se usiamo l'elemento genitore.
-                
                 var currentEpisodeNum = 1
                 val tempLinks = mutableListOf<String>()
-                var lastEpName = ""
 
                 allAnchors.forEachIndexed { anchorIdx, anchor ->
                     val href = anchor.attr("href")
-                    
-                    // Recuperiamo il testo circostante (il paragrafo o l'elemento contenitore) per capire il nome/numero
-                    val parentRowText = anchor.parent()?.text()?.trim().orEmpty()
+                    val parentRowText = anchor.parent()?.text().orEmpty().trim()
                     
                     tempLinks.add(href)
 
-                    // Se è l'ultimo link dello spoiler, o se il prossimo link appartiene a un elemento/paragrafo diverso,
-                    // oppure se il link successivo è preceduto da una dicitura numerica nuova (es. "02."), salviamo l'episodio corrente.
                     val isLast = anchorIdx == allAnchors.lastIndex
                     var shouldFlush = isLast
 
                     if (!isLast) {
                         val nextAnchor = allAnchors[anchorIdx + 1]
-                        // Se il link successivo ha un genitore differente ed esso contiene un pattern numerico di inizio riga (es: "02. Nome")
                         if (anchor.parent() != nextAnchor.parent()) {
                             shouldFlush = true
                         } else {
-                            // Se condividono lo stesso parent ma nel testo successivo c'è un separatore di episodio evidente
                             val textBetween = body.text().substringAfter(anchor.text()).substringBefore(nextAnchor.text())
                             if (textBetween.contains(Regex("""\b\d+[\s.-]"""))) {
                                 shouldFlush = true
@@ -314,7 +290,6 @@ class CbProvider : MainAPI() {
                     }
 
                     if (shouldFlush) {
-                        // Tentiamo di ricavare il numero dell'episodio dal testo della riga
                         val epMatch = Regex("""\b(\d+)\s*[\s.-]""").find(parentRowText)
                         val eNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentEpisodeNum
 
@@ -336,11 +311,14 @@ class CbProvider : MainAPI() {
                 }
             }
         }
+
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            this.posterUrl = poster
+            this.plot = plot
+            addSeasonNames(seasonsData)
+        }
     }
 
-    // ---------------------------------------------------------
-    //  LOAD LINKS (Bypass StayOnline e riproduzione)
-    // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -371,9 +349,8 @@ class CbProvider : MainAPI() {
                         }
                     }
                 } else if (cleanLink.contains("uprot.net")) {
-                    // Gestione diretta dei link provenienti dalle cartelle msfld senza passare da stayonline
                     val uprotExtractor = Uprot()
-                    uprotExtractor.getUrl(cleanLink, referer = "$mainUrl/", subtitleCallback, callback)
+                    urotExtractor.getUrl(cleanLink, referer = "$mainUrl/", subtitleCallback, callback)
                 } else {
                     loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
