@@ -444,91 +444,96 @@ class OnlineSerieTvProvider : MainAPI() {
         }
 
         val rows = document.select("table tr")
-        var siteMaxSeason = 1
-        rows.forEach { row ->
-            val fullText = row.selectFirst("td")?.text() ?: return@forEach
-            val se = parseSeasonAndEpisode(fullText)
-            if (se != null && se.first > siteMaxSeason) {
-                siteMaxSeason = se.first
-            }
-        }
+var siteMaxSeason = 1
 
-        var globalIndex = 0
+rows.forEach { row ->
+    val fullText = row.selectFirst("td")?.text() ?: return@forEach
+    val se = parseSeasonAndEpisode(fullText)
+    if (se != null && se.first > siteMaxSeason) {
+        siteMaxSeason = se.first
+    }
+}
 
-        rows.forEach { row ->
-            val maxStreamLink = row.select("a[href*=/msf/ ]").firstOrNull() ?: row.select("a[href*=/msf/]").firstOrNull()
-            if (maxStreamLink == null) return@forEach
+var globalIndex = 0
 
-            val fullText = row.selectFirst("td")?.text() ?: ""
+rows.forEach { row ->
+    // FIX 2026 — trova TUTTI i link UPROT
+    val linkEl = row.select(
+        "a[href*=/msf/], a[href*=/msfi/], a[href*=/mse/], " +
+        "a[data-href*=/msf/], a[data-href*=/msfi/], a[data-href*=/mse/]"
+    ).firstOrNull() ?: return@forEach
 
-            val se = parseSeasonAndEpisode(fullText)
-            val explicitEpNum = parseEpisodeNumberFromText(fullText)
+    // FIX 2026 — estrai href o data-href
+    val linkUrl = linkEl.attr("href").ifBlank { linkEl.attr("data-href") }
+    if (linkUrl.isBlank()) return@forEach
 
-            val siteSeason = se?.first ?: 1
-            val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
+    val fullText = row.selectFirst("td")?.text() ?: ""
 
-            globalIndex++
+    val se = parseSeasonAndEpisode(fullText)
+    val explicitEpNum = parseEpisodeNumberFromText(fullText)
 
-            var seasonNumber = siteSeason
-            var epInSeason = siteEpisode
+    val siteSeason = se?.first ?: 1
+    val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
 
-            if (tmdbSeasonsInfo.isNotEmpty()) {
-                if (siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
-                    var remaining = globalIndex
-                    var mapped = false
+    globalIndex++
 
-                    for ((sn, epCount) in tmdbSeasonsInfo) {
-                        if (remaining <= epCount) {
-                            seasonNumber = sn
-                            epInSeason = remaining
-                            mapped = true
-                            break
-                        }
-                        remaining -= epCount
-                    }
+    var seasonNumber = siteSeason
+    var epInSeason = siteEpisode
 
-                    if (!mapped) {
-                        seasonNumber = siteSeason
-                        epInSeason = siteEpisode
-                    }
-                } else {
-                    val tmdbSeason = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
-                    if (tmdbSeason != null) {
-                        seasonNumber = siteSeason
-                        epInSeason = siteEpisode
-                    } else {
-                        seasonNumber = siteSeason
-                        epInSeason = siteEpisode
-                    }
+    if (tmdbSeasonsInfo.isNotEmpty()) {
+        if (siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
+            var remaining = globalIndex
+            var mapped = false
+
+            for ((sn, epCount) in tmdbSeasonsInfo) {
+                if (remaining <= epCount) {
+                    seasonNumber = sn
+                    epInSeason = remaining
+                    mapped = true
+                    break
                 }
+                remaining -= epCount
             }
 
-            val seasonMap = if (tmdb != null) {
-                tmdbSeasonsCache.getOrPut(seasonNumber) {
-                    getTmdbSeason(tmdb.id, seasonNumber)
-                }
-            } else emptyMap()
-
-            val info = seasonMap[epInSeason]
-
-            episodesList.add(
-                newEpisode(maxStreamLink.attr("href")) {
-                    this.name = info?.name ?: "Episodio $epInSeason"
-                    this.season = seasonNumber
-                    this.episode = epInSeason
-                    this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
-
-                    val runtime = info?.runtime ?: defaultRuntime ?: 0
-
-                    this.description = buildString {
-                        append(info?.overview ?: "")
-                        if (runtime > 0) {
-                            append("\n\nDurata: ${runtime} min")
-                        }
-                    }
-                }
-            )
+            if (!mapped) {
+                seasonNumber = siteSeason
+                epInSeason = siteEpisode
+            }
+        } else {
+            val tmdbSeason = tmdbSeasonsInfo.firstOrNull { it.first == siteSeason }
+            if (tmdbSeason != null) {
+                seasonNumber = siteSeason
+                epInSeason = siteEpisode
+            }
         }
+    }
+
+    val seasonMap = if (tmdb != null) {
+        tmdbSeasonsCache.getOrPut(seasonNumber) {
+            getTmdbSeason(tmdb.id, seasonNumber)
+        }
+    } else emptyMap()
+
+    val info = seasonMap[epInSeason]
+
+    episodesList.add(
+        newEpisode(linkUrl) {
+            this.name = info?.name ?: "Episodio $epInSeason"
+            this.season = seasonNumber
+            this.episode = epInSeason
+            this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+
+            val runtime = info?.runtime ?: defaultRuntime ?: 0
+
+            this.description = buildString {
+                append(info?.overview ?: "")
+                if (runtime > 0) {
+                    append("\n\nDurata: ${runtime} min")
+                }
+            }
+        }
+    )
+}
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
@@ -556,24 +561,31 @@ class OnlineSerieTvProvider : MainAPI() {
     // LOAD LINKS
     // -----------------------------
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
 
-        if (data.contains("/film/")) {
-            val document = app.get(data).document
-            document.select("a").forEach { element ->
-                val link = element.attr("href")
-                if (link.contains("uprot") || link.contains("stream") || link.contains("tape") || link.contains("flexy")) {
-                    loadExtractor(link, mainUrl, subtitleCallback, callback)
-                }
+    // FILM
+    if (data.contains("/film/")) {
+        val document = app.get(data).document
+
+        document.select(
+            "a[href*=/msf/], a[href*=/msfi/], a[href*=/mse/], " +
+            "a[data-href*=/msf/], a[data-href*=/msfi/], a[data-href*=/mse/]"
+        ).forEach { el ->
+            val link = el.attr("href").ifBlank { el.attr("data-href") }
+            if (link.isNotBlank()) {
+                loadExtractor(link, mainUrl, subtitleCallback, callback)
             }
-        } else {
-            loadExtractor(data, mainUrl, subtitleCallback, callback)
         }
-
-        return true
+    } 
+    // SERIE
+    else {
+        loadExtractor(data, mainUrl, subtitleCallback, callback)
     }
+
+    return true
+}
 }
