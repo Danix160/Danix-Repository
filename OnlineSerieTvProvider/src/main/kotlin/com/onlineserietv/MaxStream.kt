@@ -12,11 +12,6 @@ class MaxStream : ExtractorApi() {
     override val mainUrl = "https://maxstream.video"
     override val requiresReferer = true
 
-    private val videoRegex = Regex(
-        """(file|source|src)\s*[:=]\s*["'](https?://[^"']+\.m3u8[^"']*)["']""",
-        RegexOption.IGNORE_CASE
-    )
-
     override suspend fun getUrl(
         url: String,
         referer: String?,
@@ -26,20 +21,24 @@ class MaxStream : ExtractorApi() {
         val response = app.get(url, referer = referer)
         val html = response.text
 
-        val match = videoRegex.find(html)
-        val videoUrl = match?.groupValues?.get(2)
+        val pattern = """sources\W+src\W+([^"\s]+)""".toRegex()
+        val match = pattern.find(html)
 
-        if (videoUrl != null) {
+        if (match != null) {
+            val videoUrl = match.groupValues[1].replace("\"", "").trim()
+            val isM3u8 = videoUrl.contains(".m3u8")
+
+            // Applichiamo l'esatta sintassi moderna con il blocco lambda configuratore
             val link = newExtractorLink(
-                source = name,
-                name = name,
+                source = this.name,
+                name = this.name,
                 url = videoUrl,
-                type = ExtractorLinkType.M3U8
+                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             ) {
                 this.referer = url
                 this.quality = Qualities.Unknown.value
             }
-
+            
             callback.invoke(link)
         }
     }
