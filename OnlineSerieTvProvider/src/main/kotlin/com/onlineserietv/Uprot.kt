@@ -4,7 +4,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.app
-import org.jsoup.Jsoup // 1️⃣ IMPORTATO JSOUP PER IL PARSING HTML
+import org.jsoup.Jsoup
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
@@ -25,12 +25,13 @@ class Uprot : ExtractorApi() {
     ) {
         val target = normalize(url)
 
-        // Carichiamo la prima pagina (allowRedirects = true per seguire eventuali passaggi iniziali)
+        // Carichiamo la prima pagina di Uprot (/mse/)
         val res = app.get(target, headers = headers, referer = referer ?: mainUrl, allowRedirects = true)
         
-        // 2️⃣ SE C'È IL TASTO CONTINUE, RISOLVIAMO I PASSAGGI INTERMEDI
-        // Passiamo l'HTML iniziale alla nostra funzione di sblocco
+        // Risolviamo i passaggi intermedi per ottenere il link del player finale
         val finalUrl = getFinalMaxstreamLink(res.text, headers) ?: res.url
+
+        println("DEBUG_UPROT: URL finale passato a loadExtractor -> $finalUrl")
 
         if (finalUrl.contains("maxstream")) {
             loadExtractor(finalUrl, target, subtitleCallback, callback)
@@ -50,68 +51,78 @@ class Uprot : ExtractorApi() {
     private fun findLinkInHtml(html: String): String? {
         val doc = Jsoup.parse(html)
         
-        // 1. Cerca prima se c'è un vero tag 'a' con il testo CONTINUE
+        // 1. Cerca il tag 'a' con il testo CONTINUE
         doc.select("a").forEach { tag ->
             val text = tag.text().uppercase()
             if (text.contains("C O N T I N U E") || text.contains("CONTINUE")) {
                 val href = tag.attr("href")
-                if (href.isNotEmpty() && !href.startsWith("#")) return href
+                if (href.isNotEmpty() && !href.startsWith("#")) {
+                    // Gestione link relativi: se inizia con /, aggiungiamo il dominio di MaxStream
+                    return if (href.startsWith("/")) "https://maxstream.video$href" else href
+                }
             }
         }
 
-        // 2. Se non c'è il tag 'a', quasi sicuramente è un FORM. Cerchiamo il form di sblocco.
+        // 2. Cerca il form di sblocco
         val form = doc.select("form").firstOrNull { formElement ->
             formElement.text().uppercase().contains("CONTINUE")
         }
 
         if (form != null) {
             val action = form.attr("action")
-            // Se l'action è vuota, spesso significa che il form reinvia alla stessa pagina corrente
-            return if (action.isNotEmpty()) action else null
+            if (action.isNotEmpty()) {
+                return if (action.startsWith("/")) "https://maxstream.video$action" else action
+            }
         }
 
         return null
     }
 
     private suspend fun getFinalMaxstreamLink(html: String, headers: Map<String, String>): String? {
-    var currentHtml = html
-    var redirectUrl = findLinkInHtml(currentHtml) ?: return null
-    var time = 0
+        var currentHtml = html
+        var redirectUrl = findLinkInHtml(currentHtml) ?: return null
+        var time = 0
 
-    while (redirectUrl.contains("uprot")) {
-        time++
-        if (time == 5) return null // Riduciamo i tentativi a 5 per non freezare l'app
+        // MODIFICA CRUCIALE: Il ciclo deve continuare finché l'URL NON contiene l'endpoint finale dello streaming video (es. /emvvv/ o /video/)
+        // Se contiene ancora uprot o l'endpoint intermedio /uprotem/, dobbiamo continuare a navigare
+        while (redirectUrl.contains("uprot") || redirectUrl.contains("/uprotem/")) {
+            time++
+            if (time == 5) return null 
 
-        // Log di debug per capire dove si pianta
-        println("DEBUG_UPROT: Tentativo $time su URL: $redirectUrl")
+            println("DEBUG_UPROT: Tentativo intermedio $time su URL: $redirectUrl")
 
-        val response = app.get(redirectUrl, headers = headers, allowRedirects = true)
-        val nextUrl = response.url
-        currentHtml = response.text 
+            val response = app.get(redirectUrl, headers = headers, allowRedirects = true)
+            val nextUrl = response.url
+            currentHtml = response.text 
 
-        if (!nextUrl.contains("uprot")) {
-            redirectUrl = nextUrl
-            break
+            // Se siamo usciti da uprot e siamo su maxstream pronti per l'estrazione, verifichiamo la struttura
+            if (!nextUrl.contains("uprot") && !nextUrl.contains("/uprotem/")) {
+                redirectUrl = nextUrl
+                break
+            }
+
+            val nextStep = findLinkInHtml(currentHtml)
+            if (nextStep == null) {
+                println("DEBUG_UPROT: Tasto CONTINUE non trovato nell'HTML al tentativo $time. Bot-check o pagina finale raggiunta.")
+                redirectUrl = nextUrl
+                break 
+            } else {
+                redirectUrl = nextStep
+            }
         }
 
-        // CORREZIONE CRUCIALE: Se non trova il tasto CONTINUE nel nuovo HTML, 
-        // usciamo immediatamente invece di usare 'nextUrl' e rischiare il loop infinito.
-        val nextStep = findLinkInHtml(currentHtml)
-        if (nextStep == null) {
-            println("DEBUG_UPROT: Tasto CONTINUE non trovato nell'HTML al tentativo $time. Blocco anti-bot?")
-            redirectUrl = nextUrl
-            break 
-        } else {
-            redirectUrl = nextStep
+        // Parsing e normalizzazione finale dell'URL per MaxStream
+        return when {
+            redirectUrl.contains("watchfree/") -> {
+                val parts = redirectUrl.split("watchfree/")[1].split("/")
+                if (parts.size > 1) "https://maxstream.video/emvvv/${parts[1]}" else redirectUrl
+            }
+            redirectUrl.contains("uprotem/") -> {
+                // Se il bottone finale era un /uprotem/, lo convertiamo nel formato compatibile con l'estrattore MaxStream
+                val part = redirectUrl.substringAfter("uprotem/").substringBefore("/")
+                "https://maxstream.video/emvvv/$part"
+            }
+            else -> redirectUrl
         }
     }
-
-    // Parsing finale maxstream...
-    return if (redirectUrl.contains("watchfree/")) {
-        val parts = redirectUrl.split("watchfree/")[1].split("/")
-        if (parts.size > 1) "https://maxstream.video/emvvv/${parts[1]}" else redirectUrl
-    } else {
-        redirectUrl
-    }
-}
 }
