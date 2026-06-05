@@ -73,7 +73,6 @@ class VidxGoExtractor : ExtractorApi() {
         )
 
         if (isM3u8) {
-            // Mappa esatta specidica per la signature del tuo SDK: richiede sia source che streamUrl
             M3u8Helper.generateM3u8(
                 source = this.name,
                 streamUrl = videoUrl,
