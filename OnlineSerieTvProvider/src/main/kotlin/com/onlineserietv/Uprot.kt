@@ -36,16 +36,16 @@ class Uprot : ExtractorApi() {
         var res = app.get(target, headers = dynamicHeaders, allowRedirects = true)
         var htmlText = res.text
 
-        // Se c'è blocco 403 o Cloudflare, sblocchiamo con WebViewResolver passandogli l'istanza corretta
+        // Se c'è blocco 403 o Cloudflare, sblocchiamo con WebViewResolver passandogli la Regex richiesta
         if (res.code == 403 || htmlText.contains("cloudflare") || htmlText.contains("challenge-platform")) {
             println("DEBUG_UPROT: Rilevato blocco 403 o Cloudflare. Avvio WebViewResolver...")
             
             try {
-                // CORRETTO: Inizializziamo WebViewResolver senza passargli la mappa direttamente nel costruttore
+                // Sblocca passando la Regex ".*" per evitare l'errore di parametro mancante
                 val webViewResponse = app.get(
                     target,
                     headers = dynamicHeaders,
-                    interceptor = WebViewResolver() 
+                    interceptor = WebViewResolver(".*".toRegex())
                 )
                 htmlText = webViewResponse.text
                 println("DEBUG_UPROT: WebViewResolver completato. Status Code: ${webViewResponse.code}")
