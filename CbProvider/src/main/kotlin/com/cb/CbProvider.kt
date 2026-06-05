@@ -189,7 +189,6 @@ class CbProvider : MainAPI() {
         val document = app.get(url, headers = commonHeaders).document
         val isSeries = url.contains("/serietv/") || url.contains("/serie/")
 
-        // 1. Estrazione metadati corazzata tramite Open Graph (immune a variazioni del tema HTML)
         val title = fixTitle(document.selectFirst("meta[property=\"og:title\"]")?.attr("content") 
             ?: document.selectFirst("h1")?.text() ?: "", !isSeries)
         
@@ -229,11 +228,8 @@ class CbProvider : MainAPI() {
         Log.d("CB01", "Rilevata SERIE TV")
         val seasonsData = mutableListOf<SeasonData>()
 
-        // Target accurato basato sul plugin 'bbspoiler' strutturato nell'HTML reale
         document.select("div.sp-wrap, div.bb-spoiler").forEachIndexed { index, wrap ->
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
-            
-            // Determina l'indice di sicurezza della stagione dallo spoiler header
             val currentSeason = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
 
             val seasonNameClean = seasonHead
@@ -243,7 +239,6 @@ class CbProvider : MainAPI() {
 
             seasonsData.add(SeasonData(currentSeason, seasonNameClean))
 
-            // Iterazione resiliente: leggiamo linearmente tutti i nodi interni all'elemento sp-body
             wrap.select(".sp-body *").forEach { row ->
                 val anchors = row.select("a[href]")
                 if (anchors.isEmpty()) return@forEach
@@ -251,7 +246,6 @@ class CbProvider : MainAPI() {
                 val rowText = row.text().trim()
                 if (rowText.isBlank() || rowText.contains("[riduci]", ignoreCase = true)) return@forEach
 
-                // Gestione dei link cumulativi "Stagione Completa"
                 if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
                     val folderLinks = anchors.map { it.attr("href") }.filter { l -> supportedHosts.any { l.contains(it) } }
                     if (folderLinks.isNotEmpty()) {
@@ -267,7 +261,6 @@ class CbProvider : MainAPI() {
                     return@forEach
                 }
 
-                // REGEX OTTIMIZZATA: Supporta "2x01", "2×01" (carattere speciale Unicode) e spazi variabili
                 val epMatch = Regex("(\\d+)\\s*[x×\\u00D7]\\s*(\\d+)").find(rowText)
                 val fallbackMatch = Regex("(?i)(?:Episodio\\s*)?(\\d+)").find(rowText)
 
@@ -280,15 +273,12 @@ class CbProvider : MainAPI() {
 
                 val baseEpName = "${sNum}x${String.format("%02d", eNum)}"
 
-                // Isola esclusivamente i link supportati validi di questa riga di testo
                 val linksForEpisode = anchors.map { it.attr("href") }.filter { link ->
                     supportedHosts.any { host -> link.contains(host) }
                 }
 
                 if (linksForEpisode.isNotEmpty()) {
                     val linksData = linksForEpisode.joinToString("###")
-                    
-                    // Cruciale: previene la duplicazione dovuta all'annidamento ricorsivo di JSoup (*)
                     val isDuplicate = episodes.any { it.season == sNum && it.episode == eNum }
                     
                     if (!isDuplicate) {
@@ -312,62 +302,54 @@ class CbProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-): Boolean {
-    Log.d("CB01", "loadLinks() chiamato con data: $data")
-    
-    val allLinks = data.split("###")
-        .map { it.trim() }
-        .filter { it.isNotBlank() && it.startsWith("http") }
-        .sortedBy { it.contains("stayonline.pro") } 
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("CB01", "loadLinks() chiamato con data: $data")
+        
+        val allLinks = data.split("###")
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it.startsWith("http") }
+            .sortedBy { it.contains("stayonline.pro") } 
 
-    allLinks.forEach { cleanLink ->
-        try {
-            // Caso A: Il link è protetto da StayOnline
-            if (cleanLink.contains("stayonline.pro")) {
-                Log.d("CB01", "StayOnline rilevato → bypass in corso per $cleanLink")
-                var bypassed = bypassStayOnline(cleanLink)
-                
-                if (!bypassed.isNullOrBlank()) {
-                    // Sanificazione di sicurezza: aggiunge il protocollo se manca
-                    if (!bypassed.startsWith("http")) {
-                        bypassed = "https://" + bypassed.removePrefix("//")
-                    }
-                    Log.d("CB01", "StayOnline sbloccato! Link reale estratto: $bypassed")
+        allLinks.forEach { cleanLink ->
+            try {
+                if (cleanLink.contains("stayonline.pro")) {
+                    Log.d("CB01", "StayOnline rilevato → bypass in corso per $cleanLink")
+                    var bypassed = bypassStayOnline(cleanLink)
+                    
+                    if (!bypassed.isNullOrBlank()) {
+                        if (!bypassed.startsWith("http")) {
+                            bypassed = "https://" + bypassed.removePrefix("//")
+                        }
+                        Log.d("CB01", "StayOnline sbloccato! Link reale estratto: $bypassed")
 
-                    // SE IL LINK REALE È UPROT, APPLICHIAMO LO STESSO FLUSSO DEI FILM
-                    if (bypassed.contains("uprot")) {
-                        Log.d("CB01", "Il link sbloccato è un host Uprot. Avvio l'estrattore dedicato...")
-                        // Invochiamo direttamente l'istanza dell'estrattore registrato per evitare conflitti di OkHttp
-                        val uprotExtractor = Uprot()
-                        uprotExtractor.getUrl(bypassed, referer = cleanLink, subtitleCallback, callback)
-                    } else {
-                        // Altrimenti lo passiamo al gestore generico (es. Mixdrop, Voe, ecc.)
-                        loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
+                        if (bypassed.contains("uprot")) {
+                            Log.d("CB01", "Il link sbloccato è un host Uprot. Avvio l'estrattore dedicato...")
+                            val uprotExtractor = Uprot()
+                            uprotExtractor.getUrl(bypassed, referer = cleanLink, subtitleCallback, callback)
+                        } else {
+                            loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
+                        }
                     }
+                } else {
+                    loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
-            } 
-            // Caso B: Il link è diretto (es. Uprot dei film o Mixdrop nativo)
-            else {
-                loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
+            } catch (e: Exception) {
+                Log.e("CB01", "Errore nell'estrazione del link $cleanLink: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e("CB01", "Errore nell'estrazione del link $cleanLink: ${e.message}")
         }
+        return true
     }
-    return true
-}
+
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
-            // 1. Sanificazione e isolamento sicuro del LinkID dall'URL di partenza
             val cleanUrl = link.substringBefore("?")
             val urlParts = cleanUrl.removeSuffix("/").split("/")
             val linkId = urlParts.lastOrNull { it.isNotBlank() } ?: return null
             
-            // 2. Routing dinamico della richiesta AJAX basato sul tipo di risorsa (Embed vs Standard)
             val ajaxEndpoint = if (link.contains("/e/")) {
                 "https://stayonline.pro/ajax/linkEmbedView.php"
             } else {
@@ -383,11 +365,9 @@ class CbProvider : MainAPI() {
                 "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8"
             )
 
-            // 3. Persistenza dei Cookie: Memorizziamo la sessione generata dalla GET iniziale
             val pageResponse = app.get(link, headers = headers)
             val cookies = pageResponse.cookies
 
-            // 4. Invio della POST autorizzata con i cookie corretti
             val response = app.post(
                 ajaxEndpoint,
                 headers = headers,
@@ -399,7 +379,6 @@ class CbProvider : MainAPI() {
             if (json.optString("status") == "success") {
                 var realUrl = json.getJSONObject("data").getString("value")
 
-                // Normalizzazione automatica dei flussi Mixdrop camuffati
                 if (realUrl.contains("m1xdrop.net/f/") || realUrl.contains("mixdrop.co/f/")) {
                     val videoId = realUrl.removeSuffix("/").substringAfterLast("/")
                     realUrl = "https://mixdrop.top/e/$videoId"
@@ -410,6 +389,6 @@ class CbProvider : MainAPI() {
         } catch (e: Exception) {
             Log.e("CB01:StayOnline", "Errore critico durante il bypass: ${e.message}")
             null
-            }
         }
     }
+}
