@@ -1,6 +1,7 @@
 package com.altadefinizione
 
 import org.jsoup.nodes.Element
+import org.json.JSONObject
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -80,57 +81,85 @@ class AltaDefinizioneProvider : MainAPI() {
         }
     }
 
-    // 3. DETTAGLI DELLA PAGINA (Adattato sull'HTML reale fornito per le Serie)
+    // 3. DETTAGLI DELLA PAGINA
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val response = app.get(url)
+        val document = response.document
 
-        // Estrae il titolo pulito isolandolo da eventuali diciture tra parentesi come (2019 - In Lavorazione)
+        // Estrae il titolo pulito isolandolo da diciture tra parentesi
         val rawTitle = document.selectFirst("div.single_head h1[itemprop=name], div.single_head h1")?.text()?.trim() ?: return null
         val title = rawTitle.substringBefore("(").trim()
         
-        // Recupera il poster dai tag Open Graph della pagina
+        // Recupera il poster dai tag Open Graph
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
             ?.ifBlank { document.selectFirst(".poster img, .movie-poster img")?.attr("src") }?.let { fixUrl(it) }
         
-        // Estrae la sinossi direttamente dal meta description dell'HTML analizzato
+        // Estrae la sinossi
         val plot = document.selectFirst("meta[name=description]")?.attr("content")?.trim()
             ?: document.selectFirst("#main-player p")?.text()?.trim()
         
-        // Controllo se l'URL o la struttura delle stagioni indicano una Serie TV
-        val episodesContainer = document.select("#episodesList a.ep-item")
-        val isTvSeries = url.contains("-streaming-community") || episodesContainer.isNotEmpty()
+        // Cerchiamo l'ID IMDb all'interno dei tag script della pagina principale
+        val scripts = document.select("script").map { it.html() }
+        var imdbId: String? = null
+        for (script in scripts) {
+            val match = Regex("""var\s+imdb\s*=\s*['"]tt(\d+)['"]""").find(script)
+            if (match != null) {
+                imdbId = "tt" + match.groupValues[1]
+                break
+            }
+        }
 
-        return if (isTvSeries) {
+        // Se troviamo l'ID IMDb e la pagina dichiara di contenere una serie o un player vidxgo-player, la trattiamo come Serie TV
+        val hasVidxgoIframe = document.selectFirst("iframe#vidxgo-player, iframe[src*='vidxgo']") != null
+        val isTvSeries = url.contains("-streaming-community") || !imdbId.isNullOrBlank() && hasVidxgoIframe
+
+        return if (isTvSeries && !imdbId.isNullOrBlank()) {
             val episodes = mutableListOf<Episode>()
             
-            episodesContainer.forEach { element ->
-                val epUrl = element.attr("href")
-                if (!epUrl.isNullOrBlank()) {
-                    // Estrarre i dati dall'URL. Es: /8772296/1/2 -> ["", "8772296", "1", "2"]
-                    val segments = epUrl.split("/").filter { it.isNotEmpty() }
-                    
-                    // Verifichiamo che l'URL abbia la struttura attesa (almeno id, stagione ed episodio)
-                    if (segments.size >= 3) {
-                        val seasonNumber = segments[1].toIntOrNull() ?: 1
-                        val episodeNumber = segments[2].toIntOrNull()
-                        
-                        val epName = element.selectFirst(".ep-name")?.text()?.trim() 
-                            ?: "Episodio ${episodeNumber ?: ""}"
-                        
-                        // Opzionale: puoi estrarre anche il plot e il thumb dell'episodio se vuoi arricchire la UI
-                        val epPlot = element.selectFirst(".ep-plot")?.text()?.trim()
-                        val epThumb = element.selectFirst("img.ep-thumb")?.attr("src")
-
-                        episodes.add(
-                            newEpisode(epUrl) {
-                                this.name = epName
-                                this.season = seasonNumber
-                                this.episode = episodeNumber
-                                this.description = epPlot
-                                this.posterUrl = epThumb
-                            }
+            // Definiamo i parametri standard richiesti dal server di VidxGo
+            val refererUrl = url
+            val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            
+            // Cicliamo su un numero massimo di stagioni verosimili (es. 1 fino a 30)
+            for (seasonNumber in 1..30) {
+                try {
+                    // Interroghiamo direttamente l'endpoint JSON interno di VidxGo copiando la logica di Streamflix
+                    val jsonResponse = app.get(
+                        url = "https://v.vidxgo.co/seasons.php?imdb=$imdbId&season=$seasonNumber",
+                        headers = mapOf(
+                            "Referer" to refererUrl,
+                            "sec-fetch-dest" to "empty",
+                            "User-Agent" to userAgent
                         )
+                    ).text
+
+                    val json = JSONObject(jsonResponse)
+                    if (json.optInt("ok") == 1) {
+                        val episodesArray = json.getJSONArray("episodes")
+                        for (i in 0 until episodesArray.length()) {
+                            val epObject = episodesArray.getJSONObject(i)
+                            val episodeNumber = epObject.getInt("number")
+                            val epName = epObject.optString("name").ifBlank { "Episodio $episodeNumber" }
+                            val epPlot = epObject.optString("overview")
+                            val epThumb = epObject.optString("still")
+
+                            episodes.add(
+                                newEpisode("$url#$imdbId#$seasonNumber#$episodeNumber") {
+                                    this.name = epName
+                                    this.season = seasonNumber
+                                    this.episode = episodeNumber
+                                    this.description = epPlot
+                                    this.posterUrl = epThumb
+                                }
+                            )
+                        }
+                    } else {
+                        // Se il server risponde "ok": 0 o non ci sono più episodi, interrompiamo il ciclo delle stagioni
+                        break
                     }
+                } catch (e: Exception) {
+                    // Se una stagione fallisce o non esiste, interrompe la ricerca sequenziale
+                    break
                 }
             }
             
@@ -139,6 +168,7 @@ class AltaDefinizioneProvider : MainAPI() {
                 this.plot = plot
             }
         } else {
+            // Logica standard per i Film (se non è una serie o non ha IMDb seriale, invia l'url di base a loadLinks)
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = plot
@@ -146,24 +176,69 @@ class AltaDefinizioneProvider : MainAPI() {
         }
     }
 
-    // 4. ESTRAZIONE LINK VIDEO
-    override suspend fun loadLinks(
+   override suspend fun loadLinks(
         data: String,
         isCdn: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        try {
+            // Riceve l'URL della pagina di visualizzazione (passato dal metodo load)
+            val response = app.get(data).text
+            val document = Jsoup.parse(response)
 
-        // Intercetta sia iframe che player adibiti allo streaming (incluso l'anchor alternativo)
-        document.select("iframe[src*=\"vidxgo\"], a[href*=\"vidxgo\"], iframe[data-src*=\"vidxgo\"], iframe[src*=\"embed\"]").forEach { element ->
-            val iframeUrl = element.attr("data-src").ifEmpty { element.attr("src") }.ifEmpty { element.attr("href") }
+            // Estraggo l'ID IMDb nascosto nell'attributo di stile del player-cover
+            val playerCover = document.selectFirst("#player-cover") ?: return false
+            val styleAttr = playerCover.attr("style")
             
-            if (iframeUrl.isNotEmpty()) {
-                loadExtractor(fixUrl(iframeUrl), data, subtitleCallback, callback)
-            }
-        }
+            val imdbRegex = Regex("(tt\\d+)")
+            val imdbId = imdbRegex.find(styleAttr)?.groupValues?.get(1) ?: return false
 
-        return true
+            // Chiamata all'endpoint delle stagioni identificato nell'HAR
+            val seasonsApiUrl = "https://v.vidxgo.co/seasons.php?imdb=$imdbId&season=1"
+            val apiResponse = app.get(
+                url = seasonsApiUrl,
+                headers = mapOf(
+                    "Referer" to data,
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+            ).text
+
+            val vidxGo = VidxGoExtractor()
+
+            // Verifichiamo se l'API risponde con un dizionario JSON (Tipico delle Serie TV)
+            if (apiResponse.trim().startsWith("{")) {
+                val jsonObject = JSONObject(apiResponse)
+                val keys = jsonObject.keys()
+                
+                while (keys.hasNext()) {
+                    val episodeKey = keys.next() // ID numerico dell'episodio
+                    val episodeUrl = "https://v.vidxgo.co/t/$imdbId/1/$episodeKey"
+                    
+                    // Invocazione dell'estrattore con il formato URL API di VidxGo (/t/)
+                    vidxGo.getUrl(
+                        url = episodeUrl,
+                        referer = data,
+                        subtitleCallback = subtitleCallback,
+                        callback = callback
+                    )
+                }
+            } else {
+                // Se non è un JSON, si tratta di un Film singolo. Usiamo l'embed classico
+                // per far attivare la decodifica XOR (Ramo 'else' dell'estrattore)
+                val movieEmbedUrl = "https://v.vidxgo.co/embed/$imdbId"
+                
+                vidxGo.getUrl(
+                    url = movieEmbedUrl,
+                    referer = data,
+                    subtitleCallback = subtitleCallback,
+                    callback = callback
+                )
+            }
+            return true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
     }
 }
