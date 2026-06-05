@@ -81,15 +81,58 @@ class CbProvider : MainAPI() {
         return newHomePageResponse(request.name, items)
     }
 
+    ///////////////////////
+    // SEARCH ////////////
+    /////////////////////
+    
     override suspend fun search(query: String): List<SearchResponse> {
-        Log.d("CB01", "Ricerca: $query")
-        val searchUrl = "$mainUrl/?s=$query"
+    Log.d("CB01", "Ricerca multipagina: $query")
+
+    val results = mutableListOf<SearchResponse>()
+    var page = 1
+
+    while (true) {
+        val searchUrl = if (page == 1)
+            "$mainUrl/?s=$query"
+        else
+            "$mainUrl/?s=$query&paged=$page"
+
+        Log.d("CB01", "Search URL: $searchUrl")
+
         val document = app.get(searchUrl, headers = commonHeaders).document
 
-        return document.select("div.search-results article, #main article, div.card, div.post-video, .result-item")
-            .mapNotNull { parseElement(it) }
-            .distinctBy { it.url }
+        // Se non ci sono risultati → stop
+        val blocks = document.select(
+            """
+            article, 
+            div.card, 
+            div.post-video, 
+            .result-item, 
+            .post, 
+            .entry, 
+            .post-content, 
+            .post-box, 
+            .post-list article,
+            .cbtable a[title]
+            """.trimIndent()
+        )
+
+        if (blocks.isEmpty()) break
+
+        blocks.forEach { el ->
+            parseElement(el)?.let { results.add(it) }
+        }
+
+        // Se non esiste il link "pagina successiva", fermati
+        val nextPage = document.selectFirst("a.next, a.nextpostslink, .pagination a[rel=next]")
+        if (nextPage == null) break
+
+        page++
+        if (page > 10) break // sicurezza
     }
+
+    return results.distinctBy { it.url }
+}
 
     // ---------------------------------------------------------
     //  PARSER UPROT FOLDER (msfld) → Estrae episodi veri
@@ -168,7 +211,12 @@ class CbProvider : MainAPI() {
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
             val currentSeason = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
 
-            seasonsData.add(SeasonData(currentSeason, seasonHead))
+            val cleanSeasonName = seasonHead
+            .replace(Regex("(?i)ITA|HD|COMPLETA|TUTTA LA SERIE|TUTTI GLI EPISODI"), "")
+            .trim()
+            
+            seasonsData.add(SeasonData(currentSeason, cleanSeasonName.ifBlank { "Stagione $currentSeason" }))
+
 
             wrap.select(".sp-body *").forEach { row ->
                 val anchors = row.select("a[href]")
@@ -184,7 +232,14 @@ class CbProvider : MainAPI() {
 
                     if (folderLink.contains("uprot.net/msfld")) {
                         val realEpisodes = parseUprotFolder(folderLink, currentSeason)
-                        episodes.addAll(realEpisodes)
+
+                        // Assicuriamo che ogni episodio abbia stagione corretta
+                        realEpisodes.forEachIndexed { index, ep ->
+                            ep.season = currentSeason
+                            ep.episode = index + 1
+                            ep.name = "${currentSeason}x${String.format("%02d", index + 1)}"
+                        }
+                         episodes.addAll(realEpisodes)
                     }
 
                     return@forEach
