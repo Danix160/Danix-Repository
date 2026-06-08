@@ -2,11 +2,13 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io") // Dice a Gradle dove cercare i plugin SNAPSHOT
+        maven("https://jitpack.io")
     }
 }
 
 dependencyResolutionManagement {
+    // PREVIENE CHE I SOTTO-PROGETTI IGNORINO I REPOSITORY DI BUILD SCRIPT SE IMPOSTATO SU FAIL_ON_PROJECT_REPOS
+    repositoriesMode.set(RepositoriesMode.PRESERVE_HERITAGE)
     repositories {
         google()
         mavenCentral()
@@ -16,10 +18,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "CloudstreamPlugins"
 
-val disabled = listOf<String>()
-
+// Inclusione dinamica dei sotto-moduli dei plugin
 File(rootDir, ".").eachDir { dir ->
-    if (!disabled.contains(dir.name) && File(dir, "build.gradle.kts").exists()) {
+    if (File(dir, "build.gradle.kts").exists()) {
         include(":${dir.name}")
     }
 }
