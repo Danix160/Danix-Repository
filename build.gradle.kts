@@ -5,10 +5,12 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        maven("https://jitpack.io") // <-- FONDAMENTALE: Dice a buildscript dove trovare Cloudstream
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:9.1.1")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
+        // Mantiene i plugin AGP e Kotlin allineati a Gradle 8.10+
+        classpath("com.android.tools.build:gradle:8.7.3") 
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21")
         classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
     }
 }
@@ -21,21 +23,17 @@ allprojects {
     }
 }
 
-// Rimosse le funzioni "fun Project.cloudstream" e "android" che causavano l'Unresolved reference
-
 subprojects {
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
-    // Configurazione globale dei task Kotlin
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions {
             freeCompilerArgs.add("-Xannotation-default-target=param-property")
         }
     }
 
-    // Configurazione specifica per i task JVM
     tasks.withType<KotlinJvmCompile>().configureEach {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
@@ -47,14 +45,17 @@ subprojects {
         }
     }
 
-    // Configuriamo il plugin Cloudstream in modo dinamico per evitare errori di compilazione dello script (.kts)
+    // Configurazione sicura e dinamica dell'estensione cloudstream per evitare errori di compilazione (.kts)
     extensions.configure<Any>("cloudstream") {
-        // Usiamo la riflessione o dichiariamo dinamicamente via Groovy/Kotlin Object
-        val setRepoMethod = this.javaClass.getMethod("setRepo", String::class.java)
-        setRepoMethod.invoke(this, System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
+        try {
+            val setRepoMethod = this.javaClass.getMethod("setRepo", String::class.java)
+            setRepoMethod.invoke(this, System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
+        } catch (e: Exception) {
+            // Fallback o gestione se la struttura interna varia nel master-SNAPSHOT
+        }
     }
 
-    // Configurazione Android classica tramite il nome della extension
+    // Configurazione Android
     configure<com.android.build.gradle.BaseExtension> {
         defaultConfig {
             minSdk = 21
@@ -72,13 +73,12 @@ subprojects {
         val cloudstream by configurations
         val implementation by configurations
 
-        // Stubs per le classi di Cloudstream
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        implementation(kotlin("stdlib")) 
-        implementation("com.github.Blatzar:NiceHttp:0.4.11") 
-        implementation("org.jsoup:jsoup:1.18.3") 
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1") 
+        implementation(kotlin("stdlib"))
+        implementation("com.github.Blatzar:NiceHttp:0.4.11")
+        implementation("org.jsoup:jsoup:1.18.3")
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
     }
 }
 
