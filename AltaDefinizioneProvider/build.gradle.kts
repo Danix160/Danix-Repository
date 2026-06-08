@@ -7,6 +7,11 @@ android {
         freeCompilerArgs = freeCompilerArgs + "-Xskip-metadata-version-check"
     }
 }
+dependencies {
+    // ... altre dipendenze ...
+    implementation("org.jsoup:jsoup:1.16.1") // o la versione che usi negli altri moduli
+}
+
 cloudstream {
     extra["prefix"] = "AltaDefinizione"
     extra["displayName"] = "AltaDefinizione"
