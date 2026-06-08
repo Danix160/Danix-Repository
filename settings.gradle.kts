@@ -7,8 +7,7 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    // Utilizziamo la stringa equivalente o il percorso completo per evitare problemi di compilazione dello script
-    repositoriesMode.set(org.gradle.api.initialization.resolve.RepositoriesMode.PRESERVE_EXISTING)
+    // Rimosso il riferimento diretto all'enum per evitare i blocchi di compilazione di Gradle
     repositories {
         google()
         mavenCentral()
