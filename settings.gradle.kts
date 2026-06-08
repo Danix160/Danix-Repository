@@ -2,12 +2,11 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+        maven("https://jitpack.io") // Dice a Gradle dove cercare i plugin SNAPSHOT
     }
 }
 
 dependencyResolutionManagement {
-    // Rimosso il riferimento diretto all'enum per evitare i blocchi di compilazione di Gradle
     repositories {
         google()
         mavenCentral()
@@ -17,7 +16,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "CloudstreamPlugins"
 
-// Lista dei provider che vuoi disabilitare/ignorare temporaneamente
 val disabled = listOf<String>()
 
 File(rootDir, ".").eachDir { dir ->
