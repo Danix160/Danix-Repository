@@ -1,6 +1,3 @@
-import com.android.build.gradle.BaseExtension
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
@@ -10,9 +7,9 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        // Manteniamo solo i plugin standard stabili qui
         classpath("com.android.tools.build:gradle:9.1.1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
+        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
     }
 }
 
@@ -24,16 +21,14 @@ allprojects {
     }
 }
 
-fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) = extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
-
-fun Project.android(configuration: BaseExtension.() -> Unit) = extensions.getByName<BaseExtension>("android").configuration()
+// Rimosse le funzioni "fun Project.cloudstream" e "android" che causavano l'Unresolved reference
 
 subprojects {
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
-    // Spostiamo qui la configurazione globale dei task Kotlin per ogni sotto-modulo
+    // Configurazione globale dei task Kotlin
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions {
             freeCompilerArgs.add("-Xannotation-default-target=param-property")
@@ -43,7 +38,7 @@ subprojects {
     // Configurazione specifica per i task JVM
     tasks.withType<KotlinJvmCompile>().configureEach {
         compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_1_8) // Richiesto da Cloudstream
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
             freeCompilerArgs.addAll(
                 "-Xno-call-assertions",
                 "-Xno-param-assertions",
@@ -52,12 +47,15 @@ subprojects {
         }
     }
 
-    cloudstream {
-        // Quando gira su GitHub Actions, usa la variabile d'ambiente corretta
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
+    // Configuriamo il plugin Cloudstream in modo dinamico per evitare errori di compilazione dello script (.kts)
+    extensions.configure<Any>("cloudstream") {
+        // Usiamo la riflessione o dichiariamo dinamicamente via Groovy/Kotlin Object
+        val setRepoMethod = this.javaClass.getMethod("setRepo", String::class.java)
+        setRepoMethod.invoke(this, System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
     }
 
-    android {
+    // Configurazione Android classica tramite il nome della extension
+    configure<com.android.build.gradle.BaseExtension> {
         defaultConfig {
             minSdk = 21
             compileSdkVersion(35)
@@ -80,8 +78,6 @@ subprojects {
         implementation(kotlin("stdlib")) 
         implementation("com.github.Blatzar:NiceHttp:0.4.11") 
         implementation("org.jsoup:jsoup:1.18.3") 
-        
-        // IMPORTANTE: Mantenere Jackson a 2.13.1 per la compatibilità Android retroattiva
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1") 
     }
 }
