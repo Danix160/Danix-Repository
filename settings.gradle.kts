@@ -1,5 +1,3 @@
-import org.gradle.api.initialization.resolve.RepositoriesMode
-
 pluginManagement {
     repositories {
         google()
@@ -9,7 +7,8 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PRESERVE_EXISTING)
+    // Utilizziamo la stringa equivalente o il percorso completo per evitare problemi di compilazione dello script
+    repositoriesMode.set(org.gradle.api.initialization.resolve.RepositoriesMode.PRESERVE_EXISTING)
     repositories {
         google()
         mavenCentral()
