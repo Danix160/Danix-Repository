@@ -1,8 +1,10 @@
+import org.gradle.api.initialization.resolve.RepositoriesMode
+
 pluginManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io") // Permette a Gradle di trovare il plugin di Cloudstream a livello globale
+        maven("https://jitpack.io")
     }
 }
 
@@ -22,7 +24,7 @@ val disabled = listOf<String>()
 
 File(rootDir, ".").eachDir { dir ->
     if (!disabled.contains(dir.name) && File(dir, "build.gradle.kts").exists()) {
-        include(":${dir.name}") // Corretto l'include aggiungendo il flag standard ":" di Gradle
+        include(":${dir.name}")
     }
 }
 
