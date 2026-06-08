@@ -8,13 +8,12 @@ buildscript {
         google()
         mavenCentral()
         maven("https://jitpack.io")
-        maven("https://oss.sonatype.org/content/repositories/snapshots") // Add this line
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT:81b1d424d2-1")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
+        classpath("com.android.tools.build:gradle:9.1.1")
+        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
     }
 }
 
@@ -23,7 +22,14 @@ allprojects {
         google()
         mavenCentral()
         maven("https://jitpack.io")
-        maven("https://oss.sonatype.org/content/repositories/snapshots") // Add this here too
+    }
+}
+
+subprojects {
+    tasks.withType<KotlinCompile>().configureEach {
+        compilerOptions {
+            freeCompilerArgs.add("-Xannotation-default-target=param-property")
+        }
     }
 }
 
