@@ -84,98 +84,114 @@ class AltaDefinizioneProvider : MainAPI() {
 
     // 3. DETTAGLI DELLA PAGINA
     override suspend fun load(url: String): LoadResponse? {
-        val response = app.get(url)
-        val document = response.document
+    val response = app.get(url)
+    val document = response.document
 
-        // Estrae il titolo pulito isolandolo da diciture tra parentesi
-        val rawTitle = document.selectFirst("div.single_head h1[itemprop=name], div.single_head h1")?.text()?.trim() ?: return null
-        val title = rawTitle.substringBefore("(").trim()
+    // Estrae il titolo pulito isolandolo da diciture tra parentesi
+    val rawTitle = document.selectFirst("div.single_head h1[itemprop=name], div.single_head h1")?.text()?.trim() ?: return null
+    val title = rawTitle.substringBefore("(").trim()
+    
+    // Recupera il poster dai tag Open Graph
+    val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
+        ?.ifBlank { document.selectFirst(".poster img, .movie-poster img")?.attr("src") }?.let { fixUrl(it) }
+    
+    // Estrae la sinossi
+    val plot = document.selectFirst("meta[name=description]")?.attr("content")?.trim()
+        ?: document.selectFirst("#main-player p")?.text()?.trim()
+    
+    // Regex flessibile: Cerca qualsiasi occorrenza di tt seguito da 7-8 cifre dentro gli script
+    val scripts = document.select("script").map { it.html() }
+    var imdbId: String? = null
+    for (script in scripts) {
+        val match = Regex("""tt\d{7,8}""").find(script)
+        if (match != null) {
+            imdbId = match.value
+            break
+        }
+    }
+
+    // Riconoscimento Serie TV: se l'URL contiene tag tipici delle serie, o se la struttura ha elementi stagione/episodio
+    val hasSeasonsSelectors = document.selectFirst(".les-title, .season-list, [class*='season'], [id*='season']") != null
+    val isTvSeries = url.contains("-streaming-community") || url.contains("/serie") || hasSeasonsSelectors || !imdbId.isNullOrBlank()
+
+    return if (isTvSeries && !imdbId.isNullOrBlank()) {
+        val episodes = mutableListOf<Episode>()
         
-        // Recupera il poster dai tag Open Graph
-        val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-            ?.ifBlank { document.selectFirst(".poster img, .movie-poster img")?.attr("src") }?.let { fixUrl(it) }
+        val refererUrl = url
+        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         
-        // Estrae la sinossi
-        val plot = document.selectFirst("meta[name=description]")?.attr("content")?.trim()
-            ?: document.selectFirst("#main-player p")?.text()?.trim()
-        
-        // Cerchiamo l'ID IMDb all'interno dei tag script della pagina principale
-        val scripts = document.select("script").map { it.html() }
-        var imdbId: String? = null
-        for (script in scripts) {
-            val match = Regex("""var\s+imdb\s*=\s*['"]tt(\d+)['"]""").find(script)
-            if (match != null) {
-                imdbId = "tt" + match.groupValues[1]
-                break
+        var consecutiveErrors = 0 // Evita loop infiniti se il sito è offline, ma permette di superare i "buchi"
+
+        for (seasonNumber in 1..30) {
+            if (consecutiveErrors > 3) break // Se falliscono 4 stagioni di fila, allora la serie è davvero finita
+
+            try {
+                val jsonResponse = app.get(
+                    url = "https://v.vidxgo.co/seasons.php?imdb=$imdbId&season=$seasonNumber",
+                    headers = mapOf(
+                        "Referer" to refererUrl,
+                        "sec-fetch-dest" to "empty",
+                        "User-Agent" to userAgent
+                    )
+                ).text
+
+                if (jsonResponse.isBlank() || !jsonResponse.startsWith("{")) {
+                    consecutiveErrors++
+                    continue
+                }
+
+                val json = JSONObject(jsonResponse)
+                if (json.optInt("ok") == 1) {
+                    consecutiveErrors = 0 // Reset del contatore se troviamo dati validi
+                    val episodesArray = json.getJSONArray("episodes")
+                    
+                    for (i in 0 until episodesArray.length()) {
+                        val epObject = episodesArray.getJSONObject(i)
+                        val episodeNumber = epObject.getInt("number")
+                        val epName = epObject.optString("name").ifBlank { "Episodio $episodeNumber" }
+                        val epPlot = epObject.optString("overview")
+                        val epThumb = epObject.optString("still")
+
+                        episodes.add(
+                            newEpisode("$url#$imdbId#$seasonNumber#$episodeNumber") {
+                                this.name = epName
+                                this.season = seasonNumber
+                                this.episode = episodeNumber
+                                this.description = epPlot
+                                this.posterUrl = epThumb
+                            }
+                        )
+                    }
+                } else {
+                    // Non facciamo break, usiamo continue per saltare eventuali stagioni vuote transitorie
+                    consecutiveErrors++
+                    continue
+                }
+            } catch (e: Exception) {
+                consecutiveErrors++
+                continue
             }
         }
-
-        // Se troviamo l'ID IMDb e la pagina dichiara di contenere una serie o un player vidxgo-player, la trattiamo come Serie TV
-        val hasVidxgoIframe = document.selectFirst("iframe#vidxgo-player, iframe[src*='vidxgo']") != null
-        val isTvSeries = url.contains("-streaming-community") || !imdbId.isNullOrBlank() && hasVidxgoIframe
-
-        return if (isTvSeries && !imdbId.isNullOrBlank()) {
-            val episodes = mutableListOf<Episode>()
-            
-            // Definiamo i parametri standard richiesti dal server di VidxGo
-            val refererUrl = url
-            val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            
-            // Cicliamo su un numero massimo di stagioni verosimili (es. 1 fino a 30)
-            for (seasonNumber in 1..30) {
-                try {
-                    // Interroghiamo direttamente l'endpoint JSON interno di VidxGo copiando la logica di Streamflix
-                    val jsonResponse = app.get(
-                        url = "https://v.vidxgo.co/seasons.php?imdb=$imdbId&season=$seasonNumber",
-                        headers = mapOf(
-                            "Referer" to refererUrl,
-                            "sec-fetch-dest" to "empty",
-                            "User-Agent" to userAgent
-                        )
-                    ).text
-
-                    val json = JSONObject(jsonResponse)
-                    if (json.optInt("ok") == 1) {
-                        val episodesArray = json.getJSONArray("episodes")
-                        for (i in 0 until episodesArray.length()) {
-                            val epObject = episodesArray.getJSONObject(i)
-                            val episodeNumber = epObject.getInt("number")
-                            val epName = epObject.optString("name").ifBlank { "Episodio $episodeNumber" }
-                            val epPlot = epObject.optString("overview")
-                            val epThumb = epObject.optString("still")
-
-                            episodes.add(
-                                newEpisode("$url#$imdbId#$seasonNumber#$episodeNumber") {
-                                    this.name = epName
-                                    this.season = seasonNumber
-                                    this.episode = episodeNumber
-                                    this.description = epPlot
-                                    this.posterUrl = epThumb
-                                }
-                            )
-                        }
-                    } else {
-                        // Se il server risponde "ok": 0 o non ci sono più episodi, interrompiamo il ciclo delle stagioni
-                        break
-                    }
-                } catch (e: Exception) {
-                    // Se una stagione fallisce o non esiste, interrompe la ricerca sequenziale
-                    break
-                }
-            }
-            
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
-        } else {
-            // Logica standard per i Film (se non è una serie o non ha IMDb seriale, invia l'url di base a loadLinks)
+        
+        // Se alla fine del giro non abbiamo trovato episodi nell'API di VidxGo, facciamo il fallback a Film
+        if (episodes.isEmpty()) {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = plot
             }
+        } else {
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+                this.plot = plot
+            }
+        }
+    } else {
+        newMovieLoadResponse(title, url, TvType.Movie, url) {
+            this.posterUrl = poster
+            this.plot = plot
         }
     }
+}
 
    override suspend fun loadLinks(
         data: String,
