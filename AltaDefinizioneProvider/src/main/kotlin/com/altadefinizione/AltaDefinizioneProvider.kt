@@ -226,16 +226,10 @@ class AltaDefinizioneProvider : MainAPI() {
                                     name = "VidxGo Serie TV",
                                     url = videoUrl,
                                     referer = "https://vidxgo.co/",
-                                    quality = Qualities.Unknown.value,
-                                    isM3u8 = true,
-                                    headers = mapOf(
-                                        "User-Agent" to "Mozilla/5.0",
-                                        "Referer" to "https://vidxgo.co/"
-                                    ),
-                                    extractorData = null
+                                    quality = Qualities.Unknown.value, // Qualità adattiva per flussi HLS (.m3u8)
+                                    isM3u8 = true
                                 )
                             )
-
                             return true
                         }
                     }
