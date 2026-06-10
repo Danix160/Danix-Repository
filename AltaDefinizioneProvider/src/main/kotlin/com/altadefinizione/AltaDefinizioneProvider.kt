@@ -223,17 +223,16 @@ class AltaDefinizioneProvider : MainAPI() {
                         val videoUrl = json.optString("url")
                         
                         if (!videoUrl.isNullOrBlank()) {
-                            // Supprimiamo il warning di deprecazione per forzare la build
-                            @Suppress("DEPRECATION")
                             callback.invoke(
-                                ExtractorLink(
+                                newExtractorLink(
                                     source = "VidxGo (API)",
                                     name = "VidxGo Serie TV",
                                     url = videoUrl,
-                                    referer = "https://vidxgo.co/",
-                                    quality = Qualities.Unknown.value,
-                                    isM3u8 = true
-                                )
+                                    type = ExtractorLinkType.M3U8 // Sostituisce isM3u8 = true
+                                ) {
+                                    this.referer = "https://vidxgo.co/"
+                                    this.quality = Qualities.Unknown.value
+                                }
                             )
                             return true
                         }
