@@ -221,14 +221,15 @@ class AltaDefinizioneProvider : MainAPI() {
                         
                         if (!videoUrl.isNullOrBlank()) {
                             callback.invoke(
-                                ExtractorLink(
+                                newExtractorLink(
                                     source = "VidxGo (API)",
                                     name = "VidxGo Serie TV",
-                                    url = videoUrl,
-                                    referer = "https://vidxgo.co/",
-                                    quality = Qualities.Unknown.value, // Qualità adattiva per flussi HLS (.m3u8)
-                                    isM3u8 = true
-                                )
+                                    url = videoUrl
+                                ) {
+                                    this.referer = "https://vidxgo.co/"
+                                    this.quality = Qualities.Unknown.value
+                                    this.isM3u8 = true
+                                }
                             )
                             return true
                         }
