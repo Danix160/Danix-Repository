@@ -221,16 +221,21 @@ class AltaDefinizioneProvider : MainAPI() {
                         
                         if (!videoUrl.isNullOrBlank()) {
                             callback.invoke(
-                                newExtractorLink(
+                                ExtractorLink(
                                     source = "VidxGo (API)",
                                     name = "VidxGo Serie TV",
-                                    url = videoUrl
-                                ) {
-                                    this.referer = "https://vidxgo.co/"
-                                    this.quality = Qualities.Unknown.value
-                                    this.isM3u8 = true
-                                }
+                                    url = videoUrl,
+                                    referer = "https://vidxgo.co/",
+                                    quality = Qualities.Unknown.value,
+                                    isM3u8 = true,
+                                    headers = mapOf(
+                                        "User-Agent" to "Mozilla/5.0",
+                                        "Referer" to "https://vidxgo.co/"
+                                    ),
+                                    extractorData = null
+                                )
                             )
+
                             return true
                         }
                     }
