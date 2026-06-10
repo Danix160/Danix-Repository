@@ -256,7 +256,7 @@ override suspend fun loadLinks(
             }
         } else {
             // FALLBACK: Se l'url arriva pulito (es. da segnalibri o vecchie migrazioni), 
-            // ricarichiamo la pagina ed estraiamo l'IMDb al volo usando la regex flessibile
+            // ricarichiamo la pagina ed estraiamo l'IMDb al volo usando una regex flessibile
             val response = app.get(data).text
             val imdbRegex = Regex("""tt\d{7,8}""")
             val imdbId = imdbRegex.find(response)?.value ?: return false
@@ -274,5 +274,5 @@ override suspend fun loadLinks(
         e.printStackTrace()
         return false
     }
- }
+}
 }
