@@ -5,6 +5,7 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 
 class AltaDefinizioneProvider : MainAPI() {
@@ -186,9 +187,7 @@ class AltaDefinizioneProvider : MainAPI() {
     }
 
     // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
-   // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
-    // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
-    // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
+
     override suspend fun loadLinks(
         data: String,
         isCdn: Boolean,
@@ -223,17 +222,15 @@ class AltaDefinizioneProvider : MainAPI() {
                         val videoUrl = json.optString("url")
                         
                         if (!videoUrl.isNullOrBlank()) {
-                            // Firma esplicita del costruttore non deprecato
+                            // Utilizzo di newExtractorLink come richiesto dal compilatore
                             callback.invoke(
-                                ExtractorLink(
+                                newExtractorLink(
                                     source = "VidxGo (API)",
                                     name = "VidxGo Serie TV",
                                     url = videoUrl,
                                     referer = "https://vidxgo.co/",
                                     quality = Qualities.Unknown.value,
-                                    isM3u8 = true,
-                                    headers = mapOf(),
-                                    extractorData = null
+                                    isM3u8 = true
                                 )
                             )
                             return true
