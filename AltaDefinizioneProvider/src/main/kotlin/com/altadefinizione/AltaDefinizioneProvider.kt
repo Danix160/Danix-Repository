@@ -8,7 +8,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 
 class AltaDefinizioneProvider : MainAPI() {
-    override var mainUrl = "https://altadefinizione-01.forum"
+    override var mainUrl = "https://altadefinizione.you"
     override var name = "AltaDefinizione"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "it"
@@ -16,122 +16,137 @@ class AltaDefinizioneProvider : MainAPI() {
     
     // 1. HOME PAGE
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val document = app.get(mainUrl).document
-        val homePageList = mutableListOf<HomePageList>()
+    // Carichiamo la pagina corrente (gestendo la paginazione se page > 1)
+    val url = if (page > 1) "$mainUrl/page/$page/" else mainUrl
+    val document = app.get(url).document
+    val homePages = mutableListOf<HomePageList>()
 
-        // Carosello "Al Cinema Ora"
-        val sliderItems = document.select("div#slider div.boxgrid")
-        if (sliderItems.isNotEmpty()) {
-            val sliderResults = sliderItems.mapNotNull { card -> parseCard(card) }
-            if (sliderResults.isNotEmpty()) {
-                homePageList.add(HomePageList("Al Cinema Ora", sliderResults))
+    // Se siamo a pagina 1, possiamo dividere la home in sezioni usando i tab o i caroselli presenti.
+    // Nell'HTML inviato abbiamo ad esempio la sezione "In Evidenza" (o simili) e i vari blocchi generici.
+    // Estraiamo tutti i blocchi .movie presenti nella pagina
+    val movieElements = document.select(".movie")
+
+    if (movieElements.isNotEmpty()) {
+        val list = movieElements.mapNotNull { element ->
+            // Estraiamo il link e il titolo direttamente dai selettori interni accurati
+            val titleElement = element.selectFirst(".movie-title a") ?: return@mapNotNull null
+            val name = titleElement.text().trim()
+            
+            // Possiamo usare l'attributo data-link se presente, altrimenti l'href classico
+            val link = element.attr("data-link").ifBlank { titleElement.attr("href") }
+            val absoluteUrl = fixUrl(link)
+
+            // Il poster si trova nel tag img interno
+            val posterElement = element.selectFirst(".movie-poster img, img.layer-image")
+            val poster = posterElement?.attr("src")?.let { fixUrl(it) }
+
+            // Identifichiamo se si tratta di una Serie TV o di un Film.
+            // Possiamo usare l'attributo data-category o verificare se l'URL contiene "/serie-tv/"
+            val category = element.attr("data-category").lowercase()
+            val isTv = category.contains("serie") || absoluteUrl.contains("/serie-tv/")
+
+            if (isTv) {
+                newTvSeriesSearchResponse(name, absoluteUrl, TvType.TvSeries) {
+                    this.posterUrl = poster
+                }
+            } else {
+                newMovieSearchResponse(name, absoluteUrl, TvType.Movie) {
+                    this.posterUrl = poster
+                }
             }
-        }
+        }.distinctBy { it.url } // Evitiamo duplicati se lo stesso film appare in più caroselli nella stessa pagina
 
-        // Griglia "Ultimi Arrivi"
-        val gridItems = document.select("div.son_eklenen div.boxgrid:not(.slidercaprion)")
-        if (gridItems.isNotEmpty()) {
-            val gridResults = gridItems.mapNotNull { card -> parseCard(card) }
-            if (gridResults.isNotEmpty()) {
-                homePageList.add(HomePageList("Ultimi Arrivi", gridResults))
-            }
-        }
-
-        return newHomePageResponse(homePageList)
-    }
-
-    private fun parseCard(card: Element): SearchResponse? {
-        val titleElement = card.selectFirst(".ml-mask h3 a, .ml-mask h2 a, h2 a, h3 a")
-        val title = titleElement?.text()?.trim() ?: return null
-        val url = titleElement.attr("href") ?: return null
-
-        val imgElement = card.selectFirst("img")
-        val posterRaw = imgElement?.attr("data-src")?.ifBlank { imgElement.attr("src") } ?: ""
-        val posterUrl = fixUrl(posterRaw)
-
-        val genres = card.select(".ml-cat a").map { it.text().lowercase() }
-        val isSerie = genres.contains("serie tv") || card.selectFirst(".se_num") != null || url.contains("-streaming-community")
-        val type = if (isSerie) TvType.TvSeries else TvType.Movie
-
-        val ratingRaw = card.selectFirst(".ml-imdb b")?.text()?.trim()
-        val calculatedScore = ratingRaw?.toFloatOrNull()?.let { (it * 10).toInt() } 
-
-        val qualityRaw = card.selectFirst(".trdublaj")?.text()?.trim() ?: "HD"
-        val quality = getQualityFromString(qualityRaw)
-
-        return if (type == TvType.TvSeries) {
-            newTvSeriesSearchResponse(title, url, TvType.TvSeries) {
-                this.posterUrl = posterUrl
-                this.quality = quality
-            }
-        } else {
-            newMovieSearchResponse(title, url, TvType.Movie) {
-                this.posterUrl = posterUrl
-                this.quality = quality
-            }
+        if (list.isNotEmpty()) {
+            val titleSection = if (page > 1) "Pagina $page" else "Ultimi Aggiornamenti"
+            homePages.add(HomePageList(titleSection, list))
         }
     }
+
+    return if (homePages.isNotEmpty()) HomePageResponse(homePages) else null
+}
     
     // 2. RICERCA
-    override suspend fun search(query: String): List<SearchResponse> {
-        val searchUrl = "$mainUrl/?s=$query"
-        val document = app.get(searchUrl).document
 
-        return document.select("div.boxgrid").mapNotNull {
-            parseCard(it)
+    
+   override suspend fun search(query: String): List<SearchResponse>? {
+    // Creiamo l'URL di ricerca (di solito passata come parametro GET o s=)
+    // Se il sito usa il classico endpoint DLE/WordPress, adattalo (es. ?story=$query o ?s=$query)
+    val searchUrl = "$mainUrl/?story=$query" 
+    val document = app.get(searchUrl).document
+
+    // Estraiamo tutte le card dei film/serie trovate
+    val searchElements = document.select(".movie")
+
+    if (searchElements.isEmpty()) return null
+
+    return searchElements.mapNotNull { element ->
+        val titleElement = element.selectFirst(".movie-title a") ?: return@mapNotNull null
+        val name = titleElement.text().trim()
+        
+        // Recuperiamo il link (dall'attributo data-link o dall'href classico)
+        val link = element.attr("data-link").ifBlank { titleElement.attr("href") }
+        val absoluteUrl = fixUrl(link)
+
+        // Recuperiamo la locandina
+        val posterElement = element.selectFirst(".movie-poster img, img.layer-image")
+        val poster = posterElement?.attr("src")?.let { fixUrl(it) }
+
+        // Riconoscimento Categoria (Film o Serie)
+        val category = element.attr("data-category").lowercase()
+        val isTv = category.contains("serie") || absoluteUrl.contains("/serie-tv/")
+
+        if (isTv) {
+            newTvSeriesSearchResponse(name, absoluteUrl, TvType.TvSeries) {
+                this.posterUrl = poster
+            }
+        } else {
+            newMovieSearchResponse(name, absoluteUrl, TvType.Movie) {
+                this.posterUrl = poster
+            }
         }
-    }
+    }.distinctBy { it.url }
+}
 
+    
+    
     // 3. DETTAGLI DELLA PAGINA
     override suspend fun load(url: String): LoadResponse? {
     val response = app.get(url)
     val document = response.document
+    val htmlContent = response.text
 
-    // Estrae il titolo pulito isolandolo da diciture tra parentesi
-    val rawTitle = document.selectFirst("div.single_head h1[itemprop=name], div.single_head h1")?.text()?.trim() ?: return null
-    val title = rawTitle.substringBefore("(").trim()
-    
-    // Recupera il poster dai tag Open Graph
-    val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-        ?.ifBlank { document.selectFirst(".poster img, .movie-poster img")?.attr("src") }?.let { fixUrl(it) }
-    
-    // Estrae la sinossi
-    val plot = document.selectFirst("meta[name=description]")?.attr("content")?.trim()
-        ?: document.selectFirst("#main-player p")?.text()?.trim()
-    
-    // Regex flessibile: Cerca qualsiasi occorrenza di tt seguito da 7-8 cifre dentro gli script
-    val scripts = document.select("script").map { it.html() }
-    var imdbId: String? = null
-    for (script in scripts) {
-        val match = Regex("""tt\d{7,8}""").find(script)
-        if (match != null) {
-            imdbId = match.value
-            break
-        }
-    }
+    // 1. Estrazione Dati Generici dai Meta Tag (Precisi e puliti)
+    val title = document.selectFirst("meta[property='og:title']")?.attr("content")?.trim() 
+        ?: document.selectFirst("h1")?.text()?.trim() ?: return null
+        
+    val poster = document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrl(it) }
+    val plot = document.selectFirst("meta[name='description']")?.attr("content")?.trim()
 
-    // Riconoscimento Serie TV: se l'URL contiene tag tipici delle serie, o se la struttura ha elementi stagione/episodio
-    val hasSeasonsSelectors = document.selectFirst(".les-title, .season-list, [class*='season'], [id*='season']") != null
-    val isTvSeries = url.contains("-streaming-community") || url.contains("/serie") || hasSeasonsSelectors || !imdbId.isNullOrBlank()
+    // 2. Estrazione ID IMDb (Cerca il pattern tt seguito da 7 o 8 cifre)
+    // Nel tuo sorgente: /uploads/background/tt9813792.jpg
+    val imdbRegex = Regex("""tt\d{7,8}""")
+    val imdbId = imdbRegex.find(htmlContent)?.value
 
+    // 3. Riconoscimento se è una Serie TV o un Film
+    // Controlliamo se l'URL contiene "/serie-tv/" (come nel tuo file) o se ci sono indicatori specifici
+    val isTvSeries = url.contains("/serie-tv/") || document.selectFirst(".series-start") != null
+
+    // 4. Gestione Serie TV con l'API VidxGo
     return if (isTvSeries && !imdbId.isNullOrBlank()) {
         val episodes = mutableListOf<Episode>()
-        
-        val refererUrl = url
-        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        
-        var consecutiveErrors = 0 // Evita loop infiniti se il sito è offline, ma permette di superare i "buchi"
+        var consecutiveErrors = 0
 
+        // Ciclo flessibile sulle stagioni
         for (seasonNumber in 1..30) {
-            if (consecutiveErrors > 3) break // Se falliscono 4 stagioni di fila, allora la serie è davvero finita
+            if (consecutiveErrors > 3) break 
 
             try {
+                // Interroghiamo l'endpoint di VidxGo usando l'IMDb estratto
                 val jsonResponse = app.get(
                     url = "https://v.vidxgo.co/seasons.php?imdb=$imdbId&season=$seasonNumber",
                     headers = mapOf(
-                        "Referer" to refererUrl,
-                        "sec-fetch-dest" to "empty",
-                        "User-Agent" to userAgent
+                        "Referer" to url,
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
                     )
                 ).text
 
@@ -142,7 +157,7 @@ class AltaDefinizioneProvider : MainAPI() {
 
                 val json = JSONObject(jsonResponse)
                 if (json.optInt("ok") == 1) {
-                    consecutiveErrors = 0 // Reset del contatore se troviamo dati validi
+                    consecutiveErrors = 0 
                     val episodesArray = json.getJSONArray("episodes")
                     
                     for (i in 0 until episodesArray.length()) {
@@ -152,6 +167,7 @@ class AltaDefinizioneProvider : MainAPI() {
                         val epPlot = epObject.optString("overview")
                         val epThumb = epObject.optString("still")
 
+                        // Assembliamo un data-payload custom nell'url dell'episodio per passarlo a loadLinks
                         episodes.add(
                             newEpisode("$url#$imdbId#$seasonNumber#$episodeNumber") {
                                 this.name = epName
@@ -163,7 +179,6 @@ class AltaDefinizioneProvider : MainAPI() {
                         )
                     }
                 } else {
-                    // Non facciamo break, usiamo continue per saltare eventuali stagioni vuote transitorie
                     consecutiveErrors++
                     continue
                 }
@@ -172,8 +187,8 @@ class AltaDefinizioneProvider : MainAPI() {
                 continue
             }
         }
-        
-        // Se alla fine del giro non abbiamo trovato episodi nell'API di VidxGo, facciamo il fallback a Film
+
+        // Se VidxGo non ha restituito nulla per via dell'ID, facciamo fallback a Film
         if (episodes.isEmpty()) {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
@@ -186,12 +201,19 @@ class AltaDefinizioneProvider : MainAPI() {
             }
         }
     } else {
-        newMovieLoadResponse(title, url, TvType.Movie, url) {
+        // Gestione standard per i Film
+        // Passiamo l'URL unito all'IMDb come data payload se disponibile per facilitare loadLinks
+        val movieData = if (!imdbId.isNullOrBlank()) "$url#$imdbId" else url
+        newMovieLoadResponse(title, url, TvType.Movie, movieData) {
             this.posterUrl = poster
             this.plot = plot
         }
     }
 }
+
+///////////////////////////
+// LOADLINKS
+//////////////////////////
 
    override suspend fun loadLinks(
         data: String,
