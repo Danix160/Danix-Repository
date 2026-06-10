@@ -191,90 +191,33 @@ class AltaDefinizioneProvider : MainAPI() {
 
     // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
     override suspend fun loadLinks(
-        data: String,
-        isCdn: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        try {
-            if (data.contains("#")) {
-                val parts = data.split("#")
-                
-                if (parts.size >= 4) {
-                    // -------------------------------------------------------------
-                    // LOGICA RISOLUTIVA PER LE SERIE TV (Risposta JSON di VidxGo)
-                    // -------------------------------------------------------------
-                    val baseUrl = parts[0]
-                    val imdbId = parts[1]
-                    val season = parts[2]
-                    val episode = parts[3]
+    data: String,
+    isCineblog: Boolean, // Mantieni i tuoi parametri originali se differiscono
+    callback: (ExtractorLink) -> Unit
+): Boolean {
 
-                    val targetUrl = "https://v.vidxgo.co/t/$imdbId/$season/$episode"
-                    
-                    val response = app.get(
-                        url = targetUrl,
-                        headers = mapOf(
-                            "Referer" to baseUrl,
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                        )
-                    ).text
+    // 1. Scarica l'HTML della pagina dell'episodio o del film
+    val response = app.get(data).text
+    val document = Jsoup.parse(response)
 
-                    if (response.isNotBlank() && response.startsWith("{")) {
-                        val json = JSONObject(response)
-                        val videoUrl = json.optString("url")
-                        
-                        if (!videoUrl.isNullOrBlank()) {
-                                callback.invoke(
-                                    newExtractorLink(
-                                        source = "VidxGo (API)",
-                                        name = "VidxGo Serie TV",
-                                        url = videoUrl,
-                                        type = ExtractorLinkType.M3U8
-                                    ) {
-                                        this.referer = "https://vidxgo.co/"
-                                        this.quality = Qualities.Unknown.value
-                                    }
-                                )
-                                return true
-                            }
-                    }
-                    return false
+    // 2. Trova l'iframe all'interno del div con classe "ratio"
+    // Usa un selettore flessibile: cerca prima 'div.ratio iframe', altrimenti un iframe generico
+    val iframeElement = document.selectFirst("div.ratio iframe") ?: document.selectFirst("iframe")
+    val rawSrc = iframeElement?.attr("src")
 
-                } else if (parts.size == 2) {
-                    // -------------------------------------------------------------
-                    // LOGICA PER I FILM (Estrattore standard sul player Web)
-                    // -------------------------------------------------------------
-                    val baseUrl = parts[0]
-                    val imdbId = parts[1]
-                    val movieEmbedUrl = "https://v.vidxgo.co/embed/$imdbId"
+    if (!rawSrc.isNullOrEmpty()) {
+        // 3. APPLICHIAMO IL FIX: 
+        // Sostituiamo "/tt" con "/" per ottenere l'URL reale (es. da /tt9813792 a /9813792)
+        val fixedUrl = rawSrc.replace("/tt", "/")
+        
+        // Assicuriamoci che l'URL sia completo (es. aggiunge "https:" se manca)
+        val finalUrl = fixUrl(fixedUrl) 
 
-                    val vidxGo = VidxGoExtractor()
-                    vidxGo.getUrl(
-                        url = movieEmbedUrl,
-                        referer = baseUrl,
-                        subtitleCallback = subtitleCallback,
-                        callback = callback
-                    )
-                }
-            } else {
-                // FALLBACK PER URL PULITO (FILM)
-                val response = app.get(data).text
-                val imdbRegex = Regex("""tt\d{7,8}""")
-                val imdbId = imdbRegex.find(response)?.value ?: return false
-
-                val movieEmbedUrl = "https://v.vidxgo.co/embed/$imdbId"
-                val vidxGo = VidxGoExtractor()
-                vidxGo.getUrl(
-                    url = movieEmbedUrl,
-                    referer = data,
-                    subtitleCallback = subtitleCallback,
-                    callback = callback
-                )
-            }
-            return true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return false
-        }
+        // 4. Passa l'URL corretto al gestore degli estrattori di Cloudstream
+        // Questo attiverà automaticamente il VidxGoExtractor con l'indirizzo funzionante
+        loadExtractor(finalUrl, data, callback)
     }
+
+    return true
+}
 }
