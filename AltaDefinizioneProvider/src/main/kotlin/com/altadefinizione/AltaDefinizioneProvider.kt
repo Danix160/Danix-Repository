@@ -5,8 +5,8 @@ import org.json.JSONObject
 import org.jsoup.Jsoup
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.lagradost.cloudstream3.utils.newM3u8Link
 import com.lagradost.cloudstream3.utils.Qualities
 
 class AltaDefinizioneProvider : MainAPI() {
@@ -224,18 +224,19 @@ class AltaDefinizioneProvider : MainAPI() {
                         val videoUrl = json.optString("url")
                         
                         if (!videoUrl.isNullOrBlank()) {
-                            callback.invoke(
-                                newM3u8Link(
-                                    source = "VidxGo (API)",
-                                    name = "VidxGo Serie TV",
-                                    url = videoUrl
-                                ) {
-                                    this.referer = "https://vidxgo.co/"
-                                    this.quality = Qualities.Unknown.value
-                                }
-                            )
-                            return true
-                        }
+                                callback.invoke(
+                                    newExtractorLink(
+                                        source = "VidxGo (API)",
+                                        name = "VidxGo Serie TV",
+                                        url = videoUrl,
+                                        type = ExtractorLinkType.M3U8
+                                    ) {
+                                        this.referer = "https://vidxgo.co/"
+                                        this.quality = Qualities.Unknown.value
+                                    }
+                                )
+                                return true
+                            }
                     }
                     return false
 
