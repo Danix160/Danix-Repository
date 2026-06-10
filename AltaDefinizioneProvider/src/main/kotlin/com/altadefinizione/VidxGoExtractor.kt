@@ -24,6 +24,8 @@ class VidxGoExtractor : ExtractorApi() {
     ) {
         val parsedUrl = url.toHttpUrl()
         val refererUrl = "${parsedUrl.scheme}://${parsedUrl.host}/"
+        
+        // Lo stesso identico User-Agent verrà iniettato sia nelle chiamate che nel Player di Cloudstream
         val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         val headersMap = mutableMapOf(
@@ -43,12 +45,31 @@ class VidxGoExtractor : ExtractorApi() {
         var videoUrl: String? = null
 
         if (url.contains("/t/")) {
-            // Gestione Serie TV: Spesso risponde con un JSON o una stringa contenente l'oggetto JSON del video
-            // Usiamo una regex flessibile per estrarre il valore di "url"
+            // --- GESTIONE SERIE TV ---
+            // 1. Tentativo flessibile tramite Regex (cattura sia chiavi con virgolette che senza)
             val videoUrlRaw = Regex("""["']url["']\s*:\s*["']([^"']+)["']""").find(html)?.groupValues?.get(1)
-            videoUrl = videoUrlRaw?.replace("\\/", "/")
+                ?: Regex("""url\s*:\s*["']([^"']+)["']""").find(html)?.groupValues?.get(1)
+            
+            if (videoUrlRaw != null) {
+                videoUrl = videoUrlRaw.replace("\\/", "/")
+            } else {
+                // 2. Paracadute: Se l'HTML restituisce un JSON puro o è annegato, facciamo un parsing formale
+                try {
+                    val jsonClean = if (html.trim().startsWith("{")) html.trim() else {
+                        Regex("""\{[\s\S]*\}""").find(html)?.value ?: ""
+                    }
+                    if (jsonClean.isNotEmpty()) {
+                        val json = JSONObject(jsonClean)
+                        if (json.has("url")) {
+                            videoUrl = json.getString("url").replace("\\/", "/")
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         } else {
-            // Gestione Film (Decodifica XOR personalizzata)
+            // --- GESTIONE FILM (Decodifica XOR personalizzata) ---
             val scriptRegex = Regex("<script[\\s\\S]*?>[\\s\\S]*?\\(function\\(\\)\\s*\\{[\\s\\S]*?\\}\\s*\\)\\(\\);[\\s\\S]*?</script>", RegexOption.IGNORE_CASE)
             val scriptMatches = scriptRegex.findAll(html).toList()
             
@@ -58,7 +79,7 @@ class VidxGoExtractor : ExtractorApi() {
                 val d = Regex("atob\\(['\"]([^'\"]+)['\"]\\)").find(targetScript)?.groupValues?.get(1)
 
                 if (k != null && d != null) {
-                    // Sostituito con java.util.Base64 per garantire compatibilità cross-platform
+                    // Utilizzo di java.util.Base64 per totale compatibilità con l'ambiente delle estensioni
                     val decodedD = Base64.getDecoder().decode(d)
                     val decrypted = ByteArray(decodedD.size) { i ->
                         ((decodedD[i].toInt() and 0xFF) xor (k[i % k.length].code and 0xFF)).toByte()
@@ -71,7 +92,7 @@ class VidxGoExtractor : ExtractorApi() {
             }
         }
 
-        // Se non siamo riusciti ad estrarre l'URL video, interrompiamo per evitare crash
+        // Se l'estrazione fallisce, usciamo in sicurezza senza sollevare eccezioni o mandare link vuoti
         if (videoUrl.isNullOrBlank()) return
 
         val isM3u8 = videoUrl.contains(".m3u8")
