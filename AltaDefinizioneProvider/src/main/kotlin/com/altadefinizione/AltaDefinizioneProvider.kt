@@ -21,27 +21,20 @@ class AltaDefinizioneProvider : MainAPI() {
     val document = app.get(url).document
     val homePages = mutableListOf<HomePageList>()
 
-    // Se siamo a pagina 1, possiamo dividere la home in sezioni usando i tab o i caroselli presenti.
-    // Nell'HTML inviato abbiamo ad esempio la sezione "In Evidenza" (o simili) e i vari blocchi generici.
     // Estraiamo tutti i blocchi .movie presenti nella pagina
     val movieElements = document.select(".movie")
 
     if (movieElements.isNotEmpty()) {
         val list = movieElements.mapNotNull { element ->
-            // Estraiamo il link e il titolo direttamente dai selettori interni accurati
             val titleElement = element.selectFirst(".movie-title a") ?: return@mapNotNull null
             val name = titleElement.text().trim()
             
-            // Possiamo usare l'attributo data-link se presente, altrimenti l'href classico
             val link = element.attr("data-link").ifBlank { titleElement.attr("href") }
             val absoluteUrl = fixUrl(link)
 
-            // Il poster si trova nel tag img interno
             val posterElement = element.selectFirst(".movie-poster img, img.layer-image")
             val poster = posterElement?.attr("src")?.let { fixUrl(it) }
 
-            // Identifichiamo se si tratta di una Serie TV o di un Film.
-            // Possiamo usare l'attributo data-category o verificare se l'URL contiene "/serie-tv/"
             val category = element.attr("data-category").lowercase()
             val isTv = category.contains("serie") || absoluteUrl.contains("/serie-tv/")
 
@@ -54,7 +47,7 @@ class AltaDefinizioneProvider : MainAPI() {
                     this.posterUrl = poster
                 }
             }
-        }.distinctBy { it.url } // Evitiamo duplicati se lo stesso film appare in più caroselli nella stessa pagina
+        }.distinctBy { it.url }
 
         if (list.isNotEmpty()) {
             val titleSection = if (page > 1) "Pagina $page" else "Ultimi Aggiornamenti"
@@ -62,7 +55,11 @@ class AltaDefinizioneProvider : MainAPI() {
         }
     }
 
-    return if (homePages.isNotEmpty()) HomePageResponse(homePages) else null
+    return if (homePages.isNotEmpty()) {
+        newHomePageResponse(homePages, hasNext = true) // 'hasNext = true' permette a Cloudstream di caricare altre pagine scrollando
+    } else {
+        null
+    }
 }
     
     // 2. RICERCA
