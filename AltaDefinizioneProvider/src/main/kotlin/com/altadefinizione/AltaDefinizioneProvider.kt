@@ -188,6 +188,7 @@ class AltaDefinizioneProvider : MainAPI() {
     // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
    // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
     // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
+    // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
     override suspend fun loadLinks(
         data: String,
         isCdn: Boolean,
@@ -222,7 +223,7 @@ class AltaDefinizioneProvider : MainAPI() {
                         val videoUrl = json.optString("url")
                         
                         if (!videoUrl.isNullOrBlank()) {
-                            // Inizializzazione pulita e nativa compatibile con tutte le versioni SDK
+                            // Firma esplicita del costruttore non deprecato
                             callback.invoke(
                                 ExtractorLink(
                                     source = "VidxGo (API)",
@@ -231,7 +232,8 @@ class AltaDefinizioneProvider : MainAPI() {
                                     referer = "https://vidxgo.co/",
                                     quality = Qualities.Unknown.value,
                                     isM3u8 = true,
-                                    headers = mapOf()
+                                    headers = mapOf(),
+                                    extractorData = null
                                 )
                             )
                             return true
