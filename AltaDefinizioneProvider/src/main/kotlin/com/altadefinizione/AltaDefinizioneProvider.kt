@@ -188,34 +188,29 @@ class AltaDefinizioneProvider : MainAPI() {
     }
 
     // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
-
-    // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
-    override suspend fun loadLinks(
+override suspend fun loadLinks(
     data: String,
-    isCineblog: Boolean, // Mantieni i tuoi parametri originali se differiscono
+    isCasting: Boolean, // Parametro corretto richiesto dalla firma
+    subtitleCallback: (SubtitleFile) -> Unit, // Richiesto dalla firma
     callback: (ExtractorLink) -> Unit
 ): Boolean {
 
-    // 1. Scarica l'HTML della pagina dell'episodio o del film
+    // 1. Richiesta HTTP alla pagina dell'episodio/film
     val response = app.get(data).text
     val document = Jsoup.parse(response)
 
-    // 2. Trova l'iframe all'interno del div con classe "ratio"
-    // Usa un selettore flessibile: cerca prima 'div.ratio iframe', altrimenti un iframe generico
+    // 2. Selezione dell'iframe
     val iframeElement = document.selectFirst("div.ratio iframe") ?: document.selectFirst("iframe")
     val rawSrc = iframeElement?.attr("src")
 
     if (!rawSrc.isNullOrEmpty()) {
-        // 3. APPLICHIAMO IL FIX: 
-        // Sostituiamo "/tt" con "/" per ottenere l'URL reale (es. da /tt9813792 a /9813792)
+        // 3. APPLICHIAMO IL FIX: Sostituiamo "/tt" con "/" per aggirare il camuffamento JS
         val fixedUrl = rawSrc.replace("/tt", "/")
-        
-        // Assicuriamoci che l'URL sia completo (es. aggiunge "https:" se manca)
         val finalUrl = fixUrl(fixedUrl) 
 
-        // 4. Passa l'URL corretto al gestore degli estrattori di Cloudstream
-        // Questo attiverà automaticamente il VidxGoExtractor con l'indirizzo funzionante
-        loadExtractor(finalUrl, data, callback)
+        // 4. Chiamata corretta per avviare l'estrattore (VidxGo)
+        // Usiamo il core di Cloudstream per processare l'URL aggiornato
+        com.lagradost.cloudstream3.utils.loadExtractor(finalUrl, data, callback)
     }
 
     return true
