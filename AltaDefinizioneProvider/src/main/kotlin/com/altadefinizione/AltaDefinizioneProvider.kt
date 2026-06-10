@@ -224,11 +224,10 @@ class AltaDefinizioneProvider : MainAPI() {
                         
                         if (!videoUrl.isNullOrBlank()) {
                             callback.invoke(
-                                newExtractorLink(
+                                newM3u8Link(
                                     source = "VidxGo (API)",
                                     name = "VidxGo Serie TV",
-                                    url = videoUrl,
-                                    type = ExtractorLinkType.M3U8 // Sostituisce isM3u8 = true
+                                    url = videoUrl
                                 ) {
                                     this.referer = "https://vidxgo.co/"
                                     this.quality = Qualities.Unknown.value
