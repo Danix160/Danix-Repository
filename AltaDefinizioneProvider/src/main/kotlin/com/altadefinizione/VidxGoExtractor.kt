@@ -1,6 +1,5 @@
 package com.altadefinizione
 
-import android.util.Base64
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
@@ -9,7 +8,8 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.app
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Request
+import org.json.JSONObject
+import java.util.Base64
 
 class VidxGoExtractor : ExtractorApi() {
     override val name = "VidxGo"
@@ -22,52 +22,65 @@ class VidxGoExtractor : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit, 
         callback: (ExtractorLink) -> Unit
     ) {
-        val refererUrl = "${url.toHttpUrl().scheme}://${url.toHttpUrl().host}/"
-        val requestBuilder = Request.Builder()
-            .url(url)
-            .header("Referer", refererUrl)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        val parsedUrl = url.toHttpUrl()
+        val refererUrl = "${parsedUrl.scheme}://${parsedUrl.host}/"
+        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        val headersMap = mutableMapOf(
+            "Referer" to refererUrl,
+            "User-Agent" to userAgent
+        )
         
         if (!url.contains("/t/")) {
-            requestBuilder.header("sec-fetch-dest", "iframe")
+            headersMap["sec-fetch-dest"] = "iframe"
         }
 
         val response = app.get(
             url = url,
-            headers = requestBuilder.build().headers.toMap()
+            headers = headersMap
         )
         val html = response.text
-
-        val videoUrl: String
+        var videoUrl: String? = null
 
         if (url.contains("/t/")) {
-            val videoUrlRaw = Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(html)?.groupValues?.get(1) ?: return
-            videoUrl = videoUrlRaw.replace("\\/", "/")
+            // Gestione Serie TV: Spesso risponde con un JSON o una stringa contenente l'oggetto JSON del video
+            // Usiamo una regex flessibile per estrarre il valore di "url"
+            val videoUrlRaw = Regex("""["']url["']\s*:\s*["']([^"']+)["']""").find(html)?.groupValues?.get(1)
+            videoUrl = videoUrlRaw?.replace("\\/", "/")
         } else {
+            // Gestione Film (Decodifica XOR personalizzata)
             val scriptRegex = Regex("<script[\\s\\S]*?>[\\s\\S]*?\\(function\\(\\)\\s*\\{[\\s\\S]*?\\}\\s*\\)\\(\\);[\\s\\S]*?</script>", RegexOption.IGNORE_CASE)
             val scriptMatches = scriptRegex.findAll(html).toList()
             
-            if (scriptMatches.size < 3) return
+            if (scriptMatches.size >= 3) {
+                val targetScript = scriptMatches[2].value
+                val k = Regex("var\\s+k\\s*=\\s*['\"]([^'\"]+)['\"]").find(targetScript)?.groupValues?.get(1)
+                val d = Regex("atob\\(['\"]([^'\"]+)['\"]\\)").find(targetScript)?.groupValues?.get(1)
 
-            val targetScript = scriptMatches[2].value
-            val k = Regex("var\\s+k\\s*=\\s*['\"]([^'\"]+)['\"]").find(targetScript)?.groupValues?.get(1) ?: return
-            val d = Regex("atob\\(['\"]([^'\"]+)['\"]\\)").find(targetScript)?.groupValues?.get(1) ?: return
-
-            val decodedD = Base64.decode(d, Base64.DEFAULT)
-            val decrypted = ByteArray(decodedD.size) { i ->
-                ((decodedD[i].toInt() and 0xFF) xor (k[i % k.length].code and 0xFF)).toByte()
+                if (k != null && d != null) {
+                    // Sostituito con java.util.Base64 per garantire compatibilità cross-platform
+                    val decodedD = Base64.getDecoder().decode(d)
+                    val decrypted = ByteArray(decodedD.size) { i ->
+                        ((decodedD[i].toInt() and 0xFF) xor (k[i % k.length].code and 0xFF)).toByte()
+                    }
+                    val decryptedText = String(decrypted)
+                    
+                    val videoUrlRaw = Regex("currentSrc\\s*=\\s*['\"]([^'\"]+)['\"]").find(decryptedText)?.groupValues?.get(1)
+                    videoUrl = videoUrlRaw?.replace("\\/", "/")
+                }
             }
-            val decryptedText = String(decrypted)
-            
-            val videoUrlRaw = Regex("currentSrc\\s*=\\s*['\"]([^'\"]+)['\"]").find(decryptedText)?.groupValues?.get(1) ?: return
-            videoUrl = videoUrlRaw.replace("\\/", "/")
         }
+
+        // Se non siamo riusciti ad estrarre l'URL video, interrompiamo per evitare crash
+        if (videoUrl.isNullOrBlank()) return
 
         val isM3u8 = videoUrl.contains(".m3u8")
 
+        // Intestazioni di riproduzione complete incluse di User-Agent speculare
         val playbackHeaders = mapOf(
             "origin" to "https://v.vidxgo.co",
             "referer" to "https://v.vidxgo.co/",
+            "User-Agent" to userAgent,
             "sec-fetch-dest" to "empty",
             "sec-fetch-site" to "cross-site"
         )
