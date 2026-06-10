@@ -188,6 +188,7 @@ class AltaDefinizioneProvider : MainAPI() {
 
     // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
 
+    // 4. ESTRAZIONE LINK VIDEO (LOADLINKS)
     override suspend fun loadLinks(
         data: String,
         isCdn: Boolean,
@@ -222,9 +223,10 @@ class AltaDefinizioneProvider : MainAPI() {
                         val videoUrl = json.optString("url")
                         
                         if (!videoUrl.isNullOrBlank()) {
-                            // Utilizzo di newExtractorLink come richiesto dal compilatore
+                            // Supprimiamo il warning di deprecazione per forzare la build
+                            @Suppress("DEPRECATION")
                             callback.invoke(
-                                newExtractorLink(
+                                ExtractorLink(
                                     source = "VidxGo (API)",
                                     name = "VidxGo Serie TV",
                                     url = videoUrl,
