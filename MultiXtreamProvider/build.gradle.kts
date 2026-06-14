@@ -19,5 +19,5 @@ cloudstream {
     tvTypes = listOf("Live")
     requiresResources = false
     language = "it"
-    iconUrl = "http://vegetatv.duckdns.org/vegeta_cyan.webp"
+    iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/GiBEWASW4AAvgrH.jpg"
 }
