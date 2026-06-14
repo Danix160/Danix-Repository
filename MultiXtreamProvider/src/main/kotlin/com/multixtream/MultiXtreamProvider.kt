@@ -96,13 +96,10 @@ class MultiXtreamProvider : MainAPI() {
             source = name,
             name = "Xtream",
             url = data,
-            type = ExtractorLinkType.M3U8,
-            headers = mapOf(
-                "Referer" to mainUrl,
-                "User-Agent" to "Mozilla/5.0"
-            )
+            type = ExtractorLinkType.M3U8
         )
     )
+
     return true
 }
 }
