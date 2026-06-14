@@ -14,8 +14,8 @@ Questi sono i plugin disponibili al momento
 | **Nome**           | **Sito**                                               |            **Categorie**            | **Lingua** | **Funzionante** | **Note**|                                                                                                                  
 |--------------------|--------------------------------------------------------|:-----------------------------------:|:----------:|:---------------:|---------------------------------------------|
 | CB01               | https://cb01uno.bar/                                   | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         | Serie TV in Lavorazione, Film Completi    |
-| OnlineSerieTV      | https://onlineserietv.lol                              | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         |      
-| ToonItalia         | https://toonitalia.xyz/                                | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         |    
+| OnlineSerieTV      | https://onlineserietv.lol                              | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         |                                           |
+| ToonItalia         | https://toonitalia.xyz/                                | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        X          | Cloudflare integrato                      |    
 ---
 
 ### Istruzioni Manuali
