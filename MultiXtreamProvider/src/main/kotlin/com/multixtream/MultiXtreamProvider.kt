@@ -27,7 +27,7 @@ class MultiXtreamProvider : MainAPI() {
 
     for (srv in servers) {
 
-        val m3u = app.get(srv.url).textLarge()
+        val m3u = app.get(srv.url).body.string()
 
         val lines = m3u.lines()
         var name = ""
@@ -66,6 +66,7 @@ class MultiXtreamProvider : MainAPI() {
 
     return newHomePageResponse(lists, false)
 }
+
 
     // LOAD(server) → pagina fittizia
     override suspend fun load(url: String): LoadResponse {
