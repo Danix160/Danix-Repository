@@ -11,7 +11,7 @@ cloudstream {
     extra["prefix"] = "Ntv.cx"
     extra["displayName"] = "Ntv.cx"
     
-    version = 2
+    version = 3
     description = "Ntv.cx Stream Live"
     authors = listOf("Danix")
     
