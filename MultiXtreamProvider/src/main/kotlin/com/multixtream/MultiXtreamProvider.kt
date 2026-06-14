@@ -96,6 +96,7 @@ class MultiXtreamProvider : MainAPI() {
                 source = name,
                 name = "Xtream",
                 url = data,
+                referer = mainUrl,
                 type = ExtractorLinkType.M3U8
             )
         )
