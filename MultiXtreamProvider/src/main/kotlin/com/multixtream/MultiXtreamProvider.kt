@@ -21,53 +21,51 @@ class MultiXtreamProvider : MainAPI() {
     )
 
     // HOME → categorie + canali
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+  override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
-        val lists = mutableListOf<HomePageList>()
+    val lists = mutableListOf<HomePageList>()
 
-        for (srv in servers) {
+    for (srv in servers) {
 
-            val m3u = app.get(srv.url).text
+        val m3u = app.get(srv.url).textLarge()
 
-            val lines = m3u.lines()
-            var name = ""
-            var logo = ""
-            var group = ""
+        val lines = m3u.lines()
+        var name = ""
+        var logo = ""
+        var group = ""
 
-            val channels = mutableListOf<LiveSearchResponse>()
+        val channels = mutableListOf<LiveSearchResponse>()
 
-            for (i in lines.indices) {
-                val line = lines[i]
+        for (i in lines.indices) {
+            val line = lines[i]
 
-                if (line.startsWith("#EXTINF")) {
-                    logo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
-                    group = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
-                    name = line.substringAfter(",").trim()
-                }
-
-                if (line.startsWith("http")) {
-                    val stream = line.trim()
-
-                    channels += newLiveSearchResponse(name, stream, TvType.Live) {
-                        this.posterUrl = logo
-                    }
-                }
+            if (line.startsWith("#EXTINF")) {
+                logo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
+                group = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
+                name = line.substringAfter(",").trim()
             }
 
-            // Raggruppa per categoria
-            val grouped = channels.groupBy {
-                it.name.substringAfterLast("[", "").substringBefore("]").trim()
-                    .ifEmpty { "Altro" }
-            }
+            if (line.startsWith("http")) {
+                val stream = line.trim()
 
-            // Aggiungi ogni categoria alla Home
-            grouped.forEach { (cat, list) ->
-                lists += HomePageList("$cat - ${srv.name}", list)
+                channels += newLiveSearchResponse(name, stream, TvType.Live) {
+                    this.posterUrl = logo
+                }
             }
         }
 
-        return newHomePageResponse(lists, false)
+        val grouped = channels.groupBy {
+            it.name.substringAfterLast("[", "").substringBefore("]").trim()
+                .ifEmpty { "Altro" }
+        }
+
+        grouped.forEach { (cat, list) ->
+            lists += HomePageList("$cat - ${srv.name}", list)
+        }
     }
+
+    return newHomePageResponse(lists, false)
+}
 
     // LOAD(server) → pagina fittizia
     override suspend fun load(url: String): LoadResponse {
