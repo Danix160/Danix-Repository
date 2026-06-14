@@ -32,12 +32,12 @@ class MultiXtreamProvider : MainAPI() {
         )
     }
 
-    // LOAD(server) → pagina fittizia (obbligatoria)
+    // LOAD(server) → pagina fittizia
     override suspend fun load(url: String): LoadResponse {
         return newLiveStreamLoadResponse("Xtream Server", url, url)
     }
 
-    // SEARCH(server-url) → mostra i canali
+    // SEARCH(server-url) → categorie + canali
     override suspend fun search(query: String): List<SearchResponse> {
         val m3u = app.get(query).text
 
@@ -46,19 +46,21 @@ class MultiXtreamProvider : MainAPI() {
         val lines = m3u.lines()
         var name = ""
         var logo = ""
+        var group = ""
 
         for (i in lines.indices) {
             val line = lines[i]
 
             if (line.startsWith("#EXTINF")) {
                 logo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
+                group = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
                 name = line.substringAfter(",").trim()
             }
 
             if (line.startsWith("http")) {
                 val stream = line.trim()
 
-                channels += newLiveSearchResponse(name, stream, TvType.Live) {
+                channels += newLiveSearchResponse("$name [$group]", stream, TvType.Live) {
                     this.posterUrl = logo
                 }
             }
