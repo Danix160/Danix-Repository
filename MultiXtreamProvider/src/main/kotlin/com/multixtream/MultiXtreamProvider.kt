@@ -20,53 +20,58 @@ class MultiXtreamProvider : MainAPI() {
         )
     )
 
-    // HOME → mostra i server
+    // HOME → categorie + canali
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val items = servers.map { srv ->
-            newLiveSearchResponse(srv.name, srv.url, TvType.Live)
+
+        val lists = mutableListOf<HomePageList>()
+
+        for (srv in servers) {
+
+            val m3u = app.get(srv.url).text
+
+            val lines = m3u.lines()
+            var name = ""
+            var logo = ""
+            var group = ""
+
+            val channels = mutableListOf<LiveSearchResponse>()
+
+            for (i in lines.indices) {
+                val line = lines[i]
+
+                if (line.startsWith("#EXTINF")) {
+                    logo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
+                    group = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
+                    name = line.substringAfter(",").trim()
+                }
+
+                if (line.startsWith("http")) {
+                    val stream = line.trim()
+
+                    channels += newLiveSearchResponse(name, stream, TvType.Live) {
+                        this.posterUrl = logo
+                    }
+                }
+            }
+
+            // Raggruppa per categoria
+            val grouped = channels.groupBy {
+                it.name.substringAfterLast("[", "").substringBefore("]").trim()
+                    .ifEmpty { "Altro" }
+            }
+
+            // Aggiungi ogni categoria alla Home
+            grouped.forEach { (cat, list) ->
+                lists += HomePageList("$cat - ${srv.name}", list)
+            }
         }
 
-        return newHomePageResponse(
-            listOf(HomePageList("Server Xtream", items)),
-            false
-        )
+        return newHomePageResponse(lists, false)
     }
 
     // LOAD(server) → pagina fittizia
     override suspend fun load(url: String): LoadResponse {
-        return newLiveStreamLoadResponse("Xtream Server", url, url)
-    }
-
-    // SEARCH(server-url) → categorie + canali
-    override suspend fun search(query: String): List<SearchResponse> {
-        val m3u = app.get(query).text
-
-        val channels = mutableListOf<SearchResponse>()
-
-        val lines = m3u.lines()
-        var name = ""
-        var logo = ""
-        var group = ""
-
-        for (i in lines.indices) {
-            val line = lines[i]
-
-            if (line.startsWith("#EXTINF")) {
-                logo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
-                group = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
-                name = line.substringAfter(",").trim()
-            }
-
-            if (line.startsWith("http")) {
-                val stream = line.trim()
-
-                channels += newLiveSearchResponse("$name [$group]", stream, TvType.Live) {
-                    this.posterUrl = logo
-                }
-            }
-        }
-
-        return channels
+        return newLiveStreamLoadResponse("Xtream", url, url)
     }
 
     // STREAM DIRETTO
