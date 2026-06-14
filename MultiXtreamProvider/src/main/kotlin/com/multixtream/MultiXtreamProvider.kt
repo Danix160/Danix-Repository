@@ -47,11 +47,17 @@ class MultiXtreamProvider : MainAPI() {
 
             if (line.startsWith("http")) {
                 val stream = line.trim()
-
+            
+                // FILTRO: solo canali LIVE
+                if (!stream.contains("/live/")) continue
+                if (stream.contains("/movie/")) continue
+                if (stream.contains("/series/")) continue
+            
                 channels += newLiveSearchResponse(name, stream, TvType.Live) {
                     this.posterUrl = logo
                 }
             }
+
         }
 
         val grouped = channels.groupBy {
