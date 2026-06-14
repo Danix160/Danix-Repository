@@ -27,7 +27,6 @@ class MultiXtreamProvider : MainAPI() {
         for (srv in servers) {
 
             val m3u = app.get(srv.url).body.string()
-
             val lines = m3u.lines()
 
             var pendingName = ""
@@ -35,6 +34,7 @@ class MultiXtreamProvider : MainAPI() {
             var pendingGroup = ""
 
             val channels = mutableListOf<LiveSearchResponse>()
+            val categoryLogos = mutableMapOf<String, String>() // fallback logo per categoria
 
             for (line in lines) {
 
@@ -56,14 +56,27 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
+                    // salva logo valido per categoria
+                    if (pendingLogo.isNotBlank()) {
+                        categoryLogos.putIfAbsent(pendingGroup, pendingLogo)
+                    }
+
                     channels += newLiveSearchResponse("${pendingName} [${pendingGroup}]", stream, TvType.Live) {
-                        this.posterUrl = pendingLogo
+                        this.posterUrl = pendingLogo // fallback dopo
                     }
 
                     // reset EXTINF
                     pendingName = ""
                     pendingLogo = ""
                     pendingGroup = ""
+                }
+            }
+
+            // --- FALLBACK LOGO PER CATEGORIA ---
+            channels.forEach { ch ->
+                val cat = ch.name.substringAfterLast("[", "").substringBefore("]").trim()
+                if (ch.posterUrl.isNullOrBlank()) {
+                    ch.posterUrl = categoryLogos[cat] ?: "https://i.imgur.com/7QFQpQp.png"
                 }
             }
 
