@@ -12,32 +12,12 @@ class VegetaTVProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Live)
 
     // ---------------------------------------------------------
-    // HOME PAGE → lista server italiani 🇮🇹
+    // HOME PAGE → categorie + canali (NON load)
     // ---------------------------------------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val doc = app.get(mainUrl).document
 
-        val servers = doc.select("div.saved-item.integrated-server-card")
-            .filter { it.attr("data-server-filter-flags").contains("🇮🇹") }
-            .map { el ->
-                val name = el.attr("data-server-name")
-                val url = el.attr("data-server-url")
-
-                newLiveSearchResponse(name, url, TvType.Live)
-            }
-
-        return newHomePageResponse(
-            listOf(HomePageList("Server Italiani", servers)),
-            hasNext = false
-        )
-    }
-
-    // ---------------------------------------------------------
-    // LOAD(server) → categorie + canali
-    // ---------------------------------------------------------
-    override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(mainUrl).document
-
+        // CANALI
         val channels = doc.select("#channels .chan").map { ch ->
             val title = ch.selectFirst(".nm")?.text()?.trim() ?: "Senza nome"
             val logo = ch.selectFirst(".logo")?.attr("src")
@@ -49,10 +29,23 @@ class VegetaTVProvider : MainAPI() {
             }
         }
 
-        return newHomePageResponse(
-            listOf(HomePageList("Canali", channels)),
-            hasNext = false
-        )
+        // CATEGORIE
+        val categories = channels.groupBy {
+            it.name.substringAfterLast("[", "").substringBefore("]").trim()
+        }
+
+        val lists = categories.map { (cat, list) ->
+            HomePageList(cat, list)
+        }
+
+        return newHomePageResponse(lists, hasNext = false)
+    }
+
+    // ---------------------------------------------------------
+    // LOAD(server) → pagina fittizia (obbligatoria)
+    // ---------------------------------------------------------
+    override suspend fun load(url: String): LoadResponse {
+        return newLiveStreamLoadResponse("VegetaTV", url, url)
     }
 
     // ---------------------------------------------------------
