@@ -16,22 +16,35 @@ class NtvProvider : MainAPI() {
     // HOME PAGE → lista canali da /channels
     // ---------------------------------------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val doc = app.get("$mainUrl/channels").document
+    val response = app.get(
+        "$mainUrl/channels",
+        headers = mapOf(
+            "User-Agent" to USER_AGENT,
+            "Accept-Language" to "en-US,en;q=0.9",
+            "Referer" to mainUrl
+        ),
+        allowRedirects = true
+    )
 
-        val channels = doc.select("div.channel-card").mapNotNull { card ->
-            val title = card.selectFirst("h3.channel-name")?.text()?.trim() ?: return@mapNotNull null
-            val href = card.selectFirst("a.watch-btn")?.attr("href") ?: return@mapNotNull null
+    val html = response.text
+    Log.d("NtvProvider", "HTML LENGTH = ${html.length}")
+    Log.d("NtvProvider", "HTML PREVIEW = ${html.take(500)}")
 
-            newLiveSearchResponse(title, fixUrl(href), TvType.Live) {
-                this.posterUrl = null
-            }
-        }
+    val doc = response.document
 
-        return newHomePageResponse(
-            listOf(HomePageList("Live Channels", channels)),
-            hasNext = false
-        )
+    val channels = doc.select("div.channel-card").mapNotNull { card ->
+        val title = card.selectFirst("h3.channel-name")?.text()?.trim() ?: return@mapNotNull null
+        val href = card.selectFirst("a.watch-btn")?.attr("href") ?: return@mapNotNull null
+
+        newLiveSearchResponse(title, fixUrl(href), TvType.Live)
     }
+
+    return newHomePageResponse(
+        listOf(HomePageList("Live Channels", channels)),
+        hasNext = false
+    )
+}
+
 
     // ---------------------------------------------------------
     // LOAD → pagina del canale / evento
