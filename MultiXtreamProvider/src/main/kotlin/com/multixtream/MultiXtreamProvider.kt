@@ -1,4 +1,4 @@
-package com.xtream
+package com.multixtream
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
