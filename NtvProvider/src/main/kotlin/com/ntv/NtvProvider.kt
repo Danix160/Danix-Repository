@@ -7,7 +7,7 @@ import com.lagradost.cloudstream3.utils.*
 class NtvProvider : MainAPI() {
 
     override var name = "Ntv.cx"
-    override var mainUrl = "https://ntv.cx"
+    override var mainUrl = "https://ntv.st"
     override var lang = "en"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Live)
