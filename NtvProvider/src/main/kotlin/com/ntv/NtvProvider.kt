@@ -1,72 +1,71 @@
 package com.ntv
 
-import com.lagradost.api.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.api.Log
 
 class NtvProvider : MainAPI() {
 
-    override var name = "Ntv.cx"
+    override var name = "Ntv.st"
     override var mainUrl = "https://ntv.st"
     override var lang = "en"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Live)
 
     // ---------------------------------------------------------
-    // HOME PAGE → lista canali da /channels
+    // DATA CLASS per l’API JSON
+    // ---------------------------------------------------------
+    data class ChannelResponse(
+        val success: Boolean,
+        val channels: List<ChannelItem>
+    )
+
+    data class ChannelItem(
+        val channel_id: String,
+        val channel_name: String,
+        val channel_image: String
+    )
+
+    // ---------------------------------------------------------
+    // HOME PAGE → usa l’API JSON (perfetta per Cloudstream)
     // ---------------------------------------------------------
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-    val response = app.get(
-        "$mainUrl/channels",
-        headers = mapOf(
-            "User-Agent" to USER_AGENT,
-            "Accept-Language" to "en-US,en;q=0.9",
-            "Referer" to mainUrl
-        ),
-        allowRedirects = true
-    )
+        val json = app.get("$mainUrl/api/get-channels").parsedSafe<ChannelResponse>()
+            ?: throw ErrorLoadingException("API error")
 
-    val html = response.text
-    Log.d("NtvProvider", "HTML LENGTH = ${html.length}")
-    Log.d("NtvProvider", "HTML PREVIEW = ${html.take(500)}")
+        val channels = json.channels.map { ch ->
+            newLiveSearchResponse(
+                ch.channel_name,
+                "$mainUrl/channel/${ch.channel_id}",
+                TvType.Live
+            ) {
+                this.posterUrl = ch.channel_image
+            }
+        }
 
-    val doc = response.document
-
-    val channels = doc.select("div.channel-card").mapNotNull { card ->
-        val title = card.selectFirst("h3.channel-name")?.text()?.trim() ?: return@mapNotNull null
-        val href = card.selectFirst("a.watch-btn")?.attr("href") ?: return@mapNotNull null
-
-        newLiveSearchResponse(title, fixUrl(href), TvType.Live)
+        return newHomePageResponse(
+            listOf(HomePageList("Live Channels", channels)),
+            hasNext = false
+        )
     }
 
-    return newHomePageResponse(
-        listOf(HomePageList("Live Channels", channels)),
-        hasNext = false
-    )
-}
-
-
     // ---------------------------------------------------------
-    // LOAD → pagina del canale / evento
+    // LOAD → pagina del canale
     // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
 
         val title = doc.selectFirst("h1")?.text()?.trim()
-            ?: doc.selectFirst("h3.channel-name")?.text()?.trim()
             ?: "Live Stream"
 
-        val description = doc.select("div.match-details span")
-            .joinToString(" - ") { it.text() }
-
         return newLiveStreamLoadResponse(title, url, url) {
-            this.plot = description
             this.posterUrl = null
+            this.plot = null
         }
     }
 
     // ---------------------------------------------------------
-    // LOAD LINKS → estrae iframe → embed → m3u8
+    // LOAD LINKS → iframe → embed → m3u8
     // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
@@ -87,9 +86,14 @@ class NtvProvider : MainAPI() {
             }
 
         // 2) Pagina EMBED
-        val embedDoc = app.get(embedUrl, referer = data).document
+        val embedDoc = app.get(
+            embedUrl,
+            referer = data,
+            headers = mapOf("User-Agent" to USER_AGENT),
+            allowRedirects = true
+        ).document
 
-        // 3) Cerca direttamente un m3u8
+        // 3) Cerca m3u8
         val m3u8 = Regex("""https?://[^\s"'<>]+\.m3u8""")
             .find(embedDoc.toString())
             ?.value
@@ -99,17 +103,17 @@ class NtvProvider : MainAPI() {
             return false
         }
 
-        // 4) Invia lo stream a Cloudstream
+        // 4) Link finale
         callback(
             newExtractorLink(
                 source = name,
-                name = "Ntv.cx Live",
+                name = "Ntv.st Live",
                 url = m3u8,
                 type = ExtractorLinkType.M3U8
             ) {
-                this.referer = mainUrl
+                this.referer = embedUrl
                 this.headers = mapOf(
-                    "Referer" to mainUrl,
+                    "Referer" to embedUrl,
                     "Origin" to mainUrl,
                     "User-Agent" to USER_AGENT
                 )
