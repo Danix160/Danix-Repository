@@ -20,19 +20,8 @@ class MultiXtreamProvider : MainAPI() {
         )
     )
 
-    // Icone per categoria
-    private val categoryIcons = mapOf(
-        "Cinema" to "https://upload.wikimedia.org/wikipedia/commons/5/5e/Sky_Cinema_-_Logo_2020.svg",
-        "Sport" to "https://upload.wikimedia.org/wikipedia/commons/3/3c/Sky_Sport_-_Logo_2020.svg",
-        "DAZN" to "https://upload.wikimedia.org/wikipedia/commons/2/20/DAZN_logo.svg",
-        "Italia" to "https://upload.wikimedia.org/wikipedia/commons/1/1e/Rai_-_Logo_2016.svg",
-        "News" to "https://upload.wikimedia.org/wikipedia/commons/5/5c/Sky_TG24_-_Logo_2018.svg",
-        "Intrattenimento" to "https://upload.wikimedia.org/wikipedia/commons/3/3e/Mediaset_Infinity_logo.svg",
-        "Kids" to "https://upload.wikimedia.org/wikipedia/commons/8/80/Cartoon_Network_2010_logo.svg",
-        "Documentari" to "https://upload.wikimedia.org/wikipedia/commons/6/6b/National_Geographic_Channel.svg",
-        "Musica" to "https://upload.wikimedia.org/wikipedia/commons/0/0f/MTV_2021_%28brand_version%29.svg",
-        "Altro" to "https://i.imgur.com/7QFQpQp.png"
-    )
+    // UNA SOLA IMMAGINE LOCALE PER TUTTI I CANALI
+    private val defaultIcon = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpeg"
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
@@ -44,7 +33,6 @@ class MultiXtreamProvider : MainAPI() {
             val lines = m3u.lines()
 
             var pendingName = ""
-            var pendingLogo = ""
             var pendingGroup = ""
 
             val channels = mutableListOf<LiveSearchResponse>()
@@ -53,7 +41,6 @@ class MultiXtreamProvider : MainAPI() {
 
                 // --- EXTINF ---
                 if (line.startsWith("#EXTINF")) {
-                    pendingLogo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
                     pendingGroup = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
                     pendingName = line.substringAfter(",").trim()
                     continue
@@ -69,20 +56,11 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
-                    // Scegli logo: originale → icona categoria → fallback
-                    val finalLogo = when {
-                        pendingLogo.isNotBlank() -> pendingLogo
-                        categoryIcons.containsKey(pendingGroup) -> categoryIcons[pendingGroup]
-                        else -> categoryIcons["Altro"]
-                    }
-
                     channels += newLiveSearchResponse("${pendingName} [${pendingGroup}]", stream, TvType.Live) {
-                        this.posterUrl = finalLogo
+                        this.posterUrl = defaultIcon
                     }
 
-                    // reset EXTINF
                     pendingName = ""
-                    pendingLogo = ""
                     pendingGroup = ""
                 }
             }
