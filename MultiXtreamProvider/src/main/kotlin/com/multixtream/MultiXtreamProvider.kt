@@ -20,6 +20,20 @@ class MultiXtreamProvider : MainAPI() {
         )
     )
 
+    // Icone per categoria
+    private val categoryIcons = mapOf(
+        "Cinema" to "https://upload.wikimedia.org/wikipedia/commons/5/5e/Sky_Cinema_-_Logo_2020.svg",
+        "Sport" to "https://upload.wikimedia.org/wikipedia/commons/3/3c/Sky_Sport_-_Logo_2020.svg",
+        "DAZN" to "https://upload.wikimedia.org/wikipedia/commons/2/20/DAZN_logo.svg",
+        "Italia" to "https://upload.wikimedia.org/wikipedia/commons/1/1e/Rai_-_Logo_2016.svg",
+        "News" to "https://upload.wikimedia.org/wikipedia/commons/5/5c/Sky_TG24_-_Logo_2018.svg",
+        "Intrattenimento" to "https://upload.wikimedia.org/wikipedia/commons/3/3e/Mediaset_Infinity_logo.svg",
+        "Kids" to "https://upload.wikimedia.org/wikipedia/commons/8/80/Cartoon_Network_2010_logo.svg",
+        "Documentari" to "https://upload.wikimedia.org/wikipedia/commons/6/6b/National_Geographic_Channel.svg",
+        "Musica" to "https://upload.wikimedia.org/wikipedia/commons/0/0f/MTV_2021_%28brand_version%29.svg",
+        "Altro" to "https://i.imgur.com/7QFQpQp.png"
+    )
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
         val lists = mutableListOf<HomePageList>()
@@ -34,7 +48,6 @@ class MultiXtreamProvider : MainAPI() {
             var pendingGroup = ""
 
             val channels = mutableListOf<LiveSearchResponse>()
-            val categoryLogos = mutableMapOf<String, String>() // fallback logo per categoria
 
             for (line in lines) {
 
@@ -56,27 +69,21 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
-                    // salva logo valido per categoria
-                    if (pendingLogo.isNotBlank()) {
-                        categoryLogos.putIfAbsent(pendingGroup, pendingLogo)
+                    // Scegli logo: originale → icona categoria → fallback
+                    val finalLogo = when {
+                        pendingLogo.isNotBlank() -> pendingLogo
+                        categoryIcons.containsKey(pendingGroup) -> categoryIcons[pendingGroup]
+                        else -> categoryIcons["Altro"]
                     }
 
                     channels += newLiveSearchResponse("${pendingName} [${pendingGroup}]", stream, TvType.Live) {
-                        this.posterUrl = pendingLogo // fallback dopo
+                        this.posterUrl = finalLogo
                     }
 
                     // reset EXTINF
                     pendingName = ""
                     pendingLogo = ""
                     pendingGroup = ""
-                }
-            }
-
-            // --- FALLBACK LOGO PER CATEGORIA ---
-            channels.forEach { ch ->
-                val cat = ch.name.substringAfterLast("[", "").substringBefore("]").trim()
-                if (ch.posterUrl.isNullOrBlank()) {
-                    ch.posterUrl = categoryLogos[cat] ?: "https://i.imgur.com/7QFQpQp.png"
                 }
             }
 
