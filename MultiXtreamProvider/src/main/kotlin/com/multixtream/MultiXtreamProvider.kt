@@ -84,23 +84,25 @@ class MultiXtreamProvider : MainAPI() {
         return newLiveStreamLoadResponse("Xtream", url, url)
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+   override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
 
-        callback(
-            newExtractorLink(
-                source = name,
-                name = "Xtream",
-                url = data,
-                referer = mainUrl,
-                type = ExtractorLinkType.M3U8
+    callback(
+        newExtractorLink(
+            source = name,
+            name = "Xtream",
+            url = data,
+            type = ExtractorLinkType.M3U8,
+            headers = mapOf(
+                "Referer" to mainUrl,
+                "User-Agent" to "Mozilla/5.0"
             )
         )
-
-        return true
-    }
+    )
+    return true
+}
 }
