@@ -48,17 +48,24 @@ class MultiXtreamProvider : MainAPI() {
 
                 if (line.startsWith("http")) {
                     val stream = line.trim()
-
-                    // SOLO CANALI LIVE
+                
+                    // FILTRO: solo canali LIVE veri
+                    if (stream.isBlank()) continue
                     if (!stream.contains("/live/")) continue
                     if (stream.contains("/movie/")) continue
                     if (stream.contains("/series/")) continue
-
-                    // Cloudstream richiede la categoria nel nome
+                
+                    // FILTRO: nome valido
+                    if (name.isBlank()) continue
+                
+                    // FILTRO: categoria valida
+                    if (group.isBlank()) group = "Altro"
+                
                     channels += newLiveSearchResponse("$name [$group]", stream, TvType.Live) {
                         this.posterUrl = logo
                     }
                 }
+
             }
 
             // Raggruppa per categoria
