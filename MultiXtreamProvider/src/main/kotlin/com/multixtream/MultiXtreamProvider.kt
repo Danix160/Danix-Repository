@@ -21,7 +21,7 @@ class MultiXtreamProvider : MainAPI() {
     )
 
     // HOME → categorie + canali
-  override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
     val lists = mutableListOf<HomePageList>()
 
@@ -47,31 +47,33 @@ class MultiXtreamProvider : MainAPI() {
 
             if (line.startsWith("http")) {
                 val stream = line.trim()
-            
-                // FILTRO: solo canali LIVE
+
+                // SOLO CANALI LIVE
                 if (!stream.contains("/live/")) continue
                 if (stream.contains("/movie/")) continue
                 if (stream.contains("/series/")) continue
-            
+
                 channels += newLiveSearchResponse(name, stream, TvType.Live) {
                     this.posterUrl = logo
                 }
             }
-
         }
 
-        val grouped = channels.groupBy {
-            it.name.substringAfterLast("[", "").substringBefore("]").trim()
+        // RAGGRUPPA PER CATEGORIA
+        val grouped = channels.groupBy { groupName ->
+            groupName.name.substringAfterLast("[", "").substringBefore("]").trim()
                 .ifEmpty { "Altro" }
         }
 
+        // CREA LE LISTE PER LA HOME
         grouped.forEach { (cat, list) ->
-            lists += HomePageList("$cat - ${srv.name}", list)
+            lists += HomePageList(cat, list)
         }
     }
 
     return newHomePageResponse(lists, false)
 }
+
 
 
     // LOAD(server) → pagina fittizia
