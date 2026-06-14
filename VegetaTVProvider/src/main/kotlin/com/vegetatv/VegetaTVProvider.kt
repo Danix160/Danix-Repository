@@ -38,33 +38,21 @@ class VegetaTVProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(mainUrl).document
 
-        // CATEGORIE
-        val categories = doc.select("#cats .catLabel").map { it.text() }
-
-        // CANALI
         val channels = doc.select("#channels .chan").map { ch ->
             val title = ch.selectFirst(".nm")?.text()?.trim() ?: "Senza nome"
             val logo = ch.selectFirst(".logo")?.attr("src")
-            val group = ch.selectFirst(".gp")?.text()?.trim() ?: "Altro"
+            val category = ch.selectFirst(".gp")?.text()?.trim() ?: "Altro"
             val stream = ch.attr("data-url")
 
-            LiveSearchResponse(
-                title,
-                stream,
-                this.name,
-                TvType.Live,
-                posterUrl = logo,
-                plot = group
-            )
+            newLiveSearchResponse("$title [$category]", stream, TvType.Live) {
+                this.posterUrl = logo
+            }
         }
 
-        // Raggruppa per categoria
-        val lists = categories.map { cat ->
-            val filtered = channels.filter { it.plot == cat }
-            HomePageList(cat, filtered)
-        }
-
-        return newHomePageResponse(lists, hasNext = false)
+        return newHomePageResponse(
+            listOf(HomePageList("Canali", channels)),
+            hasNext = false
+        )
     }
 
     // ---------------------------------------------------------
