@@ -20,61 +20,60 @@ class MultiXtreamProvider : MainAPI() {
         )
     )
 
-    // HOME → categorie + canali LIVE
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
         val lists = mutableListOf<HomePageList>()
 
         for (srv in servers) {
 
-            // Scarica playlist Xtream (anche 20-50MB)
             val m3u = app.get(srv.url).body.string()
 
             val lines = m3u.lines()
-            var name = ""
-            var logo = ""
-            var group = ""
+
+            var pendingName = ""
+            var pendingLogo = ""
+            var pendingGroup = ""
 
             val channels = mutableListOf<LiveSearchResponse>()
 
-            for (i in lines.indices) {
-                val line = lines[i]
+            for (line in lines) {
 
+                // --- EXTINF ---
                 if (line.startsWith("#EXTINF")) {
-                    logo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
-                    group = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
-                    name = line.substringAfter(",").trim()
+                    pendingLogo = Regex("""tvg-logo="(.*?)"""").find(line)?.groupValues?.get(1) ?: ""
+                    pendingGroup = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
+                    pendingName = line.substringAfter(",").trim()
+                    continue
                 }
 
+                // --- STREAM ---
                 if (line.startsWith("http")) {
                     val stream = line.trim()
-                
-                    // FILTRO: solo canali LIVE veri
-                    if (stream.isBlank()) continue
+
+                    // SOLO LIVE REALI
                     if (!stream.contains("/live/")) continue
                     if (stream.contains("/movie/")) continue
                     if (stream.contains("/series/")) continue
-                
-                    // FILTRO: nome valido
-                    if (name.isBlank()) continue
-                
-                    // FILTRO: categoria valida
-                    if (group.isBlank()) group = "Altro"
-                
-                    channels += newLiveSearchResponse("$name [$group]", stream, TvType.Live) {
-                        this.posterUrl = logo
-                    }
-                }
+                    if (pendingName.isBlank()) continue
 
+                    channels += newLiveSearchResponse("${pendingName} [${pendingGroup}]", stream, TvType.Live) {
+                        this.posterUrl = pendingLogo
+                    }
+
+                    // reset EXTINF
+                    pendingName = ""
+                    pendingLogo = ""
+                    pendingGroup = ""
+                }
             }
 
-            // Raggruppa per categoria
+            // --- RAGGRUPPA PER CATEGORIA ---
             val grouped = channels.groupBy { ch ->
                 ch.name.substringAfterLast("[", "").substringBefore("]").trim()
                     .ifEmpty { "Altro" }
             }
 
-            // Aggiungi categorie alla Home
+            // --- CREA LISTE HOME ---
             grouped.forEach { (cat, list) ->
                 lists += HomePageList("$cat - ${srv.name}", list)
             }
@@ -83,12 +82,10 @@ class MultiXtreamProvider : MainAPI() {
         return newHomePageResponse(lists, false)
     }
 
-    // LOAD → pagina fittizia (obbligatoria)
     override suspend fun load(url: String): LoadResponse {
         return newLiveStreamLoadResponse("Xtream", url, url)
     }
 
-    // STREAM DIRETTO
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
