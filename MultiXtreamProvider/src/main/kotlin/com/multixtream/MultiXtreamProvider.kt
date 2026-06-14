@@ -2,7 +2,6 @@ package com.multixtream
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import org.json.JSONObject
 
 class MultiXtreamProvider : MainAPI() {
 
@@ -33,16 +32,20 @@ class MultiXtreamProvider : MainAPI() {
         )
     }
 
-    // LOAD(server) → mostra tutti i canali (senza categorie)
+    // LOAD(server) → pagina fittizia (obbligatoria)
     override suspend fun load(url: String): LoadResponse {
-        val m3u = app.get(url).text
+        return newLiveStreamLoadResponse("Xtream Server", url, url)
+    }
 
-        val channels = mutableListOf<LiveSearchResponse>()
+    // SEARCH(server-url) → mostra i canali
+    override suspend fun search(query: String): List<SearchResponse> {
+        val m3u = app.get(query).text
+
+        val channels = mutableListOf<SearchResponse>()
 
         val lines = m3u.lines()
         var name = ""
         var logo = ""
-        var stream = ""
 
         for (i in lines.indices) {
             val line = lines[i]
@@ -53,7 +56,7 @@ class MultiXtreamProvider : MainAPI() {
             }
 
             if (line.startsWith("http")) {
-                stream = line.trim()
+                val stream = line.trim()
 
                 channels += newLiveSearchResponse(name, stream, TvType.Live) {
                     this.posterUrl = logo
@@ -61,13 +64,10 @@ class MultiXtreamProvider : MainAPI() {
             }
         }
 
-        return newHomePageResponse(
-            listOf(HomePageList("Canali", channels)),
-            false
-        )
+        return channels
     }
 
-    // LOAD LINKS → stream diretto
+    // STREAM DIRETTO
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -81,10 +81,7 @@ class MultiXtreamProvider : MainAPI() {
                 name = "Xtream",
                 url = data,
                 type = ExtractorLinkType.M3U8
-            ) {
-                this.referer = mainUrl
-                this.headers = mapOf("User-Agent" to USER_AGENT)
-            }
+            )
         )
 
         return true
