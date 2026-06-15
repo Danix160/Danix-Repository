@@ -21,7 +21,7 @@ class MultiXtreamProvider : MainAPI() {
     )
 
     // UNA SOLA IMMAGINE LOCALE PER TUTTI I CANALI
-    private val defaultIcon = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpeg"
+    private val defaultIcon = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpg"
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
