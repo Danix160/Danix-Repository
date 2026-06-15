@@ -21,7 +21,8 @@ class MultiXtreamProvider : MainAPI() {
     )
 
     // UNA SOLA IMMAGINE LOCALE PER TUTTI I CANALI
-    private val defaultIcon = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpg"
+    private val defaultIcon =
+        "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpg"
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
@@ -41,7 +42,8 @@ class MultiXtreamProvider : MainAPI() {
 
                 // --- EXTINF ---
                 if (line.startsWith("#EXTINF")) {
-                    pendingGroup = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1) ?: "Altro"
+                    pendingGroup = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1)
+                        ?: "Altro"
                     pendingName = line.substringAfter(",").trim()
                     continue
                 }
@@ -56,7 +58,11 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
-                    channels += newLiveSearchResponse("${pendingName} [${pendingGroup}]", stream, TvType.Live) {
+                    channels += newLiveSearchResponse(
+                        "${pendingName} [${pendingGroup}]",
+                        stream,
+                        TvType.Live
+                    ) {
                         this.posterUrl = defaultIcon
                     }
 
@@ -84,22 +90,21 @@ class MultiXtreamProvider : MainAPI() {
         return newLiveStreamLoadResponse("Xtream", url, url)
     }
 
-   override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-): Boolean {
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
 
-    callback(
-        newExtractorLink(
-            source = name,
-            name = "Xtream",
-            url = data,
-            type = ExtractorLinkType.M3U8,
+        // 🔥 Passiamo l’URL direttamente all’Extractor Xtream
+        loadExtractor(
+            XtreamExtractor(),   // extractor dedicato
+            data,                // URL Xtream
+            subtitleCallback,
+            callback
         )
-    )
 
-    return true
-}
+        return true
+    }
 }
