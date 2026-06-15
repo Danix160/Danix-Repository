@@ -24,7 +24,21 @@ class MultiXtreamProvider : MainAPI() {
     "dazn" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/dazn.png",
     "tivù sat" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/tivusat.png",
     "sky calcio" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/skycalcio.jpeg",
-    "sky cinema" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinema.png"
+    "sky cinema" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinema.png",
+    "cinema" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinemam.png",
+        "netflix" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/netflix.png",
+        "pluto" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/pluto.png",
+        "disney" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/disney.png",
+        "news" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/news.png",
+        "bein" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/bein.png",
+        "intra" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/intra.png",
+        "bambini" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/bambini.png",
+        "amazon" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/amazon.png",
+        "lba" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/lba.png",
+        "musica" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/musica.png",
+        "fratello" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/fratello.png",
+        "primafila" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/primafila.png",
+        "adulti" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/adulti.jpg"
 )
     
     private val defaultIcon =
@@ -35,11 +49,34 @@ class MultiXtreamProvider : MainAPI() {
 
     return when {
         cat.contains("sky") && cat.contains("sport") -> categoryIcons["sky sport"]!!
+        cat.contauns("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
         cat.contains("dazn") -> categoryIcons["dazn"]!!
         cat.contains("tivu") || cat.contains("sat") -> categoryIcons["tivù sat"]!!
-        cat.contains("calcio") -> categoryIcons["sky calcio"]!!
-        cat.contains("cinema") -> categoryIcons["sky cinema"]!!
-        else -> defaultIcon
+        cat.contains("sky") && cat.contains("calcio") -> categoryIcons["sky sport"]!!
+        cat.contains("sky") && cat.contains("cinema") -> categoryIcons["sky cinema"]!!
+        cat.contains("sky") && cat.contains("motogp") -> categoryIcons["sky sport"]!!
+        cat.contains("Lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
+        cat.contains("Netflix") -> categoryIcons["netflix"]!!
+        cat.contains("pluto") -> categoryIcons["pluto"]!!
+        cat.contains("attori") -> categoryIcons["cinema"]!!
+        cat.contains("saghe" -> categoryIcons["cinema"]!!
+        cat.contains("bambini") -> categoryIcons["bambini"]!!
+        cat.contains("disney") -> categoryIcons["disney"]!!
+        cat.contains("musica") -> categoryIcons["musica"]!!
+        cat.contains("news") && cat.contains("tg") -> categoryIcons["news"]!!
+        cat.contains("regioni") -> categoryIcons["news"]!!
+        cat.contains("bein") && cat.contains("sports") -> categoryIcons["bein"]!!
+        cat.contains("hotclub") && cat.contains("adulti") -> categoryIcons["adulti"]!!
+        cat.contains("grande") && cat.contains("fratello") -> categoryIcons["fratello"]!!
+        cat.contains("cinema") && cat.contains("hd") -> categoryIcons["cinema"]!!
+        cat.contains("intrattenimento") -> categoryIcons["intra"]!!
+        cat.contains("cultura") -> categoryIcons["intra"]!!
+        cat.contains("Serie") && cat.contains("b") -> categoryIcons["dazn"]!!
+        cat.contains("lba") && cat.contains("basket") -> categoryIcons["lba"]!!
+        cat.contains("amazon") && cat.contains("infinity") -> categoryIcons["amazon"]!!    
+        cat.contains("sky") && cat.contains("primafila") -> categoryIcons["primafila"]!!
+                    
+                else -> defaultIcon
     }
 }
 
