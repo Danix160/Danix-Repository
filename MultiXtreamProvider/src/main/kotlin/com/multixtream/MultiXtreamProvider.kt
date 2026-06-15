@@ -49,17 +49,17 @@ class MultiXtreamProvider : MainAPI() {
 
     return when {
         cat.contains("sky") && cat.contains("sport") -> categoryIcons["sky sport"]!!
-        cat.contauns("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
+        cat.contains("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
         cat.contains("dazn") -> categoryIcons["dazn"]!!
         cat.contains("tivu") || cat.contains("sat") -> categoryIcons["tivù sat"]!!
         cat.contains("sky") && cat.contains("calcio") -> categoryIcons["sky sport"]!!
         cat.contains("sky") && cat.contains("cinema") -> categoryIcons["sky cinema"]!!
         cat.contains("sky") && cat.contains("motogp") -> categoryIcons["sky sport"]!!
         cat.contains("Lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
-        cat.contains("Netflix") -> categoryIcons["netflix"]!!
+        cat.contains("netflix") -> categoryIcons["netflix"]!!
         cat.contains("pluto") -> categoryIcons["pluto"]!!
         cat.contains("attori") -> categoryIcons["cinema"]!!
-        cat.contains("saghe" -> categoryIcons["cinema"]!!
+        cat.contains("saghe") -> categoryIcons["cinema"]!!
         cat.contains("bambini") -> categoryIcons["bambini"]!!
         cat.contains("disney") -> categoryIcons["disney"]!!
         cat.contains("musica") -> categoryIcons["musica"]!!
