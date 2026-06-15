@@ -56,11 +56,12 @@ class MultiXtreamProvider : MainAPI() {
                     if (pendingName.isBlank()) continue
 
                     channels += newLiveSearchResponse(
-                        "$pendingName [$pendingGroup]",
+                        pendingName,   // ✔ Nome pulito
                         stream,
                         TvType.Live
                     ) {
                         this.posterUrl = defaultIcon
+                        this.extra = pendingGroup   // ✔ Categoria salvata qui
                     }
 
                     pendingName = ""
@@ -68,9 +69,9 @@ class MultiXtreamProvider : MainAPI() {
                 }
             }
 
+            // ✔ Raggruppamento basato su extra (categoria reale)
             val grouped = channels.groupBy { ch ->
-                ch.name.substringAfterLast("[", "").substringBefore("]").trim()
-                    .ifEmpty { "Altro" }
+                ch.extra ?: "Altro"
             }
 
             grouped.forEach { (cat, list) ->
@@ -146,25 +147,26 @@ class MultiXtreamProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
 
-        val epg = loadXmlTv(
-            "http://kuku2018.ddns.net:25461/xmltv.php?username=danifonta01&password=rJ9G2kw8yF"
-        )
+    val epg = loadXmlTv(
+        "https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz"
+    )
 
-        val channelName = url.substringAfterLast("/").substringBefore(".").trim()
+    val channelName = url.substringAfterLast("/").substringBefore(".").trim()
 
-        val epgNow = getCurrentProgramme(channelName, epg)
+    val epgNow = getCurrentProgramme(channelName, epg)
 
-        val title = if (epgNow.isNotBlank())
-            "$channelName — $epgNow"
-        else
-            channelName
+    val title = if (epgNow.isNotBlank())
+        "$channelName — $epgNow"
+    else
+        channelName
 
-        return newLiveStreamLoadResponse(
-            title,
-            url,
-            url
-        )
-    }
+    return newLiveStreamLoadResponse(
+        title,
+        url,
+        url
+    )
+}
+
 
     override suspend fun loadLinks(
         data: String,
