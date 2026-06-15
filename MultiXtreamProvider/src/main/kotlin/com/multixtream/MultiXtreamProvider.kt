@@ -135,27 +135,29 @@ class MultiXtreamProvider : MainAPI() {
 
     fun getCurrentProgramme(channelName: String, epg: XmlTvData): String {
 
-        val normalized = normalize(channelName)
+    val normalized = normalize(channelName)
 
-        val channelId = epg.channels.entries.find {
-            normalize(it.value) == normalized
-        }?.key ?: return ""
+    val channelId = epg.channels.entries.find {
+        normalize(it.value) == normalized
+    }?.key ?: return ""
 
-        val now = System.currentTimeMillis()
+    val now = System.currentTimeMillis()
 
-        val current = epg.programmes.find { p ->
-            p.channel == channelId &&
-            parseEpgTime(p.start) <= now &&
-            parseEpgTime(p.stop) > now
-        }
-
-        return current?.title ?: ""
+    val current = epg.programmes.find { p ->
+        p.channel == channelId &&
+        parseEpgTime(p.start) <= now &&
+        parseEpgTime(p.stop) > now
     }
+
+    return current?.title ?: ""
+}
 
     fun parseEpgTime(t: String): Long {
-        val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
-        return sdf.parse(t)?.time ?: 0L
-    }
+    val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
+    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC") // l’EPG è in UTC
+    return sdf.parse(t)?.time ?: 0L
+}
+
 
     /////////////////////////////////////////////////////////////
     /////            LOAD (EPG QUI)                      ///////
