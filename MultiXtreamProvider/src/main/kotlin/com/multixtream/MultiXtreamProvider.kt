@@ -54,7 +54,7 @@ class MultiXtreamProvider : MainAPI() {
         cat.contains("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
         cat.contains("dazn") -> categoryIcons["dazn"]!!
         cat.contains("tivu") || cat.contains("sat") -> categoryIcons["tivù sat"]!!
-        cat.contains("sky") && cat.contains("calcio") -> categoryIcons["calcio"]!!
+        cat.contains("sky") && cat.contains("calcio") -> categoryIcons["sky sport"]!!
         cat.contains("sky") && cat.contains("cinema") -> categoryIcons["sky cinema"]!!
         cat.contains("sky") && cat.contains("motogp") -> categoryIcons["sky sport"]!!
         cat.contains("lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
