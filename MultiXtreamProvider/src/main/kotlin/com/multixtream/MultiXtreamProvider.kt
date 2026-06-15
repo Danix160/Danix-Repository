@@ -87,17 +87,11 @@ class MultiXtreamProvider : MainAPI() {
     fun normalize(name: String): String {
         return name
             .lowercase()
-            .replace(".it", "")
             .replace(" hd", "")
             .replace(" sd", "")
             .replace("hd", "")
             .replace("sd", "")
             .replace("+1", "")
-            .replace("tv", "")
-            .replace("channel", "")
-            .replace("maratone", "")
-            .replace("english", "")
-            .replace("francais", "")
             .replace("[^a-z0-9]".toRegex(), "")
             .trim()
     }
@@ -105,10 +99,13 @@ class MultiXtreamProvider : MainAPI() {
     suspend fun loadXmlTv(url: String): XmlTvData {
         val xml = app.get(url).text
 
-        val channels = Regex("<channel id=\"(.*?)\">[\\s\\S]*?<display-name>(.*?)</display-name>")
+        val channels = Regex("<channel id=\"(.*?)\">[\\s\\S]*?<display-name[^>]*>(.*?)</display-name>")
             .findAll(xml)
-            .map { it.groupValues[1] to it.groupValues[2] }
-            .toMap()
+            .associate { match ->
+                val id = match.groupValues[1]
+                val displayName = match.groupValues[2]
+                id to displayName
+            }
 
         val programmes = Regex(
             "<programme start=\"(.*?)\" stop=\"(.*?)\" channel=\"(.*?)\">[\\s\\S]*?<title>(.*?)</title>"
