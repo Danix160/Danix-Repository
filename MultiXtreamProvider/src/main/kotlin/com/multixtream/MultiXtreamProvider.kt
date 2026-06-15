@@ -91,20 +91,20 @@ class MultiXtreamProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+        ): Boolean {
+        
+            XtreamExtractor().getUrl(
+                data,
+                null,
+                subtitleCallback,
+                callback
+            )
+        
+            return true
+        }
 
-        // 🔥 Passiamo l’URL direttamente all’Extractor Xtream
-        loadExtractor(
-            XtreamExtractor(),   // extractor dedicato
-            data,                // URL Xtream
-            subtitleCallback,
-            callback
-        )
-
-        return true
-    }
 }
