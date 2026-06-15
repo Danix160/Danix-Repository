@@ -81,11 +81,11 @@ class MultiXtreamProvider : MainAPI() {
     }
 
     /////////////////////////////////////////////////////////////
-    /////                EPG PARSER                        ///////
+    /////                EPG PARSER + DEBUG                //////
     /////////////////////////////////////////////////////////////
 
     fun normalize(name: String): String {
-        return name
+        val n = name
             .lowercase()
             .replace(" hd", "")
             .replace(" sd", "")
@@ -94,16 +94,21 @@ class MultiXtreamProvider : MainAPI() {
             .replace("+1", "")
             .replace("[^a-z0-9]".toRegex(), "")
             .trim()
+
+        println("NORMALIZE: '$name' → '$n'")
+        return n
     }
 
     suspend fun loadXmlTv(url: String): XmlTvData {
         val xml = app.get(url).text
+        println("EPG LOADED: ${xml.length} chars")
 
         val channels = Regex("<channel id=\"(.*?)\">[\\s\\S]*?<display-name[^>]*>(.*?)</display-name>")
             .findAll(xml)
             .associate { match ->
                 val id = match.groupValues[1]
                 val displayName = match.groupValues[2]
+                println("EPG CHANNEL: id='$id' display='$displayName'")
                 id to displayName
             }
 
@@ -117,6 +122,8 @@ class MultiXtreamProvider : MainAPI() {
                 title = it.groupValues[4]
             )
         }.toList()
+
+        println("EPG PROGRAMMES TOTAL: ${programmes.size}")
 
         return XmlTvData(channels, programmes)
     }
@@ -133,46 +140,82 @@ class MultiXtreamProvider : MainAPI() {
         val title: String
     )
 
-    fun getCurrentProgramme(channelName: String, epg: XmlTvData): String {
-
-    val normalized = normalize(channelName)
-
-    val channelId = epg.channels.entries.find {
-        normalize(it.value) == normalized
-    }?.key ?: return ""
-
-    val now = System.currentTimeMillis()
-
-    val current = epg.programmes.find { p ->
-        p.channel == channelId &&
-        parseEpgTime(p.start) <= now &&
-        parseEpgTime(p.stop) > now
-    }
-
-    return current?.title ?: ""
-}
-
+    /////////////////////////////////////////////////////////////
+    /////            TIMEZONE FIX + DEBUG                 //////
+    /////////////////////////////////////////////////////////////
 
     fun parseEpgTime(t: String): Long {
     val utc = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
     utc.timeZone = java.util.TimeZone.getTimeZone("UTC")
 
-    val date = utc.parse(t) ?: return 0L
+    val date = utc.parse(t)
+    if (date == null) {
+        println("DEBUG: Failed to parse time '$t'")
+        return 0L
+    }
 
-    // Converte in ora locale
     val localCal = java.util.Calendar.getInstance()
     localCal.time = date
 
-    return localCal.timeInMillis
+    val result = localCal.timeInMillis
+
+    println("DEBUG: PARSE TIME '$t' → UTC=${date} → LOCAL=${java.util.Date(result)}")
+
+    return result
+}
+
+   fun getCurrentProgramme(channelName: String, epg: XmlTvData): String {
+
+    val normalized = normalize(channelName)
+    println("DEBUG: Looking for channel '$channelName' normalized='$normalized'")
+
+    val entry = epg.channels.entries.find {
+        normalize(it.value) == normalized
+    }
+
+    if (entry == null) {
+        println("DEBUG: No match found for '$channelName'")
+        return ""
+    }
+
+    val channelId = entry.key
+    println("DEBUG: MATCH FOUND → channelId='$channelId' display='${entry.value}'")
+
+    val now = System.currentTimeMillis()
+    println("DEBUG: NOW = $now (${java.util.Date(now)})")
+
+    val programmesForChannel = epg.programmes.filter { it.channel == channelId }
+    println("DEBUG: Programmes for channel '$channelId' = ${programmesForChannel.size}")
+
+    programmesForChannel.forEach { p ->
+        println("DEBUG: PROGRAMME '${p.title}' | ${p.start} → ${p.stop}")
+    }
+
+    val current = programmesForChannel.find { p ->
+        val start = parseEpgTime(p.start)
+        val stop = parseEpgTime(p.stop)
+        println("DEBUG: Checking '${p.title}' | start=$start (${java.util.Date(start)}) stop=$stop (${java.util.Date(stop)})")
+        start <= now && stop > now
+    }
+
+    if (current == null) {
+        println("DEBUG: No current programme found for '$channelName'")
+        return ""
+    }
+
+    println("DEBUG: CURRENT PROGRAMME FOUND → ${current.title}")
+
+    return current.title
 }
 
 
-
     /////////////////////////////////////////////////////////////
-    /////            LOAD (EPG QUI)                      ///////
+    /////            LOAD (EPG QUI) + DEBUG               //////
     /////////////////////////////////////////////////////////////
 
     override suspend fun load(url: String): LoadResponse {
+
+        println("LOAD REQUEST: $url")
 
         val epg = loadXmlTv(
             "https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz"
@@ -181,12 +224,17 @@ class MultiXtreamProvider : MainAPI() {
         val realUrl = url.substringBefore("|||")
         val channelName = url.substringAfter("|||")
 
+        println("CHANNEL NAME FROM URL: '$channelName'")
+
         val epgNow = getCurrentProgramme(channelName, epg)
 
         val title = if (epgNow.isNotBlank())
             "$channelName — $epgNow"
         else
             channelName
+
+        println("FINAL TITLE: $title")
+        println("FINAL PLOT: ${epgNow.ifBlank { "Nessuna informazione EPG disponibile" }}")
 
         return newLiveStreamLoadResponse(
             title,
