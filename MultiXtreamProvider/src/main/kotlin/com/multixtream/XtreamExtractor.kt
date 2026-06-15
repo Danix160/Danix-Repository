@@ -4,6 +4,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class XtreamExtractor : ExtractorApi() {
 
@@ -21,14 +22,15 @@ class XtreamExtractor : ExtractorApi() {
         val cleanUrl = url.trim()
         val isM3u8 = cleanUrl.contains(".m3u8")
 
-        // ⚠️ SOLO PARAMETRI POSIZIONALI — NIENTE NOMI
-        val link = ExtractorLink(
-            name,               // source
-            "Xtream Live",      // name
-            cleanUrl,           // url
-            "",                 // referer (NON può essere null)
-            Qualities.Unknown.value, // quality
-            isM3u8              // isM3u8
+        // ⚠️ newExtractorLink SOLO con parametri POSIZIONALI
+        val link = newExtractorLink(
+            name,                   // source
+            "Xtream Live",          // name
+            cleanUrl,               // url
+            if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+            "",                     // referer (NON può essere null)
+            Qualities.Unknown.value,// quality
+            isM3u8                  // isM3u8
         )
 
         callback(link)
