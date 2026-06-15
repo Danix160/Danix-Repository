@@ -137,7 +137,12 @@ class MultiXtreamProvider : MainAPI() {
             }
         }
 
-        return newHomePageResponse(lists, false)
+        return newHomePageResponse(
+        lists,
+        false,
+        "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/banner.png"
+    )
+
     }
 
     override suspend fun load(url: String): LoadResponse {
