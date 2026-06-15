@@ -94,15 +94,15 @@ class MultiXtreamProvider : MainAPI() {
     data: String,
     isCasting: Boolean,
     subtitleCallback: (SubtitleFile) -> Unit,
-    callback: (ExtractorLink) -> Unit
-        ): Boolean {
+            callback: (ExtractorLink) -> Unit
+                ): Boolean {
         
-            XtreamExtractor().getUrl(
-                data,
-                null,
-                subtitleCallback,
-                callback
-            )
+                XtreamExtractor().getUrl(
+                    data,
+                    null,
+                    subtitleCallback,
+                    callback
+                )
         
             return true
         }
