@@ -138,11 +138,9 @@ class MultiXtreamProvider : MainAPI() {
         }
 
        return newHomePageResponse(
-        request,
-        lists.flatMap { it.list },
-        false,
-        "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/banner.png"
-    )
+            lists,
+            false
+        )
     }
 
     override suspend fun load(url: String): LoadResponse {
