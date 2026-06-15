@@ -61,7 +61,7 @@ class MultiXtreamProvider : MainAPI() {
                         TvType.Live
                     ) {
                         this.posterUrl = defaultIcon
-                        this.setExtra("category", pendingGroup)
+                        this.data = pendingGroup   // ✔ categoria salvata qui
                     }
 
                     pendingName = ""
@@ -69,8 +69,9 @@ class MultiXtreamProvider : MainAPI() {
                 }
             }
 
+            // ✔ Raggruppamento basato su data (compatibile con tutte le versioni)
             val grouped = channels.groupBy { ch ->
-                ch.getExtra<String>("category") ?: "Altro"
+                ch.data?.toString() ?: "Altro"
             }
 
             grouped.forEach { (cat, list) ->
@@ -137,7 +138,7 @@ class MultiXtreamProvider : MainAPI() {
 
     fun parseEpgTime(t: String): Long {
         val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
-        return sdf.parse(t.replace(" +", " +"))?.time ?: 0L
+        return sdf.parse(t)?.time ?: 0L
     }
 
     /////////////////////////////////////////////////////////////
