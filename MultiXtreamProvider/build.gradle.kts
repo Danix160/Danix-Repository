@@ -11,7 +11,7 @@ cloudstream {
     extra["prefix"] = "MultiXtream"
     extra["displayName"] = "MultiXtream"
     
-    version = 34
+    version = 35
     description = "MultiXtream IPTV LIVE"
     authors = listOf("Danix")
     
