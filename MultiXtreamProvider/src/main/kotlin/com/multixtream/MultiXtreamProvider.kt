@@ -82,6 +82,18 @@ class MultiXtreamProvider : MainAPI() {
     }
 }
 
+    fun isValidChannelName(name: String): Boolean {
+    val badPatterns = listOf(
+        "♣", "♦", "♥", "♠",
+        "===", "---", "***",
+        "###", "///", "\\\\\\",
+        "separator", "separatore"
+    )
+
+    val lower = name.lowercase()
+
+    return badPatterns.none { lower.contains(it.lowercase()) }
+}
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
         val lists = mutableListOf<HomePageList>()
@@ -114,6 +126,9 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
+                     // 🔥 FILTRO ANTI-CANALI VUOTI
+                    if (!isValidChannelName(pendingName)) continue
+                    
                     val encodedUrl = "$stream|||$pendingName"
 
                     val channel = newLiveSearchResponse(
@@ -142,6 +157,7 @@ class MultiXtreamProvider : MainAPI() {
             false
         )
     }
+
 
     override suspend fun load(url: String): LoadResponse {
 
