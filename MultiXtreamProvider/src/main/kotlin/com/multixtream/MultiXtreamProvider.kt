@@ -19,9 +19,29 @@ class MultiXtreamProvider : MainAPI() {
             "http://kuku2018.ddns.net:25461/get.php?username=danifonta01&password=rJ9G2kw8yF&type=m3u_plus&output=m3u8"
         )
     )
+    
+    private val skysportIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/sport.jpeg"
+    private val daznIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/dazn.png"
+    private val tvsatIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/tivusat.png"
+    private val skycalcioIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/skycalcio.jpeg"
+    private val skycinemaIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinema.png"
 
     private val defaultIcon =
         "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpg"
+
+    fun getChannelIcon(name: String): String {
+        val n = name.lowercase()
+
+        return when {
+            "sky sport" in n -> skysportIcon
+            "dazn" in n -> daznIcon
+            "rai" in n -> tvsatIcon
+            "mediaset" in n -> tvsatIcon
+            "sky calcio" in n -> skycalcioIcon
+            "sky cinema" in n -> skycinemaIcon
+            else -> defaultIcon
+        }
+    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
