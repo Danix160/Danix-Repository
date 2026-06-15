@@ -9,5 +9,6 @@ class MultiXtreamPlugin: Plugin() {
     override fun load(context: Context) {
         // Registra il provider definito sopra nella classe ToonItaliaProvider
         registerMainAPI(MultiXtreamProvider())
+        registerExtractorAPI(XtreamExtractor())
     }
 }
