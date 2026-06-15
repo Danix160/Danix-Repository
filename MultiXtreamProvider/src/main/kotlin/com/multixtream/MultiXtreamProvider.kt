@@ -25,11 +25,6 @@ class MultiXtreamProvider : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
-        // 🔥 Carichiamo l’EPG UNA SOLA VOLTA
-        val epg = loadXmlTv(
-            "http://kuku2018.ddns.net:25461/xmltv.php?username=danifonta01&password=rJ9G2kw8yF"
-        )
-
         val lists = mutableListOf<HomePageList>()
 
         for (srv in servers) {
@@ -60,16 +55,8 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
-                    // 🔥 EPG per questo canale
-                    val epgNow = getCurrentProgramme(pendingName, epg)
-
-                    val finalName = if (epgNow.isNotBlank())
-                        "$pendingName — $epgNow [$pendingGroup]"
-                    else
-                        "$pendingName [$pendingGroup]"
-
                     channels += newLiveSearchResponse(
-                        finalName,
+                        "$pendingName [$pendingGroup]",
                         stream,
                         TvType.Live
                     ) {
@@ -154,11 +141,29 @@ class MultiXtreamProvider : MainAPI() {
     }
 
     /////////////////////////////////////////////////////////////
-    /////            LOAD                                ///////
+    /////            LOAD (EPG QUI)                      ///////
     /////////////////////////////////////////////////////////////
 
     override suspend fun load(url: String): LoadResponse {
-        return newLiveStreamLoadResponse("Xtream", url, url)
+
+        val epg = loadXmlTv(
+            "http://kuku2018.ddns.net:25461/xmltv.php?username=danifonta01&password=rJ9G2kw8yF"
+        )
+
+        val channelName = url.substringAfterLast("/").substringBefore(".").trim()
+
+        val epgNow = getCurrentProgramme(channelName, epg)
+
+        val title = if (epgNow.isNotBlank())
+            "$channelName — $epgNow"
+        else
+            channelName
+
+        return newLiveStreamLoadResponse(
+            title,
+            url,
+            url
+        )
     }
 
     override suspend fun loadLinks(
