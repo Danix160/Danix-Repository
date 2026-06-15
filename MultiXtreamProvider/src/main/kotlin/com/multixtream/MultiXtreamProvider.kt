@@ -49,7 +49,7 @@ class MultiXtreamProvider : MainAPI() {
     val cat = category.lowercase()
 
     return when {
-        cat.contains("regionali" -> categoryIcons["news"]!!
+        cat.contains("regionali") -> categoryIcons["news"]!!
         cat.contains("sky") && cat.contains("sport") -> categoryIcons["sky sport"]!!
         cat.contains("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
         cat.contains("dazn") -> categoryIcons["dazn"]!!
