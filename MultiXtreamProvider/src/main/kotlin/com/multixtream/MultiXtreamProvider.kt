@@ -85,6 +85,16 @@ class MultiXtreamProvider : MainAPI() {
     /////                EPG PARSER                        ///////
     /////////////////////////////////////////////////////////////
 
+    fun normalize(name: String): String {
+        return name
+            .lowercase()
+            .replace("[^a-z0-9]".toRegex(), "") // rimuove tutto tranne lettere/numeri
+            .replace("hd", "")
+            .replace("sd", "")
+            .replace("it", "")
+            .trim()
+    }
+
     suspend fun loadXmlTv(url: String): XmlTvData {
         val xml = app.get(url).text
 
@@ -120,8 +130,11 @@ class MultiXtreamProvider : MainAPI() {
     )
 
     fun getCurrentProgramme(channelName: String, epg: XmlTvData): String {
+
+        val normalized = normalize(channelName)
+
         val channelId = epg.channels.entries.find {
-            it.value.equals(channelName, ignoreCase = true)
+            normalize(it.value) == normalized
         }?.key ?: return ""
 
         val now = System.currentTimeMillis()
