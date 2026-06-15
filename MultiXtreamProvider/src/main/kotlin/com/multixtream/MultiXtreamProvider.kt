@@ -35,7 +35,7 @@ class MultiXtreamProvider : MainAPI() {
             var pendingName = ""
             var pendingGroup = ""
 
-            // 🔥 Mappa categoria → lista canali
+            // Mappa categoria → lista canali
             val grouped = mutableMapOf<String, MutableList<LiveSearchResponse>>()
 
             for (line in lines) {
@@ -62,9 +62,9 @@ class MultiXtreamProvider : MainAPI() {
                         TvType.Live
                     ) {
                         this.posterUrl = defaultIcon
+                        this.data = pendingName   // 🔥 salva il nome del canale
                     }
 
-                    // 🔥 Aggiungi alla categoria corretta
                     grouped.getOrPut(pendingGroup) { mutableListOf() }.add(channel)
 
                     pendingName = ""
@@ -72,7 +72,6 @@ class MultiXtreamProvider : MainAPI() {
                 }
             }
 
-            // 🔥 Crea le liste HomePage
             grouped.forEach { (cat, list) ->
                 lists += HomePageList("$cat - ${srv.name}", list)
             }
@@ -150,7 +149,8 @@ class MultiXtreamProvider : MainAPI() {
             "https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz"
         )
 
-        val channelName = url.substringAfterLast("/").substringBefore(".").trim()
+        // 🔥 Recupera il nome salvato nella Home
+        val channelName = data as? String ?: "Canale"
 
         val epgNow = getCurrentProgramme(channelName, epg)
 
