@@ -88,10 +88,11 @@ class MultiXtreamProvider : MainAPI() {
     fun normalize(name: String): String {
         return name
             .lowercase()
-            .replace("[^a-z0-9]".toRegex(), "") // rimuove tutto tranne lettere/numeri
             .replace("hd", "")
             .replace("sd", "")
+            .replace(".it", "")
             .replace("it", "")
+            .replace("[^a-z0-9]".toRegex(), "") // rimuove tutto tranne lettere/numeri
             .trim()
     }
 
@@ -163,7 +164,6 @@ class MultiXtreamProvider : MainAPI() {
             "https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz"
         )
 
-        // 🔥 Recuperiamo nome e URL reale
         val realUrl = url.substringBefore("|||")
         val channelName = url.substringAfter("|||")
 
@@ -178,7 +178,9 @@ class MultiXtreamProvider : MainAPI() {
             title,
             realUrl,
             realUrl
-        )
+        ) {
+            this.plot = epgNow.ifBlank { "Nessuna informazione EPG disponibile" }
+        }
     }
 
     override suspend fun loadLinks(
