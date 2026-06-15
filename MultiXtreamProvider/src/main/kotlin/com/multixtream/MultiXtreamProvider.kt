@@ -35,7 +35,8 @@ class MultiXtreamProvider : MainAPI() {
             var pendingName = ""
             var pendingGroup = ""
 
-            val channels = mutableListOf<LiveSearchResponse>()
+            // 🔥 Mappa categoria → lista canali
+            val grouped = mutableMapOf<String, MutableList<LiveSearchResponse>>()
 
             for (line in lines) {
 
@@ -55,25 +56,23 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
-                    channels += newLiveSearchResponse(
+                    val channel = newLiveSearchResponse(
                         pendingName,
                         stream,
                         TvType.Live
                     ) {
                         this.posterUrl = defaultIcon
-                        this.data = pendingGroup   // ✔ categoria salvata qui
                     }
+
+                    // 🔥 Aggiungi alla categoria corretta
+                    grouped.getOrPut(pendingGroup) { mutableListOf() }.add(channel)
 
                     pendingName = ""
                     pendingGroup = ""
                 }
             }
 
-            // ✔ Raggruppamento basato su data (compatibile con tutte le versioni)
-            val grouped = channels.groupBy { ch ->
-                ch.data?.toString() ?: "Altro"
-            }
-
+            // 🔥 Crea le liste HomePage
             grouped.forEach { (cat, list) ->
                 lists += HomePageList("$cat - ${srv.name}", list)
             }
