@@ -20,11 +20,15 @@ class MultiXtreamProvider : MainAPI() {
         )
     )
 
-    // UNA SOLA IMMAGINE LOCALE PER TUTTI I CANALI
     private val defaultIcon =
         "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpg"
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+
+        // 🔥 Carichiamo l’EPG UNA SOLA VOLTA
+        val epg = loadXmlTv(
+            "http://kuku2018.ddns.net:25461/xmltv.php?username=danifonta01&password=rJ9G2kw8yF"
+        )
 
         val lists = mutableListOf<HomePageList>()
 
@@ -40,26 +44,32 @@ class MultiXtreamProvider : MainAPI() {
 
             for (line in lines) {
 
-                // --- EXTINF ---
                 if (line.startsWith("#EXTINF")) {
-                    pendingGroup = Regex("""group-title="(.*?)"""").find(line)?.groupValues?.get(1)
-                        ?: "Altro"
+                    pendingGroup = Regex("""group-title="(.*?)"""")
+                        .find(line)?.groupValues?.get(1) ?: "Altro"
+
                     pendingName = line.substringAfter(",").trim()
                     continue
                 }
 
-                // --- STREAM ---
                 if (line.startsWith("http")) {
                     val stream = line.trim()
 
-                    // SOLO LIVE REALI
                     if (!stream.contains("/live/")) continue
                     if (stream.contains("/movie/")) continue
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
+                    // 🔥 EPG per questo canale
+                    val epgNow = getCurrentProgramme(pendingName, epg)
+
+                    val finalName = if (epgNow.isNotBlank())
+                        "$pendingName — $epgNow [$pendingGroup]"
+                    else
+                        "$pendingName [$pendingGroup]"
+
                     channels += newLiveSearchResponse(
-                        "${pendingName} [${pendingGroup}]",
+                        finalName,
                         stream,
                         TvType.Live
                     ) {
@@ -71,13 +81,11 @@ class MultiXtreamProvider : MainAPI() {
                 }
             }
 
-            // --- RAGGRUPPA PER CATEGORIA ---
             val grouped = channels.groupBy { ch ->
                 ch.name.substringAfterLast("[", "").substringBefore("]").trim()
                     .ifEmpty { "Altro" }
             }
 
-            // --- CREA LISTE HOME ---
             grouped.forEach { (cat, list) ->
                 lists += HomePageList("$cat - ${srv.name}", list)
             }
@@ -86,25 +94,87 @@ class MultiXtreamProvider : MainAPI() {
         return newHomePageResponse(lists, false)
     }
 
+    /////////////////////////////////////////////////////////////
+    /////                EPG PARSER                        ///////
+    /////////////////////////////////////////////////////////////
+
+    suspend fun loadXmlTv(url: String): XmlTvData {
+        val xml = app.get(url).text
+
+        val channels = Regex("<channel id=\"(.*?)\">[\\s\\S]*?<display-name>(.*?)</display-name>")
+            .findAll(xml)
+            .map { it.groupValues[1] to it.groupValues[2] }
+            .toMap()
+
+        val programmes = Regex(
+            "<programme start=\"(.*?)\" stop=\"(.*?)\" channel=\"(.*?)\">[\\s\\S]*?<title>(.*?)</title>"
+        ).findAll(xml).map {
+            Programme(
+                start = it.groupValues[1],
+                stop = it.groupValues[2],
+                channel = it.groupValues[3],
+                title = it.groupValues[4]
+            )
+        }.toList()
+
+        return XmlTvData(channels, programmes)
+    }
+
+    data class XmlTvData(
+        val channels: Map<String, String>,
+        val programmes: List<Programme>
+    )
+
+    data class Programme(
+        val start: String,
+        val stop: String,
+        val channel: String,
+        val title: String
+    )
+
+    fun getCurrentProgramme(channelName: String, epg: XmlTvData): String {
+        val channelId = epg.channels.entries.find {
+            it.value.equals(channelName, ignoreCase = true)
+        }?.key ?: return ""
+
+        val now = System.currentTimeMillis()
+
+        val current = epg.programmes.find { p ->
+            p.channel == channelId &&
+            parseEpgTime(p.start) <= now &&
+            parseEpgTime(p.stop) > now
+        }
+
+        return current?.title ?: ""
+    }
+
+    fun parseEpgTime(t: String): Long {
+        val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
+        return sdf.parse(t.replace(" +", " +"))?.time ?: 0L
+    }
+
+    /////////////////////////////////////////////////////////////
+    /////            LOAD                                ///////
+    /////////////////////////////////////////////////////////////
+
     override suspend fun load(url: String): LoadResponse {
         return newLiveStreamLoadResponse("Xtream", url, url)
     }
 
     override suspend fun loadLinks(
-    data: String,
-    isCasting: Boolean,
-    subtitleCallback: (SubtitleFile) -> Unit,
-            callback: (ExtractorLink) -> Unit
-                ): Boolean {
-        
-                XtreamExtractor().getUrl(
-                    data,
-                    null,
-                    subtitleCallback,
-                    callback
-                )
-        
-            return true
-        }
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
 
+        XtreamExtractor().getUrl(
+            data,
+            null,
+            subtitleCallback,
+            callback
+        )
+
+        return true
+    }
 }
