@@ -55,7 +55,6 @@ class MultiXtreamProvider : MainAPI() {
                     if (stream.contains("/series/")) continue
                     if (pendingName.isBlank()) continue
 
-                    // 🔥 Passiamo il nome del canale dentro l’URL
                     val encodedUrl = "$stream|||$pendingName"
 
                     val channel = newLiveSearchResponse(
@@ -88,11 +87,18 @@ class MultiXtreamProvider : MainAPI() {
     fun normalize(name: String): String {
         return name
             .lowercase()
+            .replace(".it", "")
+            .replace(" hd", "")
+            .replace(" sd", "")
             .replace("hd", "")
             .replace("sd", "")
-            .replace(".it", "")
-            .replace("it", "")
-            .replace("[^a-z0-9]".toRegex(), "") // rimuove tutto tranne lettere/numeri
+            .replace("+1", "")
+            .replace("tv", "")
+            .replace("channel", "")
+            .replace("maratone", "")
+            .replace("english", "")
+            .replace("francais", "")
+            .replace("[^a-z0-9]".toRegex(), "")
             .trim()
     }
 
