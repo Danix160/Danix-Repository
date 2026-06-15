@@ -56,12 +56,12 @@ class MultiXtreamProvider : MainAPI() {
                     if (pendingName.isBlank()) continue
 
                     channels += newLiveSearchResponse(
-                        pendingName,   // ✔ Nome pulito
+                        pendingName,
                         stream,
                         TvType.Live
                     ) {
                         this.posterUrl = defaultIcon
-                        this.extra = pendingGroup   // ✔ Categoria salvata qui
+                        this.setExtra("category", pendingGroup)
                     }
 
                     pendingName = ""
@@ -69,9 +69,8 @@ class MultiXtreamProvider : MainAPI() {
                 }
             }
 
-            // ✔ Raggruppamento basato su extra (categoria reale)
             val grouped = channels.groupBy { ch ->
-                ch.extra ?: "Altro"
+                ch.getExtra<String>("category") ?: "Altro"
             }
 
             grouped.forEach { (cat, list) ->
@@ -147,26 +146,25 @@ class MultiXtreamProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
 
-    val epg = loadXmlTv(
-        "https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz"
-    )
+        val epg = loadXmlTv(
+            "https://epgshare01.online/epgshare01/epg_ripper_IT1.xml.gz"
+        )
 
-    val channelName = url.substringAfterLast("/").substringBefore(".").trim()
+        val channelName = url.substringAfterLast("/").substringBefore(".").trim()
 
-    val epgNow = getCurrentProgramme(channelName, epg)
+        val epgNow = getCurrentProgramme(channelName, epg)
 
-    val title = if (epgNow.isNotBlank())
-        "$channelName — $epgNow"
-    else
-        channelName
+        val title = if (epgNow.isNotBlank())
+            "$channelName — $epgNow"
+        else
+            channelName
 
-    return newLiveStreamLoadResponse(
-        title,
-        url,
-        url
-    )
-}
-
+        return newLiveStreamLoadResponse(
+            title,
+            url,
+            url
+        )
+    }
 
     override suspend fun loadLinks(
         data: String,
