@@ -31,8 +31,8 @@ class XtreamExtractor : ExtractorApi() {
         )
 
         val link = newExtractorLink(
-            source = name,
-            name = "Xtream Live",
+            source = this.name,
+            name = this.name,
             url = cleanUrl,
             type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
         ) {
