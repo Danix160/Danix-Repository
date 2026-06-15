@@ -152,11 +152,20 @@ class MultiXtreamProvider : MainAPI() {
     return current?.title ?: ""
 }
 
+
     fun parseEpgTime(t: String): Long {
-    val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
-    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC") // l’EPG è in UTC
-    return sdf.parse(t)?.time ?: 0L
+    val utc = java.text.SimpleDateFormat("yyyyMMddHHmmss Z")
+    utc.timeZone = java.util.TimeZone.getTimeZone("UTC")
+
+    val date = utc.parse(t) ?: return 0L
+
+    // Converte in ora locale
+    val localCal = java.util.Calendar.getInstance()
+    localCal.time = date
+
+    return localCal.timeInMillis
 }
+
 
 
     /////////////////////////////////////////////////////////////
