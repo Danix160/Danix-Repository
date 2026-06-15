@@ -19,29 +19,29 @@ class MultiXtreamProvider : MainAPI() {
             "http://kuku2018.ddns.net:25461/get.php?username=danifonta01&password=rJ9G2kw8yF&type=m3u_plus&output=m3u8"
         )
     )
+    private val categoryIcons = mapOf(
+    "sky sport" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/sport.jpeg",
+    "dazn" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/dazn.png",
+    "tivù sat" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/tivusat.png",
+    "sky calcio" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/skycalcio.jpeg",
+    "sky cinema" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinema.png"
+)
     
-    private val skysportIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/sport.jpeg"
-    private val daznIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/dazn.png"
-    private val tvsatIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/tivusat.png"
-    private val skycalcioIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/skycalcio.jpeg"
-    private val skycinemaIcon = "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinema.png"
-
     private val defaultIcon =
         "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/src/main/kotlin/com/multixtream/images.jpg"
+    
+    fun getCategoryIcon(category: String): String {
+    val cat = category.lowercase()
 
-    fun getChannelIcon(name: String): String {
-        val n = name.lowercase()
-
-        return when {
-            "sky sport" in n -> skysportIcon
-            "dazn" in n -> daznIcon
-            "rai" in n -> tvsatIcon
-            "mediaset" in n -> tvsatIcon
-            "sky calcio" in n -> skycalcioIcon
-            "sky cinema" in n -> skycinemaIcon
-            else -> defaultIcon
-        }
+    return when {
+        cat.contains("sky") && cat.contains("sport") -> categoryIcons["sky sport"]!!
+        cat.contains("dazn") -> categoryIcons["dazn"]!!
+        cat.contains("tivu") || cat.contains("sat") -> categoryIcons["tivù sat"]!!
+        cat.contains("calcio") -> categoryIcons["sky calcio"]!!
+        cat.contains("cinema") -> categoryIcons["sky cinema"]!!
+        else -> defaultIcon
     }
+}
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
 
@@ -82,7 +82,8 @@ class MultiXtreamProvider : MainAPI() {
                         encodedUrl,
                         TvType.Live
                     ) {
-                        this.posterUrl = defaultIcon
+                        this.posterUrl = getCategoryIcon(pendingGroup)
+
                     }
 
                     grouped.getOrPut(pendingGroup) { mutableListOf() }.add(channel)
