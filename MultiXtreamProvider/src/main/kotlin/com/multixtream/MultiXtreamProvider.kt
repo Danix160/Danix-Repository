@@ -28,7 +28,7 @@ class MultiXtreamProvider : MainAPI() {
     "cinema" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/cinemam.png",
         "netflix" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/netflix.png",
         "pluto" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/pluto.png",
-        "disney" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/disney.png",
+        "disney" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/disney.jpg",
         "news" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/news.png",
         "bein" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/bein.png",
         "intra" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/intra.png",
@@ -38,7 +38,8 @@ class MultiXtreamProvider : MainAPI() {
         "musica" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/musica.png",
         "fratello" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/fratello.png",
         "primafila" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/primafila.png",
-        "adulti" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/adulti.jpg"
+        "adulti" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/adulti.jpg",
+        "calcio" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/calcio.jpg"
 )
     
     private val defaultIcon =
@@ -52,7 +53,7 @@ class MultiXtreamProvider : MainAPI() {
         cat.contains("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
         cat.contains("dazn") -> categoryIcons["dazn"]!!
         cat.contains("tivu") || cat.contains("sat") -> categoryIcons["tivù sat"]!!
-        cat.contains("sky") && cat.contains("calcio") -> categoryIcons["sky sport"]!!
+        cat.contains("sky") && cat.contains("calcio") -> categoryIcons["calcio"]!!
         cat.contains("sky") && cat.contains("cinema") -> categoryIcons["sky cinema"]!!
         cat.contains("sky") && cat.contains("motogp") -> categoryIcons["sky sport"]!!
         cat.contains("lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
