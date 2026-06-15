@@ -55,7 +55,7 @@ class MultiXtreamProvider : MainAPI() {
         cat.contains("sky") && cat.contains("calcio") -> categoryIcons["sky sport"]!!
         cat.contains("sky") && cat.contains("cinema") -> categoryIcons["sky cinema"]!!
         cat.contains("sky") && cat.contains("motogp") -> categoryIcons["sky sport"]!!
-        cat.contains("Lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
+        cat.contains("lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
         cat.contains("netflix") -> categoryIcons["netflix"]!!
         cat.contains("pluto") -> categoryIcons["pluto"]!!
         cat.contains("attori") -> categoryIcons["cinema"]!!
@@ -71,7 +71,7 @@ class MultiXtreamProvider : MainAPI() {
         cat.contains("cinema") && cat.contains("hd") -> categoryIcons["cinema"]!!
         cat.contains("intrattenimento") -> categoryIcons["intra"]!!
         cat.contains("cultura") -> categoryIcons["intra"]!!
-        cat.contains("Serie") && cat.contains("b") -> categoryIcons["dazn"]!!
+        cat.contains("serie") && cat.contains("b") -> categoryIcons["dazn"]!!
         cat.contains("lba") && cat.contains("basket") -> categoryIcons["lba"]!!
         cat.contains("amazon") && cat.contains("infinity") -> categoryIcons["amazon"]!!    
         cat.contains("sky") && cat.contains("primafila") -> categoryIcons["primafila"]!!
