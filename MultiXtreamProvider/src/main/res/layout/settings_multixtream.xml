@@ -53,7 +53,7 @@
             android:text="@string/label" />  
 
         <Spinner
-            android:id="@+id/lang_spinner"  
+            android:id="@+id/version_spinner" 
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" />
     </LinearLayout>
