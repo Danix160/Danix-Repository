@@ -1,28 +1,23 @@
 package com.multixtream
 
-import android.annotation.SuppressLint
 import android.content.SharedPreferences
-import android.os.Build
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
-import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.fragment.app.DialogFragment
 import androidx.core.content.edit
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.lagradost.cloudstream3.CommonActivity.showToast
 
 
 class MultiXtreamSettings(
     private val plugin: MultiXtreamPlugin,
     private val sharedPref: SharedPreferences
-) : DialogFragment() {
+) : BottomSheetDialogFragment() {
 
 
     private var currentVersion =
@@ -41,16 +36,17 @@ class MultiXtreamSettings(
 
 
     override fun onCreateView(
-        inflater: LayoutInflater,
+        inflater: android.view.LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
 
 
-        val layout = LinearLayout(requireContext())
+        val layout =
+            LinearLayout(requireContext())
 
-
-        layout.orientation = LinearLayout.VERTICAL
+        layout.orientation =
+            LinearLayout.VERTICAL
 
         layout.setPadding(
             40,
@@ -60,22 +56,23 @@ class MultiXtreamSettings(
         )
 
 
-        val title = TextView(requireContext())
+        val title =
+            TextView(requireContext())
 
         title.text =
-            "Multi Xtream - Versione"
+            "Multi Xtream - Versione Provider"
 
         title.textSize = 20f
-
 
         layout.addView(title)
 
 
 
-        val spinner = Spinner(requireContext())
+        val spinner =
+            Spinner(requireContext())
 
 
-        val versions =
+        val names =
             arrayOf(
                 "MultiXtream V1",
                 "MultiXtream V2"
@@ -86,7 +83,7 @@ class MultiXtreamSettings(
             ArrayAdapter(
                 requireContext(),
                 android.R.layout.simple_spinner_dropdown_item,
-                versions
+                names
             )
 
 
@@ -113,7 +110,6 @@ class MultiXtreamSettings(
 
                     currentPosition = position
 
-
                     currentVersion =
                         if(position == 1)
                             "v2"
@@ -121,7 +117,6 @@ class MultiXtreamSettings(
                             "v1"
                 }
             }
-
 
 
         layout.addView(spinner)
@@ -137,13 +132,6 @@ class MultiXtreamSettings(
 
         save.textSize = 18f
 
-        save.setPadding(
-            20,
-            40,
-            20,
-            20
-        )
-
 
         save.setOnClickListener {
 
@@ -154,31 +142,19 @@ class MultiXtreamSettings(
                     "multixtream_version",
                     currentVersion
                 )
-
             }
 
 
-
-            AlertDialog.Builder(
-                requireContext()
+            showToast(
+                "Salvato. Riavvia Cloudstream."
             )
-            .setTitle("Riavvio richiesto")
-            .setMessage(
-                "Versione salvata. Riavvia Cloudstream per applicare il cambio."
-            )
-            .setPositiveButton(
-                "OK"
-            ) { _, _ ->
 
-                dismiss()
 
-            }
-            .show()
+            dismiss()
         }
 
 
         layout.addView(save)
-
 
 
         return layout
