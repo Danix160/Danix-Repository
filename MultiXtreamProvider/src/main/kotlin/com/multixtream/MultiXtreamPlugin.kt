@@ -17,7 +17,7 @@ class MultiXtreamPlugin : Plugin() {
         when (version) {
             "v2" -> registerMainAPI(MultiXtreamProviderV2())
             "v3" -> registerMainAPI(MultiXtreamProviderV3())
-            else -> registerMainAPI(MultiXtreamProviderV1())
+            else -> registerMainAPI(MultiXtreamProvider())
         }
 
         openSettings = { ctx ->
