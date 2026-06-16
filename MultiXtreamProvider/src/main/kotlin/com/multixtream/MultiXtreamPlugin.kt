@@ -1,35 +1,29 @@
-package com.multixtream // Deve essere uguale a quello in cima al file
+package com.multixtream
 
-import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
-import com.lagradost.cloudstream3.plugins.Plugin
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.fragment.app.Fragment
+import androidx.appcompat.app.AppCompatActivity
+import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
 class MultiXtreamPlugin : Plugin() {
 
-    companion object {
-        const val PREF_NAME = "multixtream_settings"
-        const val KEY_SITE_VERSION = "site_version"
-        const val KEY_VERSION_POSITION = "versionPosition"
-    }
-
     override fun load(context: Context) {
-        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        val version = prefs.getString(KEY_SITE_VERSION, "v1") ?: "v1"
+
+        val sharedPref = context.getSharedPreferences("multixtream_prefs", Context.MODE_PRIVATE)
+        val version = sharedPref.getString("site_version", "v1") ?: "v1"
 
         when (version) {
-            "v1" -> registerMainAPI(MultiXtreamProvider())
             "v2" -> registerMainAPI(MultiXtreamProviderV2())
             "v3" -> registerMainAPI(MultiXtreamProviderV3())
-            else -> registerMainAPI(MultiXtreamProvider())
+            else -> registerMainAPI(MultiXtreamProviderV1())
+        }
+
+        openSettings = { ctx ->
+            val activity = ctx as AppCompatActivity
+            val frag = MultiXtreamSettings(this, sharedPref)
+            frag.show(activity.supportFragmentManager, "MultiXtreamSettings")
         }
     }
-
-    override fun getSettingsFragment(context: Context): Fragment {
-        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        return MultiXtreamSettings(this, prefs)
-    }
 }
-
