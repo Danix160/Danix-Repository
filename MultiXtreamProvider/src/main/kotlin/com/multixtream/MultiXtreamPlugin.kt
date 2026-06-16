@@ -1,50 +1,60 @@
 package com.multixtream
 
 import android.content.Context
+import androidx.appcompat.app.AppCompatActivity
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
-import com.lagradost.cloudstream3.ui.settings.SettingsProvider
-import com.lagradost.cloudstream3.ui.settings.SelectSetting
 
 
 @CloudstreamPlugin
 class MultiXtreamPlugin : Plugin() {
 
+
     override fun load(context: Context) {
 
 
-        SettingsProvider.addSetting(
-            SelectSetting(
-                key = "multixtream_version",
-                title = "Versione Provider",
-                values = listOf(
-                    "v1",
-                    "v2"
-                ),
-                defaultValue = "v1"
-            )
+        val pref = context.getSharedPreferences(
+            "multixtream_prefs",
+            Context.MODE_PRIVATE
         )
 
 
-        when(
-            SettingsProvider.getString(
+        val version =
+            pref.getString(
                 "multixtream_version",
                 "v1"
+            ) ?: "v1"
+
+
+
+        when(version) {
+
+            "v2" -> registerMainAPI(
+                MultiXtreamProviderV2()
             )
-        ) {
-
-            "v2" -> {
-                registerMainAPI(
-                    MultiXtreamProviderV2()
-                )
-            }
 
 
-            else -> {
-                registerMainAPI(
-                    MultiXtreamProvider()
-                )
-            }
+            else -> registerMainAPI(
+                MultiXtreamProvider()
+            )
+        }
+
+
+
+        openSettings = { ctx ->
+
+            val activity =
+                ctx as AppCompatActivity
+
+
+            MultiXtreamSettings(
+                this,
+                pref
+            )
+            .show(
+                activity.supportFragmentManager,
+                "MultiXtreamSettings"
+            )
         }
     }
 }
