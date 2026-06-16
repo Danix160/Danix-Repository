@@ -4,13 +4,13 @@ cloudstream {
     extra["prefix"] = "MultiXtream"
     extra["displayName"] = "MultiXtream"
     
-    version = 38
+    version = 39
     description = "MultiXtream IPTV LIVE"
     authors = listOf("Danix")
     
     status = 1
     tvTypes = listOf("Live")
-    requiresResources = false
+    requiresResources = true
     language = "it"
     iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/GiBEWASW4AAvgrH.jpg"
 }
