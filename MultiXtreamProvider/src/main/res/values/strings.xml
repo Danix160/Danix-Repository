@@ -1,9 +1,13 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-<string name="multixtream_header">Impostazioni MultiXtream</string>
-<string name="multixtream_version_label">Seleziona la versione</string>
-<string name="multixtream_v1_label">⚙️ V1 </string>
-<string name="multixtream_v2_label">⚙️ V2 </string>
-<string name="multixtream_save_title">Salva e riavvia</string>
-<string name="multixtream_save_message">Le modifiche sono state salvate. Riavviare l'app?</string>
+    <string name="multixtream_header">Impostazioni MultiXtream</string>
+    <string name="multixtream_version_label">Seleziona la versione del provider</string>
+    <string name="multixtream_v1_label">Versione 1</string>
+    <string name="multixtream_v2_label">Versione 2</string>
+
+    <string name="multixtream_save_title">Salva e riavvia</string>
+    <string name="multixtream_save_message">Le modifiche sono state salvate. Riavviare l&apos;app?</string>
+
+    <!-- Per il layout -->
+    <string name="header_tw">Impostazioni</string>
+    <string name="label">Versione</string>
 </resources>
