@@ -8,36 +8,35 @@ import com.lagradost.cloudstream3.plugins.Plugin
 @CloudstreamPlugin
 class MultiXtreamPlugin : Plugin() {
 
-
     override fun load(context: Context) {
 
 
         val pref =
             context.getSharedPreferences(
-                "multixtream",
+                "multixtream_prefs",
                 Context.MODE_PRIVATE
             )
 
 
         val version =
             pref.getString(
-                "version",
+                "multixtream_version",
                 "v1"
+            ) ?: "v1"
+
+
+
+        if (version == "v2") {
+
+            registerMainAPI(
+                MultiXtreamProviderV2()
             )
 
+        } else {
 
-        when(version) {
-
-            "v2" ->
-                registerMainAPI(
-                    MultiXtreamProviderV2()
-                )
-
-
-            else ->
-                registerMainAPI(
-                    MultiXtreamProvider()
-                )
+            registerMainAPI(
+                MultiXtreamProvider()
+            )
         }
     }
 }
