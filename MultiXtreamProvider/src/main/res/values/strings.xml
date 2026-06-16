@@ -6,7 +6,7 @@
     <string name="multixtream_v2_label">Versione 2</string>
 
     <string name="multixtream_save_title">Salva e riavvia</string>
-    <string name="multixtream_save_message">Le modifiche sono state salvate. Riavviare l'app?</string>
+    <string name="multixtream_save_message">Le modifiche sono state salvate. Riavviare app?</string>
 
     <!-- Per il layout -->
     <string name="header_tw">Impostazioni</string>
