@@ -1,0 +1,8 @@
+<resources>
+    <string name="multixtream_header">Impostazioni MultiXtream</string>
+    <string name="multixtream_version_label">Seleziona la versione del provider</string>
+
+    <string name="multixtream_v1">Versione 1 (Stabile)</string>
+    <string name="multixtream_v2">Versione 2</string>
+    <string name="multixtream_v3">Versione 3 (Sperimentale)</string>
+</resources>
