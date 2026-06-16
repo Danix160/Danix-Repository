@@ -16,7 +16,7 @@ class MultiXtreamPlugin : Plugin() {
             SelectSetting(
                 key = "multixtream_version",
                 title = "Versione Provider",
-                values = listOf("v1", "v2", "v3"),
+                values = listOf("v1", "v2"),
                 defaultValue = "v1"
             )
         )
@@ -25,7 +25,6 @@ class MultiXtreamPlugin : Plugin() {
 
         when (version) {
             "v2" -> registerMainAPI(MultiXtreamProviderV2())
-            "v3" -> registerMainAPI(MultiXtreamProviderV3())
             else -> registerMainAPI(MultiXtreamProvider())
         }
     }
