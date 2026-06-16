@@ -39,7 +39,9 @@ class MultiXtreamProviderV2 : MainAPI() {
         "fratello" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/fratello.png",
         "primafila" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/primafila.png",
         "adulti" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/adulti.jpg",
-        "calcio" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/calcio.jpg"
+        "calcio" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/calcio.jpg",
+        "eurosport" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/eurospot.png",
+        "fox" to "https://raw.githubusercontent.com/Danix160/plugintest/master/icons/fox.png"
 )
     
     private val defaultIcon =
@@ -51,32 +53,34 @@ class MultiXtreamProviderV2 : MainAPI() {
     return when {
         cat.contains("regionali") -> categoryIcons["news"]!!
         cat.contains("sky") && cat.contains("sport") -> categoryIcons["sky sport"]!!
-        cat.contains("sky") && cat.contains("formula 1") -> categoryIcons["sky sport"]!!
-        cat.contains("dazn") -> categoryIcons["dazn"]!!
-        cat.contains("tivu") || cat.contains("sat") -> categoryIcons["tivù sat"]!!
+        cat.contains("sky") && cat.contains("formula 1") || cat.contains("f1") -> categoryIcons["sky sport"]!!
+        cat.contains("dazn") || cat.contains("fifa") -> categoryIcons["dazn"]!!
+        cat.contains("tivu") || cat.contains("top italia") -> categoryIcons["tivù sat"]!!
         cat.contains("sky") && cat.contains("calcio") -> categoryIcons["sky sport"]!!
         cat.contains("sky") && cat.contains("cinema") -> categoryIcons["sky cinema"]!!
-        cat.contains("sky") && cat.contains("motogp") -> categoryIcons["sky sport"]!!
+        cat.contains("sky") && cat.contains("motogp") || cat.contains("moto gp") -> categoryIcons["sky sport"]!!
         cat.contains("lega") && cat.contains("pro") -> categoryIcons["sky calcio"]!!
-        cat.contains("netflix") -> categoryIcons["netflix"]!!
+        cat.contains("netflix") || cat.contains("rakuten") -> categoryIcons["netflix"]!!
         cat.contains("pluto") -> categoryIcons["pluto"]!!
         cat.contains("attori") -> categoryIcons["cinema"]!!
         cat.contains("saghe") -> categoryIcons["cinema"]!!
         cat.contains("bambini") -> categoryIcons["bambini"]!!
         cat.contains("disney") -> categoryIcons["disney"]!!
         cat.contains("musica") -> categoryIcons["musica"]!!
-        cat.contains("news") && cat.contains("tg") -> categoryIcons["news"]!!
+        cat.contains("news") && cat.contains("tg") || cat.contains("notizie") -> categoryIcons["news"]!!
         cat.contains("regioni") -> categoryIcons["news"]!!
         cat.contains("bein") && cat.contains("sports") -> categoryIcons["bein"]!!
         cat.contains("hotclub") && cat.contains("adulti") -> categoryIcons["adulti"]!!
         cat.contains("grande") && cat.contains("fratello") -> categoryIcons["fratello"]!!
-        cat.contains("cinema") && cat.contains("hd") -> categoryIcons["cinema"]!!
+        cat.contains("cinema") && cat.contains("hd") || cat.contains("eagle") || cat.contains("tematici") -> categoryIcons["cinema"]!!
         cat.contains("intrattenimento") -> categoryIcons["intra"]!!
         cat.contains("cultura") -> categoryIcons["intra"]!!
         cat.contains("serie") && cat.contains("b") -> categoryIcons["dazn"]!!
         cat.contains("lba") && cat.contains("basket") -> categoryIcons["lba"]!!
         cat.contains("amazon") && cat.contains("infinity") -> categoryIcons["amazon"]!!    
-        cat.contains("sky") && cat.contains("primafila") -> categoryIcons["primafila"]!!
+        cat.contains("primafila") -> categoryIcons["primafila"]!! 
+        cat.contains("fox") -> categoryIcons["fox"]!!
+        cat.contains("eurosport") -> categoryIcons["eurosport"]!!
                     
                 else -> defaultIcon
     }
