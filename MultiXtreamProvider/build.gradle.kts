@@ -1,5 +1,20 @@
 import org.jetbrains.kotlin.konan.properties.Properties
 
+cloudstream {
+    extra["prefix"] = "MultiXtream"
+    extra["displayName"] = "MultiXtream"
+    
+    version = 38
+    description = "MultiXtream IPTV LIVE"
+    authors = listOf("Danix")
+    
+    status = 1
+    tvTypes = listOf("Live")
+    requiresResources = false
+    language = "it"
+    iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/GiBEWASW4AAvgrH.jpg"
+}
+
 android {
 
     namespace = "com.multixtream"
@@ -27,21 +42,6 @@ android {
 dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-}
-
-cloudstream {
-    extra["prefix"] = "MultiXtream"
-    extra["displayName"] = "MultiXtream"
-    
-    version = 37
-    description = "MultiXtream IPTV LIVE"
-    authors = listOf("Danix")
-    
-    status = 1
-    tvTypes = listOf("Live")
-    requiresResources = false
-    language = "it"
-    iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/MultiXtreamProvider/GiBEWASW4AAvgrH.jpg"
 }
 
 
