@@ -16,7 +16,7 @@ class MultiXtreamProviderV2 : MainAPI() {
     private val servers = listOf(
         XtreamServer(
             "Server 2",
-            "http://creative03.ddns.net:80/get.php?username=tvaip50&password=oTUjd6tH&type=m3u_plus"
+            "http://solmare.res.co.ro:80/get.php?username=c6FX7mCgCf&password=q37trDY&type=m3u_plus&output=m3u8"
         )
     )
     private val categoryIcons = mapOf(
