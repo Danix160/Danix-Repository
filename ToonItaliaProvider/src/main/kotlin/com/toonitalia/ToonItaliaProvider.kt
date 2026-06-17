@@ -132,74 +132,79 @@ class ToonItaliaProvider : MainAPI() {
     // PARSER EPISODI UNIVERSALE
     // ============================
 
-    private fun parseEpisodes(doc: org.jsoup.nodes.Document, poster: String): List<Episode> {
-        val episodes = mutableListOf<Episode>()
+  private fun parseEpisodes(doc: org.jsoup.nodes.Document, poster: String): List<Episode> {
+    val episodes = mutableListOf<Episode>()
 
-        val rows = doc.select("div.entry-content p, div.entry-content div")
+    // Prendiamo TUTTO l’HTML dell’entry-content
+    val rawHtml = doc.selectFirst("div.entry-content")?.html() ?: return episodes
 
-        for (row in rows) {
-            val text = row.text().trim()
-            if (text.isEmpty()) continue
+    // Splittiamo manualmente ogni riga
+    val lines = rawHtml.split(Regex("<br\\s*/?>|</p>|</div>|\\n"))
 
-            // Estrai link validi (LuluStream ignorato)
-            val links = row.select("a[href]").map { it.attr("href") }
-                .filter { link ->
-                    link.startsWith("http") &&
-                    !link.contains("toonitalia.xyz") &&
-                    !link.contains("lulu") &&
-                    !link.contains("lulu.st") &&
-                    !link.contains("lulustream")
-                }
+    for (line in lines) {
+        val clean = Jsoup.parse(line).text().trim()
+        if (clean.isEmpty()) continue
 
-            if (links.isEmpty()) continue
-
-            // Formato 1x01A
-            val matchAB = Regex("""(\d+)x(\d+)([A-Za-z]?)""").find(text)
-
-            // Formato 01 – Titolo
-            val matchSimple = Regex("""^(\d{1,3})\s*[–-]""").find(text)
-
-            var season = 1
-            var episode: Int? = null
-            var subEp: String? = null
-
-            if (matchAB != null) {
-                season = matchAB.groupValues[1].toInt()
-                val epNum = matchAB.groupValues[2].toInt()
-                subEp = matchAB.groupValues[3].uppercase().ifEmpty { null }
-
-                episode = if (subEp == null) {
-                    epNum
-                } else {
-                    val offset = (subEp[0] - 'A' + 1)
-                    epNum * 10 + offset
-                }
-
-            } else if (matchSimple != null) {
-                episode = matchSimple.groupValues[1].toInt()
+        // Estrai link validi
+        val links = Jsoup.parse(line).select("a[href]").map { it.attr("href") }
+            .filter { link ->
+                link.startsWith("http") &&
+                !link.contains("toonitalia.xyz") &&
+                !link.contains("lulu") &&
+                !link.contains("lulu.st") &&
+                !link.contains("lulustream")
             }
 
-            val titleParts = text.split("–").map { it.trim() }
-            val epTitle = if (titleParts.size >= 2) titleParts[1] else "Episodio"
+        if (links.isEmpty()) continue
 
-            val finalName = buildString {
-                append("${season}x${episode ?: "?"}")
-                if (!subEp.isNullOrEmpty()) append(subEp)
-                append(" – $epTitle")
+        // Formato 1x01A
+        val matchAB = Regex("""(\d+)x(\d+)([A-Za-z]?)""").find(clean)
+
+        // Formato 01 – Titolo
+        val matchSimple = Regex("""^(\d{1,3})\s*[–-]""").find(clean)
+
+        var season = 1
+        var episode: Int? = null
+        var subEp: String? = null
+
+        if (matchAB != null) {
+            season = matchAB.groupValues[1].toInt()
+            val epNum = matchAB.groupValues[2].toInt()
+            subEp = matchAB.groupValues[3].uppercase().ifEmpty { null }
+
+            episode = if (subEp == null) {
+                epNum
+            } else {
+                val offset = (subEp[0] - 'A' + 1)
+                epNum * 10 + offset
             }
 
-            episodes.add(
-                newEpisode(links.joinToString("###")) {
-                    this.name = finalName
-                    this.season = season
-                    this.episode = episode
-                    this.posterUrl = poster
-                }
-            )
+        } else if (matchSimple != null) {
+            episode = matchSimple.groupValues[1].toInt()
         }
 
-        return episodes
+        val titleParts = clean.split("–").map { it.trim() }
+        val epTitle = if (titleParts.size >= 2) titleParts[1] else "Episodio"
+
+        val finalName = buildString {
+            append("${season}x${episode ?: "?"}")
+            if (!subEp.isNullOrEmpty()) append(subEp)
+            append(" – $epTitle")
+        }
+
+        episodes.add(
+            newEpisode(links.joinToString("###")) {
+                this.name = finalName
+                this.season = season
+                this.episode = episode
+                this.posterUrl = poster
+            }
+        )
     }
+
+    return episodes
+}
+
 
     // ============================
     // LOAD LINKS
