@@ -1,0 +1,174 @@
+[
+    {
+        "iconUrl": "https://altadefinizione-01.fun/templates/altadefinizione01/images/logo.png",
+        "fileHash": "sha256-21a62c8dd7d18e19b710c1c92831e289e2fa20c623d7b00b3e1b0d584d00fabe",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 60978,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Cartoon"
+        ],
+        "version": 18,
+        "internalName": "Altadefinizione01Provider",
+        "description": "Altadefinizione",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/Altadefinizione01Provider.cs3",
+        "name": "Altadefinizione01Provider"
+    },
+    {
+        "iconUrl": "https://cb01uno.one/wp-content/uploads/2026/01/logo-official-uno-2026.png",
+        "fileHash": "sha256-39659b971697d4b201eea8f8b0dd647cba6ebae3eb8928b8b4b335d3e026556e",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 78171,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Cartoon"
+        ],
+        "version": 91,
+        "internalName": "CbProvider",
+        "description": "cb01uno.one",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/CbProvider.cs3",
+        "name": "CbProvider"
+    },
+    {
+        "iconUrl": "https://guardaplay.online/wp-content/uploads/2026/06/cropped-GuardaPlay.png",
+        "fileHash": "sha256-a85cecc78add05a44b193ea4255c251ffe8c39a95478a5f60dab0ecff2c07420",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 30082,
+        "status": 0,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie"
+        ],
+        "version": 7,
+        "internalName": "GuardaPlayProvider",
+        "description": "GuardaPlay",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/GuardaPlayProvider.cs3",
+        "name": "GuardaPlayProvider"
+    },
+    {
+        "iconUrl": "https://loonex.eu/archivio-cartoni-logo.png",
+        "fileHash": "sha256-38cd58c6b834b6665e7efaac897debbeb1adbb0ea4888043650d7a6ffe04186f",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 30209,
+        "status": 0,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Cartoon",
+            "Anime",
+            "TvSeries",
+            "Movie"
+        ],
+        "version": 25,
+        "internalName": "LoonexProvider",
+        "description": "Archivio di Anime e Cartoni animati in italiano da Loonex",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/LoonexProvider.cs3",
+        "name": "LoonexProvider"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/OnlineSerieTvProvider/1000108206.png",
+        "fileHash": "sha256-9f970ce732a56fc92a177235b54a311c0d8b11b85fa66a4d553e8041c3d76de5",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 63788,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 166,
+        "internalName": "OnlineSerieTvProvider",
+        "description": "OnlineSerieTV",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/OnlineSerieTvProvider.cs3",
+        "name": "OnlineSerieTvProvider"
+    },
+    {
+        "iconUrl": "",
+        "fileHash": "sha256-cb314f7790bbc69a52a65b88bb6e2e8e4f426a54eb0c5e6d50e96344db9cfb60",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 56455,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Live"
+        ],
+        "version": 29,
+        "internalName": "RiveStreamProvider",
+        "description": "Live Events Sport ",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/RiveStreamProvider.cs3",
+        "name": "RiveStreamProvider"
+    },
+    {
+        "iconUrl": "https://toonitalia.xyz/wp-content/uploads/2023/08/cropped-Majintoon-192x192.jpg",
+        "fileHash": "sha256-5aa49d8195529fff4e8d56bdfeba7c7b045901082d9e1a65c5940b9613733912",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 76943,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "Cartoon"
+        ],
+        "version": 116,
+        "internalName": "ToonItaliaProvider",
+        "description": "Archivio di Anime e Cartoni animati in italiano da ToonItalia.xyz",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/ToonItaliaProvider.cs3",
+        "name": "ToonItaliaProvider"
+    },
+    {
+        "iconUrl": "https://www.google.com/s2/favicons?domain=themoviedb.org&sz=%size%",
+        "fileHash": "sha256-75d2006dc4138d9a27f7c1946a37789f91dad52b53bd253958ba448f1cbd97bf",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "fileSize": 117905,
+        "status": 1,
+        "language": "it",
+        "authors": [
+            "Danix"
+        ],
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "version": 24,
+        "internalName": "UniversalProvider",
+        "description": "Server Multiplo per Film, Serie TV e Cartoni",
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/UniversalProvider.cs3",
+        "name": "UniversalProvider"
+    }
+]
