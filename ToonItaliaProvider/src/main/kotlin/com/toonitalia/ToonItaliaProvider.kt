@@ -8,31 +8,26 @@ import com.lagradost.cloudstream3.TvType
 import org.jsoup.Jsoup
 
 class ToonItaliaProvider : MainAPI() {
+
     override var mainUrl = "https://toonitalia.xyz"
     override var name = "ToonItalia"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Anime, TvType.Cartoon)
     override var lang = "it"
     override val hasMainPage = true
 
-    private val searchPlaceholderLogo = "https://toonitalia.xyz/wp-content/uploads/2023/11/toonitalia-logo-1.png"
+    private val placeholderPoster = "https://toonitalia.xyz/wp-content/uploads/2023/11/toonitalia-logo-1.png"
 
-    private val commonHeaders = mapOf(
+    private val headers = mapOf(
         "Referer" to "$mainUrl/",
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "User-Agent" to "Mozilla/5.0"
     )
 
-    private val supportedHosts = listOf(
-        "voe", "chuckle-tube", "luluvdo", "lulustream", "vidhide", "ryderjet", 
-        "minochinos", "megavido", "rpmshare", "rpmplay", "streamup", "smoothpre",
-        "mixdrop", "streamtape", "fastream", "filemoon", "wolfstream", "streamwish"
-    )
-
-    private fun fixHostUrl(url: String): String {
+    /** Normalizzazione host */
+    private fun fixHost(url: String): String {
         return url
             .replace("chuckle-tube.com", "voe.sx")
             .replace("luluvdo.com", "lulustream.com")
             .replace("luluvideo.com", "lulustream.com")
-            .replace("toonitalia.rpmplay.xyz/", "rpmplay.xyz")
             .replace("minochinos.com", "vidhidehub.com")
             .replace("megavido.com", "vidhidehub.com")
             .replace("vidhidepro.com", "vidhidehub.com")
@@ -41,165 +36,183 @@ class ToonItaliaProvider : MainAPI() {
             .replace("streamup.ws", "streamwish.to")
     }
 
+    // ============================
+    // MAIN PAGE
+    // ============================
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val res = app.get(mainUrl, headers = commonHeaders, timeout = 10)
-        val document = res.document
-        val homeSections = mutableListOf<HomePageList>()
+        val doc = app.get(mainUrl, headers = headers).document
+        val sections = mutableListOf<HomePageList>()
 
-        document.select("div.col").forEach { column ->
-            val sectionName = column.selectFirst("h2")?.text()?.trim() ?: return@forEach
-            val items = parseItems(column)
-            if (items.isNotEmpty()) {
-                homeSections.add(HomePageList(sectionName, items))
+        doc.select("div.col, div.card, section").forEach { block ->
+            val title = block.selectFirst("h2, h3, h4")?.text()?.trim() ?: return@forEach
+            val items = block.select("a[href]").mapNotNull { a ->
+                val href = a.attr("href")
+                val img = a.selectFirst("img")?.attr("src")
+                val name = a.text().trim()
+                if (name.isEmpty() || !href.startsWith("http")) return@mapNotNull null
+
+                newTvSeriesSearchResponse(name, href, TvType.TvSeries) {
+                    posterUrl = img ?: placeholderPoster
+                    posterHeaders = headers
+                }
             }
+
+            if (items.isNotEmpty()) sections.add(HomePageList(title, items))
         }
 
-        return newHomePageResponse(homeSections, false)
+        return newHomePageResponse(sections, false)
     }
 
-    private fun parseItems(container: org.jsoup.nodes.Element): List<SearchResponse> {
-        return container.select("div.item").mapNotNull { element ->
-            val linkElement = element.selectFirst("a.card-link") ?: element.selectFirst("a") ?: return@mapNotNull null
-            val href = linkElement.attr("href")
-            
-            // Il titolo ora è dentro <span class="title">
-            val title = linkElement.selectFirst("span.title")?.text()?.trim() 
-                ?: linkElement.text().trim()
-
-            val imgElement = element.selectFirst("img")
-            val posterUrl = imgElement?.let { 
-                val src = it.attr("src")
-                val dataSrc = it.attr("data-src")
-                if (src.isEmpty() || src.contains(".gif") || src.startsWith("data:")) {
-                    if (!dataSrc.isNullOrEmpty()) dataSrc else src
-                } else src
-            }
-
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                this.posterUrl = posterUrl
-                this.posterHeaders = commonHeaders
-            }
-        }
-    }
+    // ============================
+    // SEARCH
+    // ============================
 
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?s=$query"
-        val document = app.get(url, headers = commonHeaders).document
-        
-        return document.select("article").amap { article ->
-            val titleHeader = article.selectFirst("h2.entry-title a") ?: article.selectFirst("a")
-            val href = titleHeader?.attr("href") ?: return@amap null
-            val title = titleHeader.text()
+        val doc = app.get(url, headers = headers).document
 
-            val innerPage = app.get(href, headers = commonHeaders).document
-            val posterUrl = innerPage.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
-                ?: innerPage.selectFirst("meta[property=\"og:image\"]")?.attr("content")
+        return doc.select("article, div.post, div.card").mapNotNull { art ->
+            val a = art.selectFirst("a[href]") ?: return@mapNotNull null
+            val href = a.attr("href")
+            val title = a.text().trim()
+
+            val inner = app.get(href, headers = headers).document
+            val poster = inner.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")
+                ?.attr("src") ?: placeholderPoster
 
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                this.posterUrl = posterUrl ?: searchPlaceholderLogo
-                this.posterHeaders = commonHeaders
-            }
-        }.filterNotNull()
-    }
-
-    override suspend fun load(url: String): LoadResponse {
-        val response = app.get(url, headers = commonHeaders)
-        val document = response.document
-        
-        // Estraiamo le categorie per capire se è un film
-        val categories = document.select(".entry-categories-inner a, .cat-links a").map { it.text().lowercase() }
-        val isMovie = categories.any { it.contains("film animazione") || it == "film" }
-        
-        // Pulizia titolo: rimuove "film", "streaming", ecc.
-        val title = document.selectFirst("h1.entry-title")?.text()
-            ?.replace(Regex("(?i)streaming|sub\\s?ita|\\bfilm\\b"), "")?.trim() ?: ""
-        
-        val poster = document.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
-            ?: searchPlaceholderLogo
-
-        val entryContent = document.selectFirst("div.entry-content")
-        val fullText = entryContent?.text() ?: ""
-
-        val tvType = if (isMovie) TvType.Movie else TvType.TvSeries
-
-        val plot = document.select("div.entry-content p")
-            .map { it.text() }
-            .firstOrNull { it.length > 60 && !it.contains(Regex("(?i)Titolo originale|Paese di origine")) }
-
-        val duration = Regex("""(\d+)\s?min""").find(fullText)?.groupValues?.get(1)?.toIntOrNull()
-        val year = Regex("""\b(19\d{2}|20[0-2]\d)\b""").find(fullText)?.groupValues?.get(1)?.toIntOrNull()
-
-        val episodes = mutableListOf<Episode>()
-        val lines = entryContent?.html()?.split(Regex("<br\\s*/?>|</p>|</div>|<li>|\\n")) ?: listOf()
-        var absoluteEpCounter = 1
-
-        lines.forEach { line ->
-            val docLine = Jsoup.parseBodyFragment(line)
-            val text = docLine.text().trim()
-            
-            val validLinks = docLine.select("a").filter { a -> 
-                val link = a.attr("href")
-                link.startsWith("http") && !link.contains("toonitalia.xyz") && 
-                supportedHosts.any { host -> link.contains(host) }
-            }.map { it.attr("href") }.distinct()
-
-            if (validLinks.isNotEmpty()) {
-                val isTrailerRow = text.contains(Regex("(?i)sigla|intro|trailer"))
-                
-                // Se è un film, non ci servono stagioni o numeri episodio nel database interno
-                val s = if (isTrailerRow) 0 else if (isMovie) null else 1
-                val e = if (isTrailerRow) 0 else if (isMovie) null else absoluteEpCounter
-
-                val dataUrls = validLinks.joinToString("###")
-                
-                // Gestione label per serie (1a, 1b...)
-                val matchSE = Regex("""(\d+)[×x](\d+)([a-zA-Z]?)""").find(text)
-                val epLabel = matchSE?.let { "${it.groupValues[2]}${it.groupValues[3]}" } ?: "$absoluteEpCounter"
-
-                var epNamePart = text.split(Regex("(?i)VOE|Lulu|Streaming|Vidhide|Mixdrop|RPMShare|STREAMUP|Link| -")).first().trim()
-                if (epNamePart.isEmpty() || epNamePart.length < 2) epNamePart = "Episodio"
-
-                val finalName = if (isMovie) "Riproduci Film" else "$epLabel - $epNamePart"
-
-                episodes.add(newEpisode(dataUrls) {
-                    this.name = finalName
-                    this.season = s
-                    this.episode = e
-                    this.posterUrl = poster
-                })
-
-                if (!isMovie && !isTrailerRow) absoluteEpCounter++ 
+                posterUrl = poster
+                posterHeaders = headers
             }
         }
+    }
 
-        // Importante: CloudStream usa risposte diverse per attivare layout diversi
+    // ============================
+    // LOAD (EPISODI + FILM)
+    // ============================
+
+    override suspend fun load(url: String): LoadResponse {
+        val doc = app.get(url, headers = headers).document
+
+        val title = doc.selectFirst("h1.entry-title")?.text()?.trim()
+            ?.replace(Regex("(?i)streaming|sub\\s?ita|film"), "")
+            ?.trim() ?: "Senza titolo"
+
+        val poster = doc.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")
+            ?.attr("src") ?: placeholderPoster
+
+        val plot = doc.select("div.entry-content p")
+            .map { it.text() }
+            .firstOrNull { it.length > 60 }
+
+        val categories = doc.select(".entry-categories-inner a, .cat-links a")
+            .map { it.text().lowercase() }
+
+        val isMovie = categories.any { it.contains("film") }
+
+        val episodes = parseEpisodes(doc, poster)
+
         return if (isMovie) {
             newMovieLoadResponse(title, url, TvType.Movie, episodes.firstOrNull()?.data ?: "") {
                 this.posterUrl = poster
                 this.plot = plot
-                this.year = year
-                this.duration = duration
-                this.posterHeaders = commonHeaders
+                this.posterHeaders = headers
             }
         } else {
-            newTvSeriesLoadResponse(title, url, tvType, episodes) {
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
-                this.year = year
-                this.duration = duration
-                this.posterHeaders = commonHeaders
+                this.posterHeaders = headers
             }
         }
     }
 
+    // ============================
+    // PARSER EPISODI UNIVERSALE
+    // ============================
+
+    private fun parseEpisodes(doc: org.jsoup.nodes.Document, poster: String): List<Episode> {
+        val episodes = mutableListOf<Episode>()
+
+        val rows = doc.select("div.entry-content p, div.entry-content div")
+
+        for (row in rows) {
+            val text = row.text().trim()
+            if (text.isEmpty()) continue
+
+            // Estrai link validi (LuluStream ignorato)
+            val links = row.select("a[href]").map { it.attr("href") }
+                .filter { link ->
+                    link.startsWith("http") &&
+                    !link.contains("toonitalia.xyz") &&
+                    !link.contains("lulu") &&
+                    !link.contains("lulu.st") &&
+                    !link.contains("lulustream")
+                }
+
+            if (links.isEmpty()) continue
+
+            // Formato 1x01A
+            val matchAB = Regex("""(\d+)x(\d+)([A-Za-z]?)""").find(text)
+
+            // Formato 01 – Titolo
+            val matchSimple = Regex("""^(\d{1,3})\s*[–-]""").find(text)
+
+            var season = 1
+            var episode: Int? = null
+            var subEp: String? = null
+
+            if (matchAB != null) {
+                season = matchAB.groupValues[1].toInt()
+                val epNum = matchAB.groupValues[2].toInt()
+                subEp = matchAB.groupValues[3].uppercase().ifEmpty { null }
+
+                episode = if (subEp == null) {
+                    epNum
+                } else {
+                    val offset = (subEp[0] - 'A' + 1)
+                    epNum * 10 + offset
+                }
+
+            } else if (matchSimple != null) {
+                episode = matchSimple.groupValues[1].toInt()
+            }
+
+            val titleParts = text.split("–").map { it.trim() }
+            val epTitle = if (titleParts.size >= 2) titleParts[1] else "Episodio"
+
+            val finalName = buildString {
+                append("${season}x${episode ?: "?"}")
+                if (!subEp.isNullOrEmpty()) append(subEp)
+                append(" – $epTitle")
+            }
+
+            episodes.add(
+                newEpisode(links.joinToString("###")) {
+                    this.name = finalName
+                    this.season = season
+                    this.episode = episode
+                    this.posterUrl = poster
+                }
+            )
+        }
+
+        return episodes
+    }
+
+    // ============================
+    // LOAD LINKS
+    // ============================
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
-        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        data.split("###").forEach { url ->
-            loadExtractor(fixHostUrl(url), subtitleCallback, callback)
+        data.split("###").forEach { link ->
+            loadExtractor(fixHost(link), subtitleCallback, callback)
         }
         return true
     }
