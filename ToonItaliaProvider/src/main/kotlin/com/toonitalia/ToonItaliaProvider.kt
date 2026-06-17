@@ -70,22 +70,22 @@ class ToonItaliaProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?s=$query"
-        val doc = app.get(url, headers = headers).document
+        val document = app.get(url, headers = commonHeaders).document
+        
+        return document.select("article").amap { article ->
+            val titleHeader = article.selectFirst("h2.entry-title a") ?: article.selectFirst("a")
+            val href = titleHeader?.attr("href") ?: return@amap null
+            val title = titleHeader.text()
 
-        return doc.select("article, div.post, div.card").mapNotNull { art ->
-            val a = art.selectFirst("a[href]") ?: return@mapNotNull null
-            val href = a.attr("href")
-            val title = a.text().trim()
-
-            val inner = app.get(href, headers = headers).document
-            val poster = inner.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")
-                ?.attr("src") ?: placeholderPoster
+            val innerPage = app.get(href, headers = commonHeaders).document
+            val posterUrl = innerPage.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
+                ?: innerPage.selectFirst("meta[property=\"og:image\"]")?.attr("content")
 
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                posterUrl = poster
-                posterHeaders = headers
+                this.posterUrl = posterUrl ?: searchPlaceholderLogo
+                this.posterHeaders = commonHeaders
             }
-        }
+        }.filterNotNull()
     }
 
     // ============================
