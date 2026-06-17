@@ -15,7 +15,7 @@ cloudstream {
     description = "Archivio di Anime e Cartoni animati in italiano da ToonItalia.xyz"
     authors = listOf("Danix")
     
-    status = 1
+    status = 0
     tvTypes = listOf("Movie", "TvSeries", "Anime", "Cartoon")
     requiresResources = false
     language = "it"
