@@ -92,38 +92,92 @@ class ToonItaliaProvider : MainAPI() {
     // LOAD (EPISODI + FILM)
     // ============================
 
-    override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(url, headers = headers).document
+     override suspend fun load(url: String): LoadResponse {
+        val response = app.get(url, headers = commonHeaders)
+        val document = response.document
+        
+        // Estraiamo le categorie per capire se è un film
+        val categories = document.select(".entry-categories-inner a, .cat-links a").map { it.text().lowercase() }
+        val isMovie = categories.any { it.contains("film animazione") || it == "film" }
+        
+        // Pulizia titolo: rimuove "film", "streaming", ecc.
+        val title = document.selectFirst("h1.entry-title")?.text()
+            ?.replace(Regex("(?i)streaming|sub\\s?ita|\\bfilm\\b"), "")?.trim() ?: ""
+        
+        val poster = document.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")?.attr("src")
+            ?: searchPlaceholderLogo
 
-        val title = doc.selectFirst("h1.entry-title")?.text()?.trim()
-            ?.replace(Regex("(?i)streaming|sub\\s?ita|film"), "")
-            ?.trim() ?: "Senza titolo"
+        val entryContent = document.selectFirst("div.entry-content")
+        val fullText = entryContent?.text() ?: ""
 
-        val poster = doc.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")
-            ?.attr("src") ?: placeholderPoster
+        val tvType = if (isMovie) TvType.Movie else TvType.TvSeries
 
-        val plot = doc.select("div.entry-content p")
+        val plot = document.select("div.entry-content p")
             .map { it.text() }
-            .firstOrNull { it.length > 60 }
+            .firstOrNull { it.length > 60 && !it.contains(Regex("(?i)Titolo originale|Paese di origine")) }
 
-        val categories = doc.select(".entry-categories-inner a, .cat-links a")
-            .map { it.text().lowercase() }
+        val duration = Regex("""(\d+)\s?min""").find(fullText)?.groupValues?.get(1)?.toIntOrNull()
+        val year = Regex("""\b(19\d{2}|20[0-2]\d)\b""").find(fullText)?.groupValues?.get(1)?.toIntOrNull()
 
-        val isMovie = categories.any { it.contains("film") }
+        val episodes = mutableListOf<Episode>()
+        val lines = entryContent?.html()?.split(Regex("<br\\s*/?>|</p>|</div>|<li>|\\n")) ?: listOf()
+        var absoluteEpCounter = 1
 
-        val episodes = parseEpisodes(doc, poster)
+        lines.forEach { line ->
+            val docLine = Jsoup.parseBodyFragment(line)
+            val text = docLine.text().trim()
+            
+            val validLinks = docLine.select("a").filter { a -> 
+                val link = a.attr("href")
+                link.startsWith("http") && !link.contains("toonitalia.xyz") && 
+                supportedHosts.any { host -> link.contains(host) }
+            }.map { it.attr("href") }.distinct()
 
+            if (validLinks.isNotEmpty()) {
+                val isTrailerRow = text.contains(Regex("(?i)sigla|intro|trailer"))
+                
+                // Se è un film, non ci servono stagioni o numeri episodio nel database interno
+                val s = if (isTrailerRow) 0 else if (isMovie) null else 1
+                val e = if (isTrailerRow) 0 else if (isMovie) null else absoluteEpCounter
+
+                val dataUrls = validLinks.joinToString("###")
+                
+                // Gestione label per serie (1a, 1b...)
+                val matchSE = Regex("""(\d+)[×x](\d+)([a-zA-Z]?)""").find(text)
+                val epLabel = matchSE?.let { "${it.groupValues[2]}${it.groupValues[3]}" } ?: "$absoluteEpCounter"
+
+                var epNamePart = text.split(Regex("(?i)VOE|Lulu|Streaming|Vidhide|Mixdrop|RPMShare|STREAMUP|Link| -")).first().trim()
+                if (epNamePart.isEmpty() || epNamePart.length < 2) epNamePart = "Episodio"
+
+                val finalName = if (isMovie) "Riproduci Film" else "$epLabel - $epNamePart"
+
+                episodes.add(newEpisode(dataUrls) {
+                    this.name = finalName
+                    this.season = s
+                    this.episode = e
+                    this.posterUrl = poster
+                })
+
+                if (!isMovie && !isTrailerRow) absoluteEpCounter++ 
+            }
+        }
+
+        // Importante: CloudStream usa risposte diverse per attivare layout diversi
         return if (isMovie) {
             newMovieLoadResponse(title, url, TvType.Movie, episodes.firstOrNull()?.data ?: "") {
                 this.posterUrl = poster
                 this.plot = plot
-                this.posterHeaders = headers
+                this.year = year
+                this.duration = duration
+                this.posterHeaders = commonHeaders
             }
         } else {
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            newTvSeriesLoadResponse(title, url, tvType, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
-                this.posterHeaders = headers
+                this.year = year
+                this.duration = duration
+                this.posterHeaders = commonHeaders
             }
         }
     }
