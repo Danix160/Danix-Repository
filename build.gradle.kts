@@ -10,9 +10,10 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:7.4.2")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
+        classpath("com.android.tools.build:gradle:8.7.3")
+        // Cloudstream gradle plugin
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
 
@@ -33,7 +34,7 @@ fun Project.android(configuration: BaseExtension.() -> Unit) =
 subprojects {
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
-    apply(plugin = "com.lagradost.cloudstream3.gradle")
+    apply(plugin = "cloudstream") // ID corretto per il plugin di ReCloudstream
 
     cloudstream {
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
@@ -53,7 +54,6 @@ subprojects {
             targetCompatibility = JavaVersion.VERSION_1_8
         }
 
-        // Configurazione Kotlin Compile tramite API standard stable
         tasks.withType<KotlinCompile>().configureEach {
             kotlinOptions {
                 jvmTarget = "1.8"
