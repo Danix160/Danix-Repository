@@ -15,28 +15,39 @@ class AltaDefinizioneProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/film/" to "Film: Ultimi aggiunti",
-        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte"
+        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte",
+        "$mainUrl/animazione/" to "Film: Animazione",
+        "$mainUrl/azione/" to "Film: Azione",
+        "$mainUrl/avventura/" to "Film: Avventura",
+        "$mainUrl/thriller/" to "Film: Thriller"
     )
 
     // MAIN PAGE (Cloudstream 4.x)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val doc = app.get(request.data).document
-        val results = mutableListOf<SearchResponse>()
+    val doc = app.get(request.data).document
+    val results = mutableListOf<SearchResponse>()
 
-        doc.select(".movie").forEach { element ->
-            val title = element.attr("data-title")
-            val url = element.attr("data-link")
-            val poster = element.selectFirst(".movie-poster img")?.absUrl("src")
+    doc.select("#dle-content .movie").forEach { element ->
+        val url = element.attr("data-link")
+            ?: element.selectFirst(".movie-title a")?.absUrl("href")
+            ?: return@forEach
 
-            results.add(
-                newMovieSearchResponse(title, url, TvType.Movie) {
-                    this.posterUrl = poster
-                }
-            )
-        }
+        val title = element.selectFirst(".movie-title a")?.text()
+            ?: element.attr("data-title")
+            ?: "Senza titolo"
 
-        return newHomePageResponse(request.name, results)
+        val poster = element.selectFirst(".movie-poster img")?.absUrl("src")
+
+        results.add(
+            newMovieSearchResponse(title, url, TvType.Movie) {
+                this.posterUrl = poster
+            }
+        )
     }
+
+    return newHomePageResponse(request.name, results)
+}
+
 
     // SEARCH (Cloudstream 4.x)
     override suspend fun search(query: String): List<SearchResponse> {
