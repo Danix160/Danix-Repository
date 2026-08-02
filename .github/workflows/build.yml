@@ -49,12 +49,22 @@ jobs:
           rm -rf ~/.gradle/kotlin-dsl/cache
           rm -rf $GITHUB_WORKSPACE/src/.gradle
 
+      - name: Wipe Entire Gradle Cache
+        run: |
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.gradle/kotlin-dsl
+          rm -rf $GITHUB_WORKSPACE/src/.gradle
+
       - name: Build Plugins
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
           export BUILD_COMPLETED_AT_ROME="$(TZ=Europe/Rome date +"%d/%m/%Y %H:%M")"
-          ./gradlew make makePluginsJson --no-daemon --rerun-tasks
+          ./gradlew make makePluginsJson \
+            --no-daemon \
+            --rerun-tasks \
+            --no-build-cache \
+            -Dorg.gradle.kotlin.dsl.provider.cid=true
           cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
           cp build/plugins.json $GITHUB_WORKSPACE/builds
 
