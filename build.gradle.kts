@@ -10,9 +10,11 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:9.1.1")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21")
+        // AGP 8.2.2 è pienamente compatibile con Gradle 7.6.3
+        classpath("com.android.tools.build:gradle:8.2.2")
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        // Usa la versione 1.9.23 (NON 2.3.21 o 2.1.0)
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
     }
 }
 
