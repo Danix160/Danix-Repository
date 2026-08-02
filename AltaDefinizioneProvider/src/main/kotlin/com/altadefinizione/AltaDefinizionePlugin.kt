@@ -9,5 +9,8 @@ class AltaDefinizionePlugin: Plugin() {
     override fun load(context: Context) {
         // Registra il provider definito sopra nella classe ToonItaliaProvider
         registerMainAPI(AltaDefinizioneProvider())
+
+        // Registra l'extractor VidxGo
+        registerExtractorAPI(VidxGoExtractor())
     }
 }
