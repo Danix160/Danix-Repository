@@ -1,99 +1,58 @@
 name: Build
 
+# https://docs.github.com/en/actions/learn-github-actions/workflow-syntax-for-github-actions#concurrency
 concurrency: 
   group: "build"
   cancel-in-progress: true
 
 on:
-  workflow_dispatch:
   push:
     branches:
+      # choose your default branch
       - master
       - main
     paths-ignore:
       - '*.md'
-      - '*.png'
-      - '*.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Source
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@master
         with:
           path: "src"
 
-      - name: Checkout Builds Branch
-        uses: actions/checkout@v4
+      - name: Checkout builds
+        uses: actions/checkout@master
         with:
           ref: "builds"
           path: "builds"
-        
-      - name: Ensure builds directory and clean old artifacts
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/builds"
-          rm -f "$GITHUB_WORKSPACE/builds"/*.cs3 || true
+      
+      - name: Clean old builds
+        run: rm $GITHUB_WORKSPACE/builds/*.cs3
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - name: Setup JDK 17
+        uses: actions/setup-java@v1
         with:
-          distribution: temurin
           java-version: 17
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v2
 
-      - name: Access Secrets
-        env:
-          TMDB_API: ${{ secrets.TMDB_API }}
-          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
-          ILCORSAROVIOLAVERCEL: ${{ secrets.ILCORSAROVIOLAVERCEL }}
+      - name: Build Plugins
         run: |
-          cd "$GITHUB_WORKSPACE/src"
-          printf "TMDB_API=%s\nSIMKL_CLIENT_ID=%s\nILCORSAROVIOLAVERCEL=%s\n" "$TMDB_API" "$SIMKL_CLIENT_ID" "$ILCORSAROVIOLAVERCEL" > secrets.properties
-
-      - name: Build Plugins with Diagnostics
-        run: |
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE/src"
-          chmod +x ./gradlew
-
-          echo "=== Environment Diagnostics ==="
-          java -version
-          ./gradlew -v
-
-          echo "=== Running Gradle Build ==="
-          export BUILD_COMPLETED_AT_ROME="$(TZ=Europe/Rome date +"%d/%m/%Y %H:%M")"
-          ./gradlew --no-daemon make makePluginsJson --stacktrace --info
-
-          echo "=== Copying Artifacts ==="
-          mkdir -p "$GITHUB_WORKSPACE/builds"
-          
-          found=false
-          while IFS= read -r -d '' f; do
-            found=true
-            echo "Copying: $f"
-            cp -v "$f" "$GITHUB_WORKSPACE/builds/"
-          done < <(find . -type f -name "*.cs3" -print0 || true)
-
-          if [ "$found" = false ]; then
-            echo "WARNING: No .cs3 artifacts found."
-          fi
-
-          if [ -f build/plugins.json ]; then
-            cp -v build/plugins.json "$GITHUB_WORKSPACE/builds/"
-          else
-            echo "WARNING: build/plugins.json not found."
-          fi
-          
-          ./gradlew makePlugins --refresh-dependencies
+          cd $GITHUB_WORKSPACE/src
+          chmod +x gradlew
+          ./gradlew make makePluginsJson
+          cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
+          cp build/plugins.json $GITHUB_WORKSPACE/builds
 
       - name: Push builds
         run: |
-          cd "$GITHUB_WORKSPACE/builds"
+          cd $GITHUB_WORKSPACE/builds
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           git add .
-          git commit --amend -m "Build $GITHUB_SHA" || exit 0
+          git commit --amend -m "Build $GITHUB_SHA" || exit 0   # do not error if nothing to commit
           git push --force
