@@ -1,8 +1,8 @@
 package com.altadefinizione
 
-import com.altadefinizione.extractor.VidxGoExtractor
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.altadefinizione.extractor.VidxGoExtractor
 import org.jsoup.nodes.Element
 
 class AltaDefinizioneProvider : MainAPI() {
@@ -75,7 +75,7 @@ class AltaDefinizioneProvider : MainAPI() {
             return newMovieLoadResponse(title, url, TvType.Movie) {
                 this.posterUrl = poster
                 this.plot = plot
-                this.dataUrl = streamUrl
+                this.dataUrl = streamUrl ?: ""
             }
         }
 
