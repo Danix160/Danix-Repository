@@ -1,8 +1,8 @@
 package com.altadefinizione
 
+import com.altadefinizione.extractor.VidxGoExtractor
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
-import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 
 class AltaDefinizioneProvider : MainAPI() {
@@ -14,66 +14,29 @@ class AltaDefinizioneProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     // ---------------------------------------------------------
-    // HOME PAGE
+    // MAIN PAGE (Cloudstream 4.x)
     // ---------------------------------------------------------
     override suspend fun getMainPage(): HomePageResponse {
         val doc = app.get(mainUrl).document
         val lists = ArrayList<HomePageList>()
 
-        // SLIDER
         val slider = doc.select("#slider .swiper-slide").mapNotNull {
             val link = it.selectFirst(".slide-title a")?.absUrl("href") ?: return@mapNotNull null
             val title = it.selectFirst(".slide-title a")?.text() ?: "Senza titolo"
             val poster = it.selectFirst("img.layer-image")?.absUrl("src")
 
-            MovieSearchResponse(
-                title,
-                link,
-                this.name,
-                TvType.Movie,
-                poster
-            )
+            newMovieSearchResponse(title, link, TvType.Movie) {
+                this.posterUrl = poster
+            }
         }
+
         lists.add(HomePageList("Slider", slider))
 
-        // TRENDING
-        val trending = doc.select("#trending .swiper-slide").mapNotNull {
-            val link = it.selectFirst(".movie-poster a")?.absUrl("href") ?: return@mapNotNull null
-            val poster = it.selectFirst(".movie-poster img")?.absUrl("src")
-
-            MovieSearchResponse(
-                "",
-                link,
-                this.name,
-                TvType.Movie,
-                poster
-            )
-        }
-        lists.add(HomePageList("Titoli del momento", trending))
-
-        // ULTIMI INSERITI
-        val latest = doc.select(".movie[data-link]").mapNotNull {
-            val link = it.attr("data-link")
-            val title = it.attr("data-title").ifBlank { "Senza titolo" }
-            val poster = it.selectFirst(".movie-poster img")?.absUrl("src")
-
-            MovieSearchResponse(
-                title,
-                link,
-                this.name,
-                TvType.Movie,
-                poster
-            )
-        }
-        if (latest.isNotEmpty()) {
-            lists.add(HomePageList("Ultimi inseriti", latest))
-        }
-
-        return HomePageResponse(lists)
+        return newHomePageResponse(lists)
     }
 
     // ---------------------------------------------------------
-    // SEARCH
+    // SEARCH (Cloudstream 4.x)
     // ---------------------------------------------------------
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?do=search&subaction=search&story=$query"
@@ -81,94 +44,75 @@ class AltaDefinizioneProvider : MainAPI() {
 
         return doc.select(".movie").mapNotNull {
             val link = it.attr("data-link")
-            val title = it.attr("data-title").ifBlank { "Senza titolo" }
+            val title = it.attr("data-title")
             val poster = it.selectFirst(".movie-poster img")?.absUrl("src")
 
-            MovieSearchResponse(
-                title,
-                link,
-                this.name,
-                TvType.Movie,
-                poster
-            )
+            newMovieSearchResponse(title, link, TvType.Movie) {
+                this.posterUrl = poster
+            }
         }
     }
 
     // ---------------------------------------------------------
-    // LOAD (FILM + SERIE)
+    // LOAD (Cloudstream 4.x)
     // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
 
         val title = doc.selectFirst("h1.movie_entry-title")?.text() ?: return null
         val poster = doc.selectFirst(".movie_entry-poster")?.attr("data-src")
-        val backdrop = doc.selectFirst(".player img.layer-image")?.absUrl("src")
-
-        // IMDB → VidxGo ID
-        val imdb = backdrop?.substringAfter("tt")?.substringBefore(".")
-        val streamUrl = imdb?.let { "https://v.vidxgo.co/$it" }
-
-        // Durata
-        val duration = doc.select(".movie_entry-info .meta-list span")
-            .firstOrNull { it.text().contains("min") }
-            ?.text()
-            ?.replace(" min", "")
-            ?.toIntOrNull()
-
-        // Trama
         val plot = doc.selectFirst(".movie_entry-description")?.text()
 
-        // Se è un film
+        val imdb = doc.selectFirst(".player img.layer-image")
+            ?.absUrl("src")
+            ?.substringAfter("tt")
+            ?.substringBefore(".")
+
+        val streamUrl = imdb?.replace("tt", "")
+
+        // Film
         if (doc.select(".player").isNotEmpty()) {
-            return MovieLoadResponse(
-                title = title,
-                url = url,
-                apiName = this.name,
-                dataUrl = streamUrl,
-                posterUrl = poster,
-                plot = plot,
-                duration = duration
-            )
+            return newMovieLoadResponse(title, url, TvType.Movie) {
+                this.posterUrl = poster
+                this.plot = plot
+                this.dataUrl = streamUrl
+            }
         }
 
-        // Se è una serie
+        // Serie
         val episodes = doc.select(".episode-item").mapNotNull {
             val epLink = it.selectFirst("a")?.absUrl("href") ?: return@mapNotNull null
             val epTitle = it.selectFirst(".episode-title")?.text() ?: "Episodio"
             val season = it.attr("data-season").toIntOrNull() ?: 1
             val episode = it.attr("data-episode").toIntOrNull() ?: 1
 
-            Episode(
-                epLink,
-                epTitle,
-                season,
-                episode
-            )
+            newEpisode(epLink) {
+                this.name = epTitle
+                this.season = season
+                this.episode = episode
+            }
         }
 
-        return TvSeriesLoadResponse(
-            title = title,
-            url = url,
-            apiName = this.name,
-            posterUrl = poster,
-            episodes = episodes
-        )
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes)
     }
 
     // ---------------------------------------------------------
-    // LOAD LINKS (usa il tuo extractor)
+    // LOAD LINKS (Cloudstream 4.x)
     // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
-    ) {
+    ): Boolean {
+
         VidxGoExtractor().getUrl(
-              data,
-              mainUrl,
-              subtitleCallback,
-              callback
-          )
+            data,
+            mainUrl,
+            subtitleCallback,
+            callback
+        )
+
+        return true
     }
 }
