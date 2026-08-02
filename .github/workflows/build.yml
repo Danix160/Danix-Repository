@@ -17,50 +17,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: "src"
 
       - name: Checkout builds
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: "builds"
           path: "builds"
       
       - name: Clean old builds
-        # Il flag -f evita l'errore se non ci sono file .cs3
         run: rm -f $GITHUB_WORKSPACE/builds/*.cs3 || true
 
+      # Corretto: Usa Temurin e abilita il caching gestito nativamente
       - name: Setup JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'adopt'
+          distribution: 'temurin'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+        uses: android-actions/setup-android@v3
 
       - name: Build Plugins
         run: |
-          # 1. Entriamo prima nella cartella corretta
           cd $GITHUB_WORKSPACE/src
-          
-          # 2. Diamo i permessi di esecuzione allo script di Gradle
           chmod +x gradlew
           
-          # Svuota cache: eliminiamo i residui locali di Gradle e Kotlin prima della build
-          rm -rf .gradle/
-          rm -rf build/
-          rm -rf .kotlin/
+          # FORZA LA PULIZIA DELLA CACHE GLOBALE (Risolve 'invalid tag (zero)')
+          rm -rf ~/.gradle/caches/kotlin-dsl
+          rm -rf ~/.gradle/caches/transforms-*
+          
+          # Pulizia workspace locale
+          rm -rf .gradle build .kotlin
           find . -name "build" -type d -exec rm -rf {} +
           
-          # 3. Puliamo ed eseguiamo la build forzando l'aggiornamento delle dipendenze (Opzione B)
-          ./gradlew clean make makePluginsJson --refresh-dependencies --no-build-cache --stacktrace
+          # Esecuzione build senza Daemon e senza Build Cache per evitare corruzioni Protobuf
+          ./gradlew clean make makePluginsJson --no-daemon --no-build-cache --rerun-tasks --stacktrace
           
-          # 4. Copia intelligente: cerca tutti i file .cs3 ovunque siano e li mette in builds
+          # Copia gli artefatti generati (.cs3)
           find . -name "*.cs3" -exec cp {} $GITHUB_WORKSPACE/builds/ \;
           
-          # 5. Copia il plugins.json (di solito sta nella root della build o in build/)
+          # Copia il manifesto dei plugin (plugins.json)
           cp build/plugins.json $GITHUB_WORKSPACE/builds/ || cp plugins.json $GITHUB_WORKSPACE/builds/ || true
 
       - name: Push builds
