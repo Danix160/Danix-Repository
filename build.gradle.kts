@@ -1,5 +1,4 @@
 import com.android.build.gradle.BaseExtension
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
@@ -11,8 +10,8 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.2.2")
-        // Usa questo commit hash stabile ed esistente su JitPack:
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        // Plugin ufficiale aggiornato di ReCloudstream
+        classpath("com.github.recloudstream:gradle:3.0.1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
     }
 }
@@ -25,18 +24,16 @@ allprojects {
     }
 }
 
-fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) = 
-    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
-
 fun Project.android(configuration: BaseExtension.() -> Unit) = 
     extensions.getByName<BaseExtension>("android").configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
-    apply(plugin = "cloudstream") // ID corretto per il plugin di ReCloudstream
+    apply(plugin = "com.lagradost.cloudstream3.gradle")
 
-    cloudstream {
+    // Configurazione del plugin tramite l'estensione 'cloudstream'
+    configure<com.lagradost.cloudstream3.gradle.CloudstreamExtension> {
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
     }
 
@@ -75,7 +72,7 @@ subprojects {
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.18.2")
     }
 }
 
