@@ -10,34 +10,35 @@ class AltaDefinizioneProvider : MainAPI() {
     override var mainUrl = "https://altadefinizionex.co"
     override var name = "AltaDefinizione"
     override val hasMainPage = true
-    override val hasDownloadSupport = true
+    override var lang = "it"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    // ---------------------------------------------------------
+    override val mainPage = mainPageOf(
+        "$mainUrl/film/" to "Film: Ultimi aggiunti",
+        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte"
+    )
+
     // MAIN PAGE (Cloudstream 4.x)
-    // ---------------------------------------------------------
-    override suspend fun getMainPage(): HomePageResponse {
-        val doc = app.get(mainUrl).document
-        val lists = ArrayList<HomePageList>()
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        val doc = app.get(request.data).document
+        val results = mutableListOf<SearchResponse>()
 
-        val slider = doc.select("#slider .swiper-slide").mapNotNull {
-            val link = it.selectFirst(".slide-title a")?.absUrl("href") ?: return@mapNotNull null
-            val title = it.selectFirst(".slide-title a")?.text() ?: "Senza titolo"
-            val poster = it.selectFirst("img.layer-image")?.absUrl("src")
+        doc.select(".movie").forEach { element ->
+            val title = element.attr("data-title")
+            val url = element.attr("data-link")
+            val poster = element.selectFirst(".movie-poster img")?.absUrl("src")
 
-            newMovieSearchResponse(title, link, TvType.Movie) {
-                this.posterUrl = poster
-            }
+            results.add(
+                newMovieSearchResponse(title, url, TvType.Movie) {
+                    this.posterUrl = poster
+                }
+            )
         }
 
-        lists.add(HomePageList("Slider", slider))
-
-        return newHomePageResponse(lists)
+        return newHomePageResponse(request.name, results)
     }
 
-    // ---------------------------------------------------------
     // SEARCH (Cloudstream 4.x)
-    // ---------------------------------------------------------
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/?do=search&subaction=search&story=$query"
         val doc = app.get(url).document
@@ -53,9 +54,7 @@ class AltaDefinizioneProvider : MainAPI() {
         }
     }
 
-    // ---------------------------------------------------------
     // LOAD (Cloudstream 4.x)
-    // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
 
@@ -72,7 +71,7 @@ class AltaDefinizioneProvider : MainAPI() {
 
         // Film
         if (doc.select(".player").isNotEmpty()) {
-            return newMovieLoadResponse(title, url, TvType.Movie) {
+            return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.dataUrl = streamUrl ?: ""
@@ -81,24 +80,25 @@ class AltaDefinizioneProvider : MainAPI() {
 
         // Serie
         val episodes = doc.select(".episode-item").mapNotNull {
-            val epLink = it.selectFirst("a")?.absUrl("href") ?: return@mapNotNull null
+            val epUrl = it.selectFirst("a")?.absUrl("href") ?: return@mapNotNull null
             val epTitle = it.selectFirst(".episode-title")?.text() ?: "Episodio"
             val season = it.attr("data-season").toIntOrNull() ?: 1
             val episode = it.attr("data-episode").toIntOrNull() ?: 1
 
-            newEpisode(epLink) {
+            newEpisode(epUrl) {
                 this.name = epTitle
                 this.season = season
                 this.episode = episode
             }
         }
 
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes)
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            this.posterUrl = poster
+            this.plot = plot
+        }
     }
 
-    // ---------------------------------------------------------
     // LOAD LINKS (Cloudstream 4.x)
-    // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
