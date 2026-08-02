@@ -14,11 +14,8 @@ class AltaDefinizioneProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
    override val mainPage = mainPageOf(
-    "$mainUrl/film/?tipo=1" to "Ultimi Film",
-    "$mainUrl/film/?genere=2,26,14,23" to "Film per genere",
-    "$mainUrl/serie-tv/" to "Ultime Serie TV",
-    "$mainUrl/film/?tipo=2" to "Serie TV - Sfoglia tutti",
-    "$mainUrl/serie-tv/?genere=2,26,14,23" to "Serie TV per genere"
+    "$mainUrl/film/" to "Film: Ultimi aggiunti",
+        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte"
 )
     
     private fun parseMovieElement(element: Element): SearchResponse? {
@@ -46,16 +43,28 @@ class AltaDefinizioneProvider : MainAPI() {
 }
 
     // MAIN PAGE (Cloudstream 4.x)
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+ override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
     val doc = app.get(request.data).document
     val results = mutableListOf<SearchResponse>()
 
-    doc.select(".swiper-slide .movie").forEach { element ->
+    // --- Pannello FILM: Inseriti di recente ---
+    doc.select("#ultimi .swiper-slide .movie").forEach { element ->
+        parseMovieElement(element)?.let { results.add(it) }
+    }
+
+    // --- Pannello SERIE TV: Ultime inserite ---
+    doc.select("#se_top .swiper-slide .movie").forEach { element ->
+        parseMovieElement(element)?.let { results.add(it) }
+    }
+
+    // --- Pannello SERIE TV: Di tendenza ---
+    doc.select("#se_ultimi .swiper-slide .movie").forEach { element ->
         parseMovieElement(element)?.let { results.add(it) }
     }
 
     return newHomePageResponse(request.name, results)
 }
+
 
 
     // SEARCH (Cloudstream 4.x)
