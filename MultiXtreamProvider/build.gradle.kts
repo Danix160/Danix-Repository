@@ -1,4 +1,4 @@
-import org.jetbrains.kotlin.konan.properties.Properties
+import java.util.Properties
 
 cloudstream {
     extra["prefix"] = "MultiXtream"
