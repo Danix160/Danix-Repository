@@ -8,7 +8,7 @@ cloudstream {
     description = "MultiXtream IPTV LIVE"
     authors = listOf("Danix")
     
-    status = 1
+    status = 0
     tvTypes = listOf("Live")
     requiresResources = true
     language = "it"
