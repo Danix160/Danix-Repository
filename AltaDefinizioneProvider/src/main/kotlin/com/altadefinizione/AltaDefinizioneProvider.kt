@@ -13,36 +13,45 @@ class AltaDefinizioneProvider : MainAPI() {
     override var lang = "it"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    override val mainPage = mainPageOf(
-        "$mainUrl/film/" to "Film: Ultimi aggiunti",
-        "$mainUrl/serie-tv/" to "Serie TV: Ultime aggiunte",
-        "$mainUrl/animazione/" to "Film: Animazione",
-        "$mainUrl/azione/" to "Film: Azione",
-        "$mainUrl/avventura/" to "Film: Avventura",
-        "$mainUrl/thriller/" to "Film: Thriller"
-    )
+   override val mainPage = mainPageOf(
+    "$mainUrl/film/?tipo=1" to "Ultimi Film",
+    "$mainUrl/film/?genere=2,26,14,23" to "Film per genere",
+    "$mainUrl/serie-tv/" to "Ultime Serie TV",
+    "$mainUrl/film/?tipo=2" to "Serie TV - Sfoglia tutti",
+    "$mainUrl/serie-tv/?genere=2,26,14,23" to "Serie TV per genere"
+)
+    
+    private fun parseMovieElement(element: Element): SearchResponse? {
+    val url = element.attr("data-link")
+        ?: element.selectFirst(".movie-title a")?.absUrl("href")
+        ?: return null
+
+    val title = element.selectFirst(".movie-title a")?.text()
+        ?: element.attr("data-title")
+        ?: "Senza titolo"
+
+    val poster = element.selectFirst(".movie-poster img")?.absUrl("src")
+
+    val isSeries = url.contains("/serie-tv/")
+
+    return if (isSeries) {
+        newTvSeriesSearchResponse(title, url) {
+            this.posterUrl = poster
+        }
+    } else {
+        newMovieSearchResponse(title, url, TvType.Movie) {
+            this.posterUrl = poster
+        }
+    }
+}
 
     // MAIN PAGE (Cloudstream 4.x)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
     val doc = app.get(request.data).document
     val results = mutableListOf<SearchResponse>()
 
-    doc.select("#dle-content .movie").forEach { element ->
-        val url = element.attr("data-link")
-            ?: element.selectFirst(".movie-title a")?.absUrl("href")
-            ?: return@forEach
-
-        val title = element.selectFirst(".movie-title a")?.text()
-            ?: element.attr("data-title")
-            ?: "Senza titolo"
-
-        val poster = element.selectFirst(".movie-poster img")?.absUrl("src")
-
-        results.add(
-            newMovieSearchResponse(title, url, TvType.Movie) {
-                this.posterUrl = poster
-            }
-        )
+    doc.select(".swiper-slide .movie").forEach { element ->
+        parseMovieElement(element)?.let { results.add(it) }
     }
 
     return newHomePageResponse(request.name, results)
