@@ -11,6 +11,7 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.2.2")
+        // Usa master-SNAPSHOT o un tag release valido
         classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
     }
