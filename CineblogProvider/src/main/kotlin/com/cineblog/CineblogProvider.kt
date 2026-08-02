@@ -24,27 +24,46 @@ class CineblogProvider : MainAPI() {
     // ---------------------------------------------------------
     // PARSER UNIVERSALE PER CARD FILM / SERIE TV
     // ---------------------------------------------------------
-    private fun parseCbItem(element: Element): SearchResponse? {
-        val link = element.selectFirst("a[href]")?.absUrl("href") ?: return null
-        val title = element.selectFirst("a[href]")?.text()?.trim() ?: return null
+   private fun parseCbItem(element: Element): SearchResponse? {
+    // URL
+    val link = element.select("a[href]")
+        .firstOrNull { it.text().isNotBlank() }   // prende SOLO l’a con testo
+        ?.absUrl("href")
+        ?: element.selectFirst("a[href]")?.absUrl("href")
+        ?: return null
 
-        val poster = element.selectFirst("img")?.let {
-            it.absUrl("data-src").ifEmpty { it.absUrl("src") }
+    // TITOLO
+    val title = element.select("a[href]")
+        .firstOrNull { it.text().isNotBlank() }   // evita l’a del poster
+        ?.text()
+        ?.trim()
+        ?: return null
+
+    // POSTER
+    val img = element.selectFirst("img")
+    val poster = img?.absUrl("data-src")
+        ?.ifEmpty { img.absUrl("src") }
+        ?.takeIf { !it.contains("gif") }          // evita placeholder GIF
+
+    // SERIE O FILM?
+    val genresText = element.selectFirst(".text-uppercase b")
+        ?.text()
+        ?.lowercase()
+        ?: ""
+
+    val isSeries = genresText.contains("serie tv")
+
+    return if (isSeries) {
+        newTvSeriesSearchResponse(title, link) {
+            this.posterUrl = poster
         }
-
-        val genresText = element.selectFirst(".text-uppercase b")?.text()?.lowercase() ?: ""
-        val isSeries = genresText.contains("serie tv")
-
-        return if (isSeries) {
-            newTvSeriesSearchResponse(title, link) {
-                this.posterUrl = poster
-            }
-        } else {
-            newMovieSearchResponse(title, link, TvType.Movie) {
-                this.posterUrl = poster
-            }
+    } else {
+        newMovieSearchResponse(title, link, TvType.Movie) {
+            this.posterUrl = poster
         }
     }
+}
+
 
     // ---------------------------------------------------------
     // MAINPAGE PARSER
