@@ -36,7 +36,6 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        // Ripristina la variabile d'ambiente per le GitHub Actions
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
     }
 
@@ -54,8 +53,7 @@ subprojects {
             targetCompatibility = JavaVersion.VERSION_1_8
         }
 
-        // CORREZIONE SINTASSI KOTLIN COMPILE:
-        // Evita il crash di serializzazione Protobuf nei subproject
+        // Configurazione Kotlin Compile tramite API standard stable
         tasks.withType<KotlinCompile>().configureEach {
             kotlinOptions {
                 jvmTarget = "1.8"
@@ -72,14 +70,11 @@ subprojects {
         val cloudstream by configurations
         val implementation by configurations
 
-        // Stub ufficiali Cloudstream
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-        
-        // Jackson bloccato alla 2.13.1 per compatibilità Android
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
     }
 }
