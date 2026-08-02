@@ -11,7 +11,7 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle:8.2.2")
         // Plugin ufficiale aggiornato di ReCloudstream
-        classpath("com.github.recloudstream:gradle:3.0.1")
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
     }
 }
