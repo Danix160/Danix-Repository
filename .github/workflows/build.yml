@@ -86,6 +86,8 @@ jobs:
           else
             echo "WARNING: build/plugins.json not found."
           fi
+          
+          gradlew makePlugins --refresh-dependencies
 
       - name: Push builds
         run: |
