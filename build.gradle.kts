@@ -11,8 +11,8 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.2.2")
-        // Usa master-SNAPSHOT o un tag release valido
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        // Usa questo commit hash stabile ed esistente su JitPack:
+        classpath("com.github.recloudstream:gradle:e1f74483eb")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
     }
 }
