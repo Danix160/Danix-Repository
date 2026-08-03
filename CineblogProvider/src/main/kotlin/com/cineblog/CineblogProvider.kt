@@ -141,15 +141,15 @@ class CineblogProvider : MainAPI() {
         
             val vidxUrl = "https://v.vidxgo.co/$imdbId"
         
-            newEpisode(
-                url = href,
-                name = epTitle,
-                season = season,
-                episode = episodeNum,
-                data = vidxUrl,
-                posterUrl = epThumb
-            )
+            newEpisode(href) {
+                this.name = epTitle
+                this.season = season
+                this.episode = episodeNum
+                this.data = vidxUrl
+                this.posterUrl = epThumb
+            }
         }
+
 
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
