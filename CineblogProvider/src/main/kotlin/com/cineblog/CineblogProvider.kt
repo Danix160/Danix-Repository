@@ -94,7 +94,7 @@ class CineblogProvider : MainAPI() {
     }
 
     // ---------------------------------------------------------
-    // LOAD (Film + Serie TV)
+    // LOAD (Film + Serie TV con IMDB → VidxGo + episodi)
     // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
@@ -103,42 +103,53 @@ class CineblogProvider : MainAPI() {
         val poster = doc.selectFirst(".story-cover img, .full-img img")?.absUrl("src")
         val plot = doc.selectFirst(".full-text")?.text()
 
-        val isSeries = doc.selectFirst(".text-uppercase b")
-            ?.text()
-            ?.contains("Serie TV") == true
+        val isSeries = doc.selectFirst(".ep-item") != null ||
+                       doc.selectFirst(".episode-info") != null
 
-        // ---------------------------------------------------------
-        // LOGICA VIDEO: estrai IMDB → costruisci URL VidxGo
-        // ---------------------------------------------------------
+        // --- Estrai IMDB ---
         val imdb = doc.select("script")
             .html()
             .substringAfter("var imdb = '", "")
             .substringBefore("';", "")
             .trim()
 
-        val vidxUrl = if (imdb.startsWith("tt")) {
-            "https://v.vidxgo.co/" + imdb.replace("tt", "")
-        } else null
+        val imdbNumeric = imdb.replace("tt", "")
+        val vidxUrl = "https://v.vidxgo.co/$imdbNumeric"
 
-        // ---------------------------------------------------------
-        // FILM
-        // ---------------------------------------------------------
+        // --- FILM ---
         if (!isSeries) {
-            return newMovieLoadResponse(title, url, TvType.Movie, vidxUrl ?: url) {
+            return newMovieLoadResponse(title, url, TvType.Movie, vidxUrl) {
                 this.posterUrl = poster
                 this.plot = plot
             }
         }
 
-        // ---------------------------------------------------------
-        // SERIE TV (episodi da aggiungere quando ci dai HTML)
-        // ---------------------------------------------------------
-        val episodes = mutableListOf<Episode>()
+        // --- SERIE TV: parsing episodi dalla sidebar ---
+        val episodes = doc.select(".ep-item").mapNotNull { ep ->
+            val href = ep.attr("href") // es: /34688214/1/1
+            val parts = href.split("/")
+
+            if (parts.size < 4) return@mapNotNull null
+
+            val season = parts[2].toIntOrNull() ?: 1
+            val episodeNum = parts[3].toIntOrNull() ?: 1
+
+            val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
+                ?: "Episodio $episodeNum"
+
+            val epThumb = ep.selectFirst(".ep-thumb")?.absUrl("src")
+
+            newEpisode(vidxUrl) {
+                this.season = season
+                this.episode = episodeNum
+                this.name = epTitle
+                this.posterUrl = epThumb
+            }
+        }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
             this.plot = plot
-            this.dataUrl = vidxUrl
         }
     }
 
@@ -152,22 +163,14 @@ class CineblogProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        val doc = app.get(data).document
-
-        doc.select("iframe").forEach { frame ->
-            val src = frame.absUrl("src")
-
-            when {
-                src.contains("vidx") || src.contains("vidxgo") || src.contains("v.vidxgo") -> {
-                    VidxGoExtractor().getUrl(src, mainUrl, subtitleCallback, callback)
-                }
-
-                else -> {
-                    loadExtractor(src, mainUrl, subtitleCallback, callback)
-                }
-            }
+        // data è già l’URL VidxGo (es: https://v.vidxgo.co/34688214)
+        if (data.contains("vidx") || data.contains("vidxgo") || data.contains("v.vidxgo")) {
+            VidxGoExtractor().getUrl(data, mainUrl, subtitleCallback, callback)
+            return true
         }
 
+        // fallback generico
+        loadExtractor(data, mainUrl, subtitleCallback, callback)
         return true
     }
 }
