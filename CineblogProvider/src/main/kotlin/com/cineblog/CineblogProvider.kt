@@ -126,20 +126,26 @@ class CineblogProvider : MainAPI() {
 
         // --- SERIE TV: parsing episodi dalla sidebar ---
         val episodes = doc.select(".ep-item").mapNotNull { ep ->
-            val href = ep.attr("href") // es: /34688214/1/1
+            val href = ep.absUrl("href") // es: https://cineblog001.store/34688214/1/1
             val parts = href.split("/")
-
+        
             if (parts.size < 4) return@mapNotNull null
-
-            val season = parts[2].toIntOrNull() ?: 1
-            val episodeNum = parts[3].toIntOrNull() ?: 1
-
+        
+            val imdbNumeric = parts[parts.size - 3] // 34688214
+            val season = parts[parts.size - 2].toIntOrNull() ?: 1
+            val episodeNum = parts[parts.size - 1].toIntOrNull() ?: 1
+        
             val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
                 ?: "Episodio $episodeNum"
-
+        
             val epThumb = ep.selectFirst(".ep-thumb")?.absUrl("src")
-
-            newEpisode(vidxUrl) {
+        
+            val vidxUrl = "https://v.vidxgo.co/$imdbNumeric"
+        
+            newEpisode(
+                href,      // URL pagina episodio
+                vidxUrl    // URL video VidxGo
+            ) {
                 this.season = season
                 this.episode = episodeNum
                 this.name = epTitle
