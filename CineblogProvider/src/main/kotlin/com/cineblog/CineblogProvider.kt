@@ -22,7 +22,7 @@ class CineblogProvider : MainAPI() {
     )
 
     // ---------------------------------------------------------
-    // PARSER CARD (block-list + block-th)
+    // PARSER CARD
     // ---------------------------------------------------------
     private fun parseCbItem(element: Element): SearchResponse? {
         val link = element.select("a[href]")
@@ -103,8 +103,6 @@ class CineblogProvider : MainAPI() {
         val poster = doc.selectFirst(".story-cover img, .full-img img")?.absUrl("src")
         val plot = doc.selectFirst(".full-text")?.text()
 
-        val isSeries = doc.selectFirst(".ep-item") != null
-
         // --- Estrai IMDB ---
         val imdb = doc.select("script")
             .html()
@@ -115,6 +113,9 @@ class CineblogProvider : MainAPI() {
         val imdbNumeric = imdb.replace("tt", "")
         val vidxUrl = "https://v.vidxgo.co/$imdbNumeric"
 
+        // --- Riconoscimento serie TV ---
+        val isSeries = doc.html().contains("/1/1")
+
         // --- FILM ---
         if (!isSeries) {
             return newMovieLoadResponse(title, url, TvType.Movie, vidxUrl) {
@@ -124,34 +125,31 @@ class CineblogProvider : MainAPI() {
         }
 
         // --- SERIE TV: parsing episodi ---
-        val episodes = doc.select(".ep-item").mapNotNull { ep ->
-            val href = ep.absUrl("href")  // <-- RISOLVE TUTTO
+        val episodes = doc.select("a[href~=/.*/.*/.*]").mapNotNull { ep ->
+            val href = ep.absUrl("href")
             val parts = href.split("/")
-        
+
             if (parts.size < 4) return@mapNotNull null
-        
+
             val imdbId = parts[parts.size - 3]
             val season = parts[parts.size - 2].toIntOrNull() ?: 1
             val episodeNum = parts[parts.size - 1].toIntOrNull() ?: 1
-        
+
             val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
                 ?: "Episodio $episodeNum"
-        
-            val epThumb = ep.selectFirst(".ep-thumb")?.absUrl("src")
-        
-            val vidxUrl = "https://v.vidxgo.co/$imdbId"
-        
+
+            val epThumb = ep.selectFirst("img")?.absUrl("src")
+
+            val epVidxUrl = "https://v.vidxgo.co/$imdbId"
+
             newEpisode(href) {
                 this.name = epTitle
                 this.season = season
                 this.episode = episodeNum
-                this.data = vidxUrl
+                this.data = epVidxUrl
                 this.posterUrl = epThumb
             }
         }
-
-
-
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
@@ -160,7 +158,7 @@ class CineblogProvider : MainAPI() {
     }
 
     // ---------------------------------------------------------
-    // LOAD LINKS (usa il tuo VidxGoExtractor)
+    // LOAD LINKS (usa VidxGoExtractor)
     // ---------------------------------------------------------
     override suspend fun loadLinks(
         data: String,
