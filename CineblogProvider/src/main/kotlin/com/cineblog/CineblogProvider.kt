@@ -94,7 +94,7 @@ class CineblogProvider : MainAPI() {
     }
 
     // ---------------------------------------------------------
-    // LOAD (Film + Serie TV con IMDB → VidxGo + episodi)
+    // LOAD (Film + Serie TV con episodi)
     // ---------------------------------------------------------
     override suspend fun load(url: String): LoadResponse? {
         val doc = app.get(url).document
@@ -103,8 +103,7 @@ class CineblogProvider : MainAPI() {
         val poster = doc.selectFirst(".story-cover img, .full-img img")?.absUrl("src")
         val plot = doc.selectFirst(".full-text")?.text()
 
-        val isSeries = doc.selectFirst(".ep-item") != null ||
-                       doc.selectFirst(".episode-info") != null
+        val isSeries = doc.selectFirst(".ep-item") != null
 
         // --- Estrai IMDB ---
         val imdb = doc.select("script")
@@ -124,27 +123,27 @@ class CineblogProvider : MainAPI() {
             }
         }
 
-        // --- SERIE TV: parsing episodi dalla sidebar ---
+        // --- SERIE TV: parsing episodi ---
         val episodes = doc.select(".ep-item").mapNotNull { ep ->
             val href = ep.absUrl("href") // es: https://cineblog001.store/34688214/1/1
             val parts = href.split("/")
-        
+
             if (parts.size < 4) return@mapNotNull null
-        
-            val imdbNumeric = parts[parts.size - 3] // 34688214
+
+            val imdbId = parts[parts.size - 3] // 34688214
             val season = parts[parts.size - 2].toIntOrNull() ?: 1
             val episodeNum = parts[parts.size - 1].toIntOrNull() ?: 1
-        
+
             val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
                 ?: "Episodio $episodeNum"
-        
+
             val epThumb = ep.selectFirst(".ep-thumb")?.absUrl("src")
-        
-            val vidxUrl = "https://v.vidxgo.co/$imdbNumeric"
-        
+
+            val epVidxUrl = "https://v.vidxgo.co/$imdbId"
+
             newEpisode(
-                href,      // URL pagina episodio
-                vidxUrl    // URL video VidxGo
+                href,       // URL pagina episodio
+                epVidxUrl   // URL video VidxGo
             ) {
                 this.season = season
                 this.episode = episodeNum
@@ -169,13 +168,11 @@ class CineblogProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
 
-        // data è già l’URL VidxGo (es: https://v.vidxgo.co/34688214)
         if (data.contains("vidx") || data.contains("vidxgo") || data.contains("v.vidxgo")) {
             VidxGoExtractor().getUrl(data, mainUrl, subtitleCallback, callback)
             return true
         }
 
-        // fallback generico
         loadExtractor(data, mainUrl, subtitleCallback, callback)
         return true
     }
