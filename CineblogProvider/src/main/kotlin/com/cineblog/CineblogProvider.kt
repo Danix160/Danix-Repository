@@ -14,7 +14,7 @@ class CineblogProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     // ---------------------------------------------------------
-    // MAINPAGE UFFICIALE
+    // MAINPAGE
     // ---------------------------------------------------------
     override val mainPage = mainPageOf(
         "$mainUrl/film/" to "Film – Ultimi inseriti",
@@ -22,48 +22,43 @@ class CineblogProvider : MainAPI() {
     )
 
     // ---------------------------------------------------------
-    // PARSER UNIVERSALE PER CARD FILM / SERIE TV
+    // PARSER CARD (block-list + block-th)
     // ---------------------------------------------------------
-   private fun parseCbItem(element: Element): SearchResponse? {
-    // URL
-    val link = element.select("a[href]")
-        .firstOrNull { it.text().isNotBlank() }   // prende SOLO l’a con testo
-        ?.absUrl("href")
-        ?: element.selectFirst("a[href]")?.absUrl("href")
-        ?: return null
+    private fun parseCbItem(element: Element): SearchResponse? {
+        val link = element.select("a[href]")
+            .firstOrNull { it.text().isNotBlank() }
+            ?.absUrl("href")
+            ?: element.selectFirst("a[href]")?.absUrl("href")
+            ?: return null
 
-    // TITOLO
-    val title = element.select("a[href]")
-        .firstOrNull { it.text().isNotBlank() }   // evita l’a del poster
-        ?.text()
-        ?.trim()
-        ?: return null
+        val title = element.select("a[href]")
+            .firstOrNull { it.text().isNotBlank() }
+            ?.text()
+            ?.trim()
+            ?: return null
 
-    // POSTER
-    val img = element.selectFirst("img")
-    val poster = img?.absUrl("data-src")
-        ?.ifEmpty { img.absUrl("src") }
-        ?.takeIf { !it.contains("gif") }          // evita placeholder GIF
+        val img = element.selectFirst("img")
+        val poster = img?.absUrl("data-src")
+            ?.ifEmpty { img.absUrl("src") }
+            ?.takeIf { !it.contains("gif") }
 
-    // SERIE O FILM?
-    val genresText = element.selectFirst(".text-uppercase b")
-        ?.text()
-        ?.lowercase()
-        ?: ""
+        val genresText = element.selectFirst(".text-uppercase b")
+            ?.text()
+            ?.lowercase()
+            ?: ""
 
-    val isSeries = genresText.contains("serie tv")
+        val isSeries = genresText.contains("serie tv")
 
-    return if (isSeries) {
-        newTvSeriesSearchResponse(title, link) {
-            this.posterUrl = poster
-        }
-    } else {
-        newMovieSearchResponse(title, link, TvType.Movie) {
-            this.posterUrl = poster
+        return if (isSeries) {
+            newTvSeriesSearchResponse(title, link) {
+                this.posterUrl = poster
+            }
+        } else {
+            newMovieSearchResponse(title, link, TvType.Movie) {
+                this.posterUrl = poster
+            }
         }
     }
-}
-
 
     // ---------------------------------------------------------
     // MAINPAGE PARSER
@@ -108,23 +103,42 @@ class CineblogProvider : MainAPI() {
         val poster = doc.selectFirst(".story-cover img, .full-img img")?.absUrl("src")
         val plot = doc.selectFirst(".full-text")?.text()
 
-        val isSeries = doc.selectFirst(".text-uppercase b")?.text()?.contains("Serie TV") == true
+        val isSeries = doc.selectFirst(".text-uppercase b")
+            ?.text()
+            ?.contains("Serie TV") == true
 
-        // ---------------- FILM ----------------
+        // ---------------------------------------------------------
+        // LOGICA VIDEO: estrai IMDB → costruisci URL VidxGo
+        // ---------------------------------------------------------
+        val imdb = doc.select("script")
+            .html()
+            .substringAfter("var imdb = '", "")
+            .substringBefore("';", "")
+            .trim()
+
+        val vidxUrl = if (imdb.startsWith("tt")) {
+            "https://v.vidxgo.co/" + imdb.replace("tt", "")
+        } else null
+
+        // ---------------------------------------------------------
+        // FILM
+        // ---------------------------------------------------------
         if (!isSeries) {
-            return newMovieLoadResponse(title, url, TvType.Movie, url) {
+            return newMovieLoadResponse(title, url, TvType.Movie, vidxUrl ?: url) {
                 this.posterUrl = poster
                 this.plot = plot
             }
         }
 
-        // ---------------- SERIE TV ----------------
+        // ---------------------------------------------------------
+        // SERIE TV (episodi da aggiungere quando ci dai HTML)
+        // ---------------------------------------------------------
         val episodes = mutableListOf<Episode>()
 
-        // In attesa HTML episodi
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
             this.plot = plot
+            this.dataUrl = vidxUrl
         }
     }
 
