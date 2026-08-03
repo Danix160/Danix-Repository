@@ -125,12 +125,12 @@ class CineblogProvider : MainAPI() {
 
         // --- SERIE TV: parsing episodi ---
         val episodes = doc.select(".ep-item").mapNotNull { ep ->
-            val href = ep.absUrl("href") // es: https://cineblog001.store/34688214/1/1
+            val href = ep.absUrl("href")  // <-- RISOLVE TUTTO
             val parts = href.split("/")
         
             if (parts.size < 4) return@mapNotNull null
         
-            val imdbId = parts[parts.size - 3] // 34688214
+            val imdbId = parts[parts.size - 3]
             val season = parts[parts.size - 2].toIntOrNull() ?: 1
             val episodeNum = parts[parts.size - 1].toIntOrNull() ?: 1
         
@@ -149,6 +149,7 @@ class CineblogProvider : MainAPI() {
                 this.posterUrl = epThumb
             }
         }
+
 
 
 
