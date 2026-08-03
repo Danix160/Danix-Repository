@@ -127,30 +127,30 @@ class CineblogProvider : MainAPI() {
         val episodes = doc.select(".ep-item").mapNotNull { ep ->
             val href = ep.absUrl("href") // es: https://cineblog001.store/34688214/1/1
             val parts = href.split("/")
-
+        
             if (parts.size < 4) return@mapNotNull null
-
+        
             val imdbId = parts[parts.size - 3] // 34688214
             val season = parts[parts.size - 2].toIntOrNull() ?: 1
             val episodeNum = parts[parts.size - 1].toIntOrNull() ?: 1
-
+        
             val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
                 ?: "Episodio $episodeNum"
-
+        
             val epThumb = ep.selectFirst(".ep-thumb")?.absUrl("src")
-
-            val epVidxUrl = "https://v.vidxgo.co/$imdbId"
-
+        
+            val vidxUrl = "https://v.vidxgo.co/$imdbId"
+        
             newEpisode(
-                href,       // URL pagina episodio
-                epVidxUrl   // URL video VidxGo
-            ) {
-                this.season = season
-                this.episode = episodeNum
-                this.name = epTitle
-                this.posterUrl = epThumb
-            }
+                url = href,
+                name = epTitle,
+                season = season,
+                episode = episodeNum,
+                data = vidxUrl,
+                posterUrl = epThumb
+            )
         }
+
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
