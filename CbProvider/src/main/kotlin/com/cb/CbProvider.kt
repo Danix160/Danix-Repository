@@ -1,13 +1,13 @@
 package com.cb
 
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
-import com.lagradost.api.Log
-import org.json.JSONObject
-import org.jsoup.nodes.Element
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
 import android.util.Base64
+import com.lagradost.api.Log
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.*
+import org.json.JSONObject
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 
 class CbProvider : MainAPI() {
     override var mainUrl = "https://cb01uno.bond"
@@ -89,7 +89,7 @@ class CbProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         Log.d("CB01", "Ricerca multipagina unificata: $query")
         val results = mutableListOf<SearchResponse>()
-        
+
         val searchUrls = listOf(
             "$mainUrl/?s=$query",
             "$mainUrl/serietv/?s=$query"
@@ -98,23 +98,23 @@ class CbProvider : MainAPI() {
         for (baseUrl in searchUrls) {
             var currentUrl: String? = baseUrl
             var pageCount = 1
-            
+
             while (currentUrl != null && pageCount <= 5) {
                 Log.d("CB01", "Scansione Search URL: $currentUrl")
                 val response = app.get(currentUrl, headers = commonHeaders).text
                 val document = Jsoup.parse(response, currentUrl)
-                
+
                 val blocks = document.select("article, div.card, div.post-video, .result-item, .post, .mp-post, .entry, .card-content")
                 if (blocks.isEmpty()) break
 
                 blocks.forEach { el ->
-                    parseElement(el, currentUrl!!.contains("/serietv/"))?.let { 
-                        results.add(it) 
+                    parseElement(el, currentUrl!!.contains("/serietv/"))?.let {
+                        results.add(it)
                     }
                 }
 
                 val nextAnchor = document.selectFirst(".pagination a.next, .navigation a.next, .nav-links a.next, a:contains(Successivo), a:contains(Next)")
-                
+
                 currentUrl = if (nextAnchor != null) {
                     nextAnchor.attr("abs:href")
                 } else {
@@ -134,7 +134,7 @@ class CbProvider : MainAPI() {
                         } else null
                     } else null
                 }
-                
+
                 pageCount++
             }
         }
@@ -150,7 +150,7 @@ class CbProvider : MainAPI() {
             val response = app.get(url).text
             val doc = Jsoup.parse(response, url)
             val rows = doc.select("table.table tr")
-            
+
             var calculatedEpisodeNum = 1
 
             rows.forEach { row ->
@@ -190,11 +190,14 @@ class CbProvider : MainAPI() {
         val document = app.get(url, headers = commonHeaders).document
         val isSeries = url.contains("/serietv/") || url.contains("/serie/")
 
-        val title = fixTitle(document.selectFirst("meta[property=\"og:title\"]")?.attr("content") 
-            ?: document.selectFirst("h1")?.text() ?: "", !isSeries)
-        
+        val title = fixTitle(
+            document.selectFirst("meta[property=\"og:title\"]")?.attr("content")
+                ?: document.selectFirst("h1")?.text() ?: "",
+            !isSeries
+        )
+
         val poster = document.selectFirst("meta[property=\"og:image\"]")?.attr("content")
-        
+
         val plot = document.selectFirst("meta[property=\"og:description\"]")?.attr("content")
             ?: document.select("div.ignore-css p, .entry-content p").firstOrNull { it.text().length > 50 }?.text()
 
@@ -229,6 +232,7 @@ class CbProvider : MainAPI() {
         Log.d("CB01", "Rilevata SERIE TV")
         val seasonsData = mutableListOf<SeasonData>()
 
+        // Struttura classica sp-wrap / bb-spoiler
         document.select("div.sp-wrap, div.bb-spoiler").forEachIndexed { index, wrap ->
             val seasonHead = wrap.selectFirst(".sp-head")?.text().orEmpty()
             val currentSeason = Regex("\\d+").find(seasonHead)?.value?.toIntOrNull() ?: (index + 1)
@@ -268,8 +272,8 @@ class CbProvider : MainAPI() {
                 if (epMatch == null && fallbackMatch == null) return@forEach
 
                 val sNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentSeason
-                val eNum = epMatch?.groupValues?.get(2)?.toIntOrNull() 
-                    ?: fallbackMatch?.groupValues?.get(1)?.toIntOrNull() 
+                val eNum = epMatch?.groupValues?.get(2)?.toIntOrNull()
+                    ?: fallbackMatch?.groupValues?.get(1)?.toIntOrNull()
                     ?: return@forEach
 
                 val baseEpName = "${sNum}x${String.format("%02d", eNum)}"
@@ -281,13 +285,45 @@ class CbProvider : MainAPI() {
                 if (linksForEpisode.isNotEmpty()) {
                     val linksData = linksForEpisode.joinToString("###")
                     val isDuplicate = episodes.any { it.season == sNum && it.episode == eNum }
-                    
+
                     if (!isDuplicate) {
                         episodes.add(
                             newEpisode(linksData) {
                                 this.name = baseEpName
                                 this.season = sNum
                                 this.episode = eNum
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ============================
+        //  SERIE TV — STRUTTURA season-list
+        // ============================
+        val seasonBlocks = document.select("div.season-list div.season")
+        if (seasonBlocks.isNotEmpty()) {
+            Log.d("CB01", "Rilevata struttura season-list → parsing alternativo")
+            seasonBlocks.forEach { seasonBlock ->
+                val seasonTitle = seasonBlock.selectFirst("h3")?.text()?.trim().orEmpty()
+                val seasonNum = Regex("(\\d+)").find(seasonTitle)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+                seasonsData.add(SeasonData(seasonNum, seasonTitle))
+
+                val episodeItems = seasonBlock.select("ul.episode-list li a[href]")
+                episodeItems.forEachIndexed { index, ep ->
+                    val epUrl = ep.attr("href")
+                    val epName = ep.text().trim()
+                    val epNum = Regex("(\\d+)").find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
+
+                    if (supportedHosts.any { host -> epUrl.contains(host) }) {
+                        episodes.add(
+                            newEpisode(epUrl) {
+                                this.name = "S${seasonNum}E${epNum}"
+                                this.season = seasonNum
+                                this.episode = epNum
+                                this.data = epUrl
                             }
                         )
                     }
@@ -334,18 +370,18 @@ class CbProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         Log.d("CB01", "loadLinks() chiamato con data: $data")
-        
+
         val allLinks = data.split("###")
             .map { it.trim() }
             .filter { it.isNotBlank() && it.startsWith("http") }
-            .sortedBy { it.contains("stayonline.pro") } 
+            .sortedBy { it.contains("stayonline.pro") }
 
         allLinks.forEach { cleanLink ->
             try {
                 if (cleanLink.contains("stayonline.pro")) {
                     Log.d("CB01", "StayOnline rilevato → bypass in corso per $cleanLink")
                     var bypassed = bypassStayOnline(cleanLink)
-                    
+
                     if (!bypassed.isNullOrBlank()) {
                         if (!bypassed.startsWith("http")) {
                             bypassed = "https://" + bypassed.removePrefix("//")
@@ -395,7 +431,7 @@ class CbProvider : MainAPI() {
             val cleanUrl = link.substringBefore("?")
             val urlParts = cleanUrl.removeSuffix("/").split("/")
             val linkId = urlParts.lastOrNull { it.isNotBlank() } ?: return null
-            
+
             val ajaxEndpoint = if (link.contains("/e/")) {
                 "https://stayonline.pro/ajax/linkEmbedView.php"
             } else {
