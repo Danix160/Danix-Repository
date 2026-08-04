@@ -114,7 +114,7 @@ class CineblogProvider : MainAPI() {
         val vidxUrl = "https://v.vidxgo.co/$imdbNumeric"
 
         // --- Riconoscimento serie TV ---
-        val isSeries = doc.html().contains("/1/1")
+        val isSeries = title.contains("Serie TV", ignoreCase = true)
 
         // --- FILM ---
         if (!isSeries) {
