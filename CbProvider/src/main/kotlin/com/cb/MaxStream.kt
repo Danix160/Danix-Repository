@@ -2,6 +2,7 @@ package com.cb
 
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.SubtitleFile
 import android.util.Base64
 
 class MaxStream : ExtractorApi() {
