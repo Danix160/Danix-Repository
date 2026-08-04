@@ -7,9 +7,10 @@ import org.json.JSONObject
 import org.jsoup.nodes.Element
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import android.util.Base64
 
 class CbProvider : MainAPI() {
-    override var mainUrl = "https://cb01uno.mom"
+    override var mainUrl = "https://cb01uno.bond"
     override var name = "CB01"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Cartoon)
     override var lang = "it"
@@ -301,6 +302,31 @@ class CbProvider : MainAPI() {
         }
     }
 
+    private suspend fun resolveMaxstreamAdvanced(url: String): String? {
+        return try {
+            val doc = app.get(url).document
+            val html = doc.html()
+
+            val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""")
+                .find(html)?.groupValues?.getOrNull(1)
+
+            val b64Val = Regex("""decodedEncryptedVal\s*=\s*atob\(["']([^"']+)["']\)""")
+                .find(html)?.groupValues?.getOrNull(1)
+
+            if (!b64Base.isNullOrBlank() && !b64Val.isNullOrBlank()) {
+                val decodedBase = String(Base64.decode(b64Base, Base64.DEFAULT))
+                val decodedVal = String(Base64.decode(b64Val, Base64.DEFAULT))
+                val finalUrl = decodedBase + decodedVal
+                if (finalUrl.isNotBlank()) return finalUrl
+            }
+
+            null
+        } catch (e: Exception) {
+            Log.e("CB01:MaxstreamAdvanced", "Errore nella decodifica avanzata Maxstream: ${e.message}")
+            null
+        }
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -327,12 +353,32 @@ class CbProvider : MainAPI() {
                         Log.d("CB01", "StayOnline sbloccato! Link reale estratto: $bypassed")
 
                         if (bypassed.contains("uprot")) {
-                            Log.d("CB01", "Il link sbloccato è un host Uprot. Avvio l'estrattore dedicato...")
-                            val uprotExtractor = Uprot()
-                            uprotExtractor.getUrl(bypassed, referer = cleanLink, subtitleCallback, callback)
+                            Log.d("CB01", "Il link sbloccato è un host Uprot. Avvio decodifica avanzata Maxstream...")
+                            val advanced = resolveMaxstreamAdvanced(bypassed)
+
+                            if (!advanced.isNullOrBlank()) {
+                                Log.d("CB01", "Decodifica avanzata Maxstream riuscita: $advanced")
+                                loadExtractor(advanced, cleanLink, subtitleCallback, callback)
+                            } else {
+                                Log.d("CB01", "Decodifica avanzata fallita, uso UprotExtractor")
+                                val uprotExtractor = Uprot()
+                                uprotExtractor.getUrl(bypassed, referer = cleanLink, subtitleCallback, callback)
+                            }
                         } else {
                             loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
                         }
+                    }
+                } else if (cleanLink.contains("uprot")) {
+                    Log.d("CB01", "Link Uprot diretto rilevato: $cleanLink → provo decodifica avanzata Maxstream")
+                    val advanced = resolveMaxstreamAdvanced(cleanLink)
+
+                    if (!advanced.isNullOrBlank()) {
+                        Log.d("CB01", "Decodifica avanzata Maxstream riuscita (direct): $advanced")
+                        loadExtractor(advanced, cleanLink, subtitleCallback, callback)
+                    } else {
+                        Log.d("CB01", "Decodifica avanzata fallita (direct), uso UprotExtractor")
+                        val uprotExtractor = Uprot()
+                        uprotExtractor.getUrl(cleanLink, referer = cleanLink, subtitleCallback, callback)
                     }
                 } else {
                     loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
