@@ -125,31 +125,32 @@ class CineblogProvider : MainAPI() {
         }
 
         // --- SERIE TV: parsing episodi ---
-        val episodes = doc.select("a[href~=/.*/.*/.*]").mapNotNull { ep ->
-            val href = ep.absUrl("href")
-            val parts = href.split("/")
-
-            if (parts.size < 4) return@mapNotNull null
-
-            val imdbId = parts[parts.size - 3]
-            val season = parts[parts.size - 2].toIntOrNull() ?: 1
-            val episodeNum = parts[parts.size - 1].toIntOrNull() ?: 1
-
-            val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
-                ?: "Episodio $episodeNum"
-
-            val epThumb = ep.selectFirst("img")?.absUrl("src")
-
-            val epVidxUrl = "https://v.vidxgo.co/$imdbId"
-
-            newEpisode(href) {
-                this.name = epTitle
-                this.season = season
-                this.episode = episodeNum
-                this.data = epVidxUrl
-                this.posterUrl = epThumb
+        val imdbId = imdbNumeric // es: 34688214
+            val episodes = mutableListOf<Episode>()
+            
+            for (epNum in 1..1000) { // massimo 20 episodi
+                val epUrl = "$mainUrl/$imdbId/1/$epNum"
+            
+                val epDoc = app.get(epUrl).document
+            
+                val epTitle = epDoc.selectFirst(".ep-name")?.text()
+                    ?: "Episodio $epNum"
+            
+                val epThumb = epDoc.selectFirst(".ep-thumb")?.absUrl("src")
+            
+                val vidxUrl = "https://v.vidxgo.co/$imdbId"
+            
+                episodes.add(
+                    newEpisode(epUrl) {
+                        this.name = epTitle
+                        this.season = 1
+                        this.episode = epNum
+                        this.data = vidxUrl
+                        this.posterUrl = epThumb
+                    }
+                )
             }
-        }
+
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
