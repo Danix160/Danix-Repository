@@ -1,11 +1,8 @@
 package com.cb
 
-import com.lagradost.cloudstream3.utils.ExtractorApi
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.*
+import android.util.Base64
 
 class MaxStream : ExtractorApi() {
     override val name = "MaxStream"
@@ -15,45 +12,85 @@ class MaxStream : ExtractorApi() {
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
         var cleanUrl = url.trim()
-        
-        // Gestione avanzata del link dell'episodio (3 parametri dopo watchfree)
+
+        // Fix link tipo /watchfree/ID1/ID2/token
         if (cleanUrl.contains("watchfree/")) {
             val parts = cleanUrl.split("watchfree/")[1].removeSuffix("/").split("/")
-            if (parts.size >= 2) {
-                // Nei link serie TV con 3 parametri (es. /watchfree/id1/id2/token), il vero ID del video è il SECONDO (parts[1])
-                val videoId = if (parts.size == 3) parts[1] else parts[0]
-                cleanUrl = "https://maxstream.video/emvvv/$videoId"
-            }
-        } else if (cleanUrl.contains("uprots.com/v/")) {
+            val videoId = if (parts.size == 3) parts[1] else parts[0]
+            cleanUrl = "https://maxstream.video/emvvv/$videoId"
+        }
+
+        // Fix link Uprot → Maxstream
+        if (cleanUrl.contains("uprots.com/v/")) {
             cleanUrl = cleanUrl.replace("uprots.com/v/", "maxstream.video/emvvv/")
         }
 
-        // Ora facciamo la chiamata all'embed reale e pulito di MaxStream
         val response = app.get(cleanUrl, referer = referer)
         val html = response.text
 
-        val pattern = """sources\W+src\W+([^"\s]+)""".toRegex()
-        val match = pattern.find(html)
+        // 1️⃣ Regex classico: sources: [{src:"..."}]
+        val classicRegex = Regex("""sources\s*[:=]\s*
 
-        if (match != null) {
-            val videoUrl = match.groupValues[1].replace("\"", "").trim()
-            val isM3u8 = videoUrl.contains(".m3u8")
+\[\s*\{\s*src\s*[:=]\s*["']([^"']+)["']""")
+        classicRegex.find(html)?.groupValues?.getOrNull(1)?.let { src ->
+            return callback(
+                newExtractorLink(
+                    source = name,
+                    name = name,
+                    url = src,
+                    type = if (src.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = cleanUrl
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+        }
 
-            val link = newExtractorLink(
-                source = this.name,
-                name = this.name,
-                url = videoUrl,
-                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-            ) {
-                this.referer = cleanUrl
-                this.quality = Qualities.Unknown.value
-            }
-            
-            callback.invoke(link)
+        // 2️⃣ Decodifica avanzata: decodedBaseUrl + decodedEncryptedVal
+        val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""")
+            .find(html)?.groupValues?.getOrNull(1)
+
+        val b64Val = Regex("""decodedEncryptedVal\s*=\s*atob\(["']([^"']+)["']\)""")
+            .find(html)?.groupValues?.getOrNull(1)
+
+        if (!b64Base.isNullOrBlank() && !b64Val.isNullOrBlank()) {
+            try {
+                val decodedBase = String(Base64.decode(b64Base, Base64.DEFAULT))
+                val decodedVal = String(Base64.decode(b64Val, Base64.DEFAULT))
+                val finalUrl = decodedBase + decodedVal
+
+                return callback(
+                    newExtractorLink(
+                        source = name,
+                        name = name,
+                        url = finalUrl,
+                        type = if (finalUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = cleanUrl
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            } catch (_: Exception) {}
+        }
+
+        // 3️⃣ Regex fallback: src:"..."
+        val fallbackRegex = Regex("""src\s*[:=]\s*["']([^"']+)["']""")
+        fallbackRegex.find(html)?.groupValues?.getOrNull(1)?.let { src ->
+            return callback(
+                newExtractorLink(
+                    source = name,
+                    name = name,
+                    url = src,
+                    type = if (src.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = cleanUrl
+                    this.quality = Qualities.Unknown.value
+                }
+            )
         }
     }
 }
