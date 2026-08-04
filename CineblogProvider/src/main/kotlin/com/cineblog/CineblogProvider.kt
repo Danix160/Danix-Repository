@@ -125,32 +125,31 @@ class CineblogProvider : MainAPI() {
         }
 
         // --- SERIE TV: parsing episodi ---
-        val imdbId = imdbNumeric // es: 34688214
-            val episodes = mutableListOf<Episode>()
-            
-            for (epNum in 1..1000) { // massimo 20 episodi
-                val epUrl = "$mainUrl/$imdbId/1/$epNum"
-            
-                val epDoc = app.get(epUrl).document
-            
-                val epTitle = epDoc.selectFirst(".ep-name")?.text()
-                    ?: "Episodio $epNum"
-            
-                val epThumb = epDoc.selectFirst(".ep-thumb")?.absUrl("src")
-            
-                val vidxUrl = "https://v.vidxgo.co/$imdbId"
-            
-                episodes.add(
-                    newEpisode(epUrl) {
-                        this.name = epTitle
-                        this.season = 1
-                        this.episode = epNum
-                        this.data = vidxUrl
-                        this.posterUrl = epThumb
-                    }
-                )
-            }
-
+        val episodes = doc.select(".ep-item").mapNotNull { ep ->
+        val href = ep.absUrl("href") // /34688214/1/2
+        val parts = href.split("/")
+    
+        if (parts.size < 4) return@mapNotNull null
+    
+        val imdbId = parts[1]
+        val season = parts[2].toIntOrNull() ?: 1
+        val episodeNum = parts[3].toIntOrNull() ?: 1
+    
+        val epTitle = ep.selectFirst(".ep-name")?.text()?.trim()
+            ?: "Episodio $episodeNum"
+    
+        val epThumb = ep.selectFirst(".ep-thumb")?.absUrl("src")
+    
+        val vidxEpUrl = "https://v.vidxgo.co/t/$imdbId/$season/$episodeNum"
+    
+        newEpisode(href) {
+            this.name = epTitle
+            this.season = season
+            this.episode = episodeNum
+            this.data = vidxEpUrl
+            this.posterUrl = epThumb
+        }
+    }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
