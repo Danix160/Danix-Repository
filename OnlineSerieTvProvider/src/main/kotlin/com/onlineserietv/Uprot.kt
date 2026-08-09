@@ -41,15 +41,11 @@ class Uprot : ExtractorApi() {
             println("DEBUG_UPROT: Rilevato blocco Cloudflare (${res.code}). Avvio WebViewResolver...")
 
             try {
-                // Intercettiamo l'URL del target dopo che il JS ha finito il controllo o reinserito il form.
-                // Usiamo una Regex più permissiva o catturiamo la risposta valida.
                 val webViewResponse = app.get(
                     target,
                     headers = dynamicHeaders,
                     interceptor = WebViewResolver(
-                        // Intercetta quando l'URL cambia verso maxstream O quando torna su uprot ma senza challenge
                         interceptUrl = Regex("""https?://(?:www\.)?(?:maxstream\.video|uprot\.net/(?:uprotem|mse|msf)).*"""),
-                        // Aggiungiamo un check per verificare se abbiamo superato il captcha
                         additionalUrls = listOf(Regex(""".*maxstream\.video.*"""))
                     )
                 )
@@ -73,7 +69,7 @@ class Uprot : ExtractorApi() {
         println("DEBUG_UPROT: URL finale ottenuto -> $finalUrl")
 
         // 4. Carica l'extractor evitando ricorsioni
-        if (!finalUrl.isNull literaryEquals target && finalUrl != url) {
+        if (finalUrl != null && !finalUrl.literaryEquals(target) && !finalUrl.literaryEquals(url)) {
             val refererToUse = if (finalUrl.contains("maxstream")) target else url
             loadExtractor(finalUrl, refererToUse, subtitleCallback, callback)
         } else {
@@ -82,7 +78,7 @@ class Uprot : ExtractorApi() {
     }
 
     private fun String?.literaryEquals(other: String?): Boolean {
-        if (this == null || other == null) return false
+        if (this == null || other == null) return this == other
         return this.trimEnd('/') == other.trimEnd('/')
     }
 
@@ -117,7 +113,7 @@ class Uprot : ExtractorApi() {
             }
         }
 
-        // C. Extraction da Script Regex (Spesso Uprot nasconde l'URL redirect in una variabile JS)
+        // C. Extraction da Script Regex
         val jsRegex = Regex("""(?:window\.location\.href|location\.assign)\s*=\s*["']([^"']+)["']""")
         val match = jsRegex.find(html)
         if (match != null) {
