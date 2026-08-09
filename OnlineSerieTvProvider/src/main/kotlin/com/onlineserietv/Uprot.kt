@@ -29,40 +29,57 @@ class Uprot : ExtractorApi() {
         println("DEBUG_UPROT: URL normalizzato -> $target")
 
         val dynamicHeaders = baseHeaders.toMutableMap()
-        dynamicHeaders["Referer"] = url
-        dynamicHeaders["Origin"] = url.split("/msf/")[0].split("/mse/")[0]
+        dynamicHeaders["Referer"] = referer ?: url
+        dynamicHeaders["Origin"] = target.split("/msf/")[0].split("/mse/")[0]
 
-        // Primo tentativo standard
+        // 1. Primo tentativo HTTP standard
         var res = app.get(target, headers = dynamicHeaders, allowRedirects = true)
         var htmlText = res.text
 
-        // Se c'è blocco 403 o Cloudflare, sblocchiamo con WebViewResolver passandogli la Regex richiesta
-        if (res.code == 403 || htmlText.contains("cloudflare") || htmlText.contains("challenge-platform")) {
-            println("DEBUG_UPROT: Rilevato blocco 403 o Cloudflare. Avvio WebViewResolver...")
+        // 2. Se bloccato da Cloudflare (403, 503 o testo challenge)
+        if (res.code == 403 || res.code == 503 || htmlText.contains("cloudflare") || htmlText.contains("challenge-platform")) {
+            println("DEBUG_UPROT: Rilevato blocco Cloudflare (${res.code}). Avvio WebViewResolver...")
             
             try {
-                // Sblocca passando la Regex ".*" per evitare l'errore di parametro mancante
+                // NOTA: Non usiamo più ".*"! Usiamo un interceptor che attende un cambio di pagina o un cookie,
+                // oppure intercettiamo la richiesta quando non è più la pagina di challenge.
                 val webViewResponse = app.get(
                     target,
                     headers = dynamicHeaders,
-                    interceptor = WebViewResolver(".*".toRegex())
+                    interceptor = WebViewResolver(
+                        // Intercetta e chiudi il webview solo se l'URL NON contiene più la solita pagina mse/msf di partenza
+                        // o quando carica risorse dell'host maxstream/uprot sbloccate.
+                        interceptUrl = Regex("""https?://(?:www\.)?(?:maxstream\.video|uprot\.net/uprotem/).*""")
+                    )
                 )
+
                 htmlText = webViewResponse.text
+                res = webViewResponse
                 println("DEBUG_UPROT: WebViewResolver completato. Status Code: ${webViewResponse.code}")
+
+                if (webViewResponse.code == 503 || webViewResponse.code == 403) {
+                    println("DEBUG_UPROT: Impossibile superare Cloudflare con il WebView.")
+                    return
+                }
             } catch (e: Exception) {
-                println("DEBUG_UPROT: Errore durante l'uso di WebViewResolver: ${e.message}")
+                println("DEBUG_UPROT: Errore WebViewResolver: ${e.message}")
                 return
             }
         }
 
-        // Procediamo con l'estrazione del link dal DOM sbloccato
-        val finalUrl = getFinalMaxstreamLink(htmlText, dynamicHeaders) ?: res.url
+        // 3. Estrazione del link finale
+        val finalUrl = getFinalMaxstreamLink(htmlText, dynamicHeaders)
         println("DEBUG_UPROT: URL finale ottenuto -> $finalUrl")
 
-        if (finalUrl.contains("maxstream")) {
-            loadExtractor(finalUrl, target, subtitleCallback, callback)
+        // 4. Controllo di sicurezza anti-ricorsione: carica l'extractor SOLO se il link è cambiato
+        if (finalUrl != null && finalUrl != target && finalUrl != url) {
+            if (finalUrl.contains("maxstream")) {
+                loadExtractor(finalUrl, target, subtitleCallback, callback)
+            } else {
+                loadExtractor(finalUrl, url, subtitleCallback, callback)
+            }
         } else {
-            loadExtractor(finalUrl, url, subtitleCallback, callback)
+            println("DEBUG_UPROT: Impossibile estrarre un link Maxstream valido. Operazione annullata per evitare loop.")
         }
     }
 
@@ -77,9 +94,10 @@ class Uprot : ExtractorApi() {
     private fun findLinkInHtml(html: String): String? {
         val doc = Jsoup.parse(html)
         
+        // Cerca tag <a> con testo CONTINUE o pulsanti
         doc.select("a").forEach { tag ->
             val text = tag.text().uppercase().replace(" ", "")
-            if (text.contains("CONTINUE")) {
+            if (text.contains("CONTINUE") || text.contains("PROCEED") || text.contains("AVANTI")) {
                 val href = tag.attr("href")
                 if (href.isNotEmpty() && !href.startsWith("#")) {
                     return if (href.startsWith("/")) "https://maxstream.video$href" else href
@@ -87,6 +105,7 @@ class Uprot : ExtractorApi() {
             }
         }
 
+        // Cerca form POST
         val form = doc.select("form").firstOrNull { formElement ->
             formElement.text().uppercase().replace(" ", "").contains("CONTINUE")
         }
@@ -108,7 +127,7 @@ class Uprot : ExtractorApi() {
 
         while (redirectUrl.contains("uprot") || redirectUrl.contains("uprots") || redirectUrl.contains("/uprotem/")) {
             time++
-            if (time == 8) return null
+            if (time >= 5) break
 
             println("DEBUG_UPROT: Salto intermedio $time -> $redirectUrl")
 
