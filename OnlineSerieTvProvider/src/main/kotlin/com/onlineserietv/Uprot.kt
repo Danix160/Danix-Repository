@@ -9,6 +9,7 @@ import android.util.Base64
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AbsListView
 import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.GridView
@@ -153,7 +154,7 @@ class Uprot : ExtractorApi() {
 
                         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
                             val imageView = (convertView as? ImageView) ?: ImageView(activity).apply {
-                                layoutParams = GridView.LayoutParams(250, 250)
+                                layoutParams = AbsListView.LayoutParams(250, 250)
                                 scaleType = ImageView.ScaleType.CENTER_CROP
                             }
 
@@ -325,10 +326,8 @@ class Uprot : ExtractorApi() {
         val target = fixUrl(url)
         Log.d("Uprot", "Avvio getUrl su: $target")
 
-        // 1. Prova prima il bypass nativo (Captcha immagine / Form POST)
         var extractedUrl = bypassUprot(target)
 
-        // 2. Se il bypass nativo fallisce o trova Cloudflare Turnstile/JS, passa alla WebView
         if (extractedUrl.isNullOrEmpty()) {
             Log.d("Uprot", "Bypass nativo non risolto, tentativo con WebViewResolver...")
             try {
@@ -348,7 +347,6 @@ class Uprot : ExtractorApi() {
             }
         }
 
-        // 3. Invio del link all'Extractor finale (Maxstream)
         if (!extractedUrl.isNullOrEmpty() && !extractedUrl.literaryEquals(target)) {
             Log.d("Uprot", "🔗 Caricamento Extractor finale: $extractedUrl")
             val refererToUse = if (extractedUrl.contains("maxstream")) target else url
