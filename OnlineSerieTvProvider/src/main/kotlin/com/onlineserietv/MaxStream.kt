@@ -8,7 +8,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
 
-class MaxStreamExtractor : ExtractorApi() {
+class MaxStream : ExtractorApi() {
     override var name = "MaxStream"
     override var mainUrl = "https://maxstream.video/"
     override val requiresReferer = false
