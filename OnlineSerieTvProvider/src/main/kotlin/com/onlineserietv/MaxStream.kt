@@ -1,45 +1,68 @@
 package com.onlineserietv
 
+import com.lagradost.api.Log
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.M3u8Helper
 
-class MaxStream : ExtractorApi() {
-    override val name = "MaxStream"
-    override val mainUrl = "https://maxstream.video"
-    override val requiresReferer = true
+class MaxStreamExtractor : ExtractorApi() {
+    override var name = "MaxStream"
+    override var mainUrl = "https://maxstream.video/"
+    override val requiresReferer = false
+
+    private val cfClient by lazy {
+        app.baseClient.newBuilder()
+            .addInterceptor(CloudflareKiller())
+            .build()
+    }
 
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit,
     ) {
-        val response = app.get(url, referer = referer)
-        val html = response.text
+        Log.d("MaxStream", "🟦 getUrl() INIZIO")
+        Log.d("MaxStream", "🟦 URL ricevuto: $url")
 
-        val pattern = """sources\W+src\W+([^"\s]+)""".toRegex()
-        val match = pattern.find(html)
+        try {
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .header("Referer", url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .build()
 
-        if (match != null) {
-            val videoUrl = match.groupValues[1].replace("\"", "").trim()
-            val isM3u8 = videoUrl.contains(".m3u8")
+            Log.d("MaxStream", "🟡 Fetch URL con CloudflareKiller...")
+            val response = cfClient.newCall(request).execute()
+            val finalUrl = response.request.url.toString()
+            val html = response.body?.string() ?: ""
+            response.close()
 
-            // Applichiamo l'esatta sintassi moderna con il blocco lambda configuratore
-            val link = newExtractorLink(
-                source = this.name,
-                name = this.name,
-                url = videoUrl,
-                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-            ) {
-                this.referer = url
-                this.quality = Qualities.Unknown.value
+            Log.d("MaxStream", "🟡 URL finale: $finalUrl")
+            Log.d("MaxStream", "🟡 HTML ricevuto, lunghezza: ${html.length}")
+
+            val m3u8Match = Regex("""src:\s*"([^"]+master\.m3u8[^"]*)""").find(html)
+            val m3u8Url = m3u8Match?.groupValues?.get(1)
+
+            if (m3u8Url == null) {
+                Log.e("MaxStream", "❌ M3U8 non trovato nell'HTML!")
+                Log.d("MaxStream", "🔍 master.m3u8 presente? ${html.contains("master.m3u8")}")
+                Log.d("MaxStream", "🔍 sources presente? ${html.contains("sources")}")
+                return
             }
-            
-            callback.invoke(link)
+
+            Log.d("MaxStream", "✅✅✅ M3U8: $m3u8Url")
+            M3u8Helper.generateM3u8(
+                name, m3u8Url, finalUrl,
+                headers = mapOf("referer" to "https://maxstream.video/")
+            ).forEach(callback)
+            Log.d("MaxStream", "🎉 Done!")
+        } catch (e: Exception) {
+            Log.e("MaxStream", "❌ Errore: ${e.message}")
         }
     }
 }
