@@ -1,5 +1,4 @@
 android {
-
     namespace = "com.onlineserietv"
     
     kotlinOptions {
@@ -7,6 +6,13 @@ android {
         freeCompilerArgs = freeCompilerArgs + "-Xskip-metadata-version-check"
     }
 }
+
+// ⬇️ LE DIPENDENZE VANNO RACCHIUSE IN QUESTO BLOCCO
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+}
+
 cloudstream {
     extra["prefix"] = "OnlineSerieTV"
     extra["displayName"] = "OnlineSerieTV"
