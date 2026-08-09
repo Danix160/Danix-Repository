@@ -2,6 +2,13 @@ package com.onlineserietv
 
 import android.util.Log
 import android.util.Base64
+import android.app.Activity
+import android.app.AlertDialog
+import android.graphics.BitmapFactory
+import android.widget.EditText
+import android.widget.ImageView
+import android.widget.LinearLayout
+
 import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.ActorData
@@ -599,7 +606,73 @@ class OnlineSerieTvProvider : MainAPI() {
 
         return true
     }
+
+    private fun getActivity(): Activity? {
+        return try {
+            val clazz = Class.forName("com.lagradost.cloudstream3.CommonActivity")
+            val instance = clazz.getDeclaredField("INSTANCE").apply { isAccessible = true }.get(null)
+            clazz.getDeclaredMethod("getActivity").invoke(instance) as? Activity
+        } catch (e: Exception) {
+            Log.e("UprotPopup", "Reflection fallita: ${e.message}")
+            null
+        }
+    }
     
+     private suspend fun showCaptchaDialog(base64Data: String): String? {
+        return suspendCancellableCoroutine { continuation ->
+            val activity = getActivity()
+            if (activity == null) {
+                Log.e("UprotPopup", "Activity non disponibile")
+                if (continuation.isActive) continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            activity.runOnUiThread {
+                try {
+                    val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                    val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+                    val layout = LinearLayout(activity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(50, 40, 50, 40)
+                    }
+
+                    val imageView = ImageView(activity).apply {
+                        setImageBitmap(bitmap)
+                        adjustViewBounds = true
+                    }
+
+                    val inputEditText = EditText(activity).apply {
+                        hint = "Inserisci i numeri che vedi"
+                        inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                    }
+
+                    layout.addView(imageView)
+                    layout.addView(inputEditText)
+
+                    val dialog = AlertDialog.Builder(activity)
+                        .setTitle("Verifica Richiesta")
+                        .setMessage("Risolvi il CAPTCHA per avviare il video")
+                        .setView(layout)
+                        .setCancelable(false)
+                        .setPositiveButton("Sblocca") { _, _ ->
+                            val codice = inputEditText.text.toString().trim()
+                            if (continuation.isActive) continuation.resume(codice)
+                        }
+                        .setNegativeButton("Annulla") { _, _ ->
+                            if (continuation.isActive) continuation.resume(null)
+                        }
+                        .create()
+
+                    dialog.show()
+                } catch (e: Exception) {
+                    Log.e("UprotPopup", "Errore dialog: ${e.message}")
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            }
+        }
+    }
+     
     private suspend fun bypassUprot(link: String): String? {
         val updatedLink = if ("msf" in link) link.replace("msf", "mse") else link
         Log.d("Uprot", "🟦 bypassUprot() MSF: $updatedLink")
