@@ -1,11 +1,34 @@
 package com.onlineserietv
 
+import android.app.Activity
+import android.app.AlertDialog
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.util.Base64
+import android.util.Log
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
+import android.widget.EditText
+import android.widget.GridView
+import android.widget.ImageView
+import android.widget.LinearLayout
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.jsoup.Jsoup
+import kotlin.coroutines.resume
+
+// Modello per rappresentare un tassello della griglia CAPTCHA
+data class CaptchaTile(
+    val id: String,
+    val bitmap: Bitmap,
+    var isSelected: Boolean = false
+)
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
@@ -19,81 +42,325 @@ class Uprot : ExtractorApi() {
         "Connection" to "keep-alive"
     )
 
+    // ==========================================
+    // 1. REFLECTION E INTERFACCIA UTENTE NATIVA
+    // ==========================================
+
+    private fun getActivity(): Activity? {
+        return try {
+            val clazz = Class.forName("com.lagradost.cloudstream3.CommonActivity")
+            val instance = clazz.getDeclaredField("INSTANCE").apply { isAccessible = true }.get(null)
+            clazz.getDeclaredMethod("getActivity").invoke(instance) as? Activity
+        } catch (e: Exception) {
+            Log.e("Uprot", "Reflection Activity fallita: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Dialog Nativo per CAPTCHA standard (testo/numeri su singola immagine)
+     */
+    private suspend fun showCaptchaDialog(base64Data: String): String? {
+        return suspendCancellableCoroutine { continuation ->
+            val activity = getActivity()
+            if (activity == null) {
+                Log.e("Uprot", "Activity non disponibile per dialog numerico")
+                if (continuation.isActive) continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            activity.runOnUiThread {
+                try {
+                    val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                    val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+                    val layout = LinearLayout(activity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(50, 40, 50, 40)
+                    }
+
+                    val imageView = ImageView(activity).apply {
+                        setImageBitmap(bitmap)
+                        adjustViewBounds = true
+                    }
+
+                    val inputEditText = EditText(activity).apply {
+                        hint = "Inserisci i numeri che vedi"
+                        inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                    }
+
+                    layout.addView(imageView)
+                    layout.addView(inputEditText)
+
+                    val dialog = AlertDialog.Builder(activity)
+                        .setTitle("Verifica Richiesta")
+                        .setMessage("Risolvi il CAPTCHA per avviare il video")
+                        .setView(layout)
+                        .setCancelable(false)
+                        .setPositiveButton("Sblocca") { _, _ ->
+                            val codice = inputEditText.text.toString().trim()
+                            if (continuation.isActive) continuation.resume(codice)
+                        }
+                        .setNegativeButton("Annulla") { _, _ ->
+                            if (continuation.isActive) continuation.resume(null)
+                        }
+                        .create()
+
+                    continuation.invokeOnCancellation { dialog.dismiss() }
+                    dialog.show()
+
+                } catch (e: Exception) {
+                    Log.e("Uprot", "Errore dialog numerico: ${e.message}")
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            }
+        }
+    }
+
+    /**
+     * Dialog Nativo per CAPTCHA a Selezione Immagini (Griglia)
+     */
+    private suspend fun showImageGridCaptchaDialog(
+        instructionText: String,
+        tiles: List<CaptchaTile>
+    ): List<String>? {
+        return suspendCancellableCoroutine { continuation ->
+            val activity = getActivity()
+            if (activity == null) {
+                Log.e("Uprot", "Activity non disponibile per dialog griglia")
+                if (continuation.isActive) continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            activity.runOnUiThread {
+                try {
+                    val layout = LinearLayout(activity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(40, 30, 40, 30)
+                    }
+
+                    val gridView = GridView(activity).apply {
+                        numColumns = 3
+                        horizontalSpacing = 10
+                        verticalSpacing = 10
+                        stretchMode = GridView.STRETCH_COLUMN_WIDTH
+                    }
+
+                    val adapter = object : BaseAdapter() {
+                        override fun getCount(): Int = tiles.size
+                        override fun getItem(position: Int): Any = tiles[position]
+                        override fun getItemId(position: Int): Long = position.toLong()
+
+                        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                            val imageView = (convertView as? ImageView) ?: ImageView(activity).apply {
+                                layoutParams = GridView.LayoutParams(250, 250)
+                                scaleType = ImageView.ScaleType.CENTER_CROP
+                            }
+
+                            val item = tiles[position]
+                            imageView.setImageBitmap(item.bitmap)
+
+                            // Evidenziazione visiva del tassello selezionato
+                            if (item.isSelected) {
+                                imageView.setBackgroundColor(Color.parseColor("#0088FF"))
+                                imageView.setPadding(8, 8, 8, 8)
+                            } else {
+                                imageView.setBackgroundColor(Color.TRANSPARENT)
+                                imageView.setPadding(0, 0, 0, 0)
+                            }
+
+                            imageView.setOnClickListener {
+                                item.isSelected = !item.isSelected
+                                notifyDataSetChanged()
+                            }
+
+                            return imageView
+                        }
+                    }
+
+                    gridView.adapter = adapter
+                    layout.addView(gridView)
+
+                    val dialog = AlertDialog.Builder(activity)
+                        .setTitle("Verifica Immagini")
+                        .setMessage(instructionText.ifEmpty { "Seleziona le immagini richieste" })
+                        .setView(layout)
+                        .setCancelable(false)
+                        .setPositiveButton("Invia") { _, _ ->
+                            val selectedIds = tiles.filter { it.isSelected }.map { it.id }
+                            if (continuation.isActive) continuation.resume(selectedIds)
+                        }
+                        .setNegativeButton("Annulla") { _, _ ->
+                            if (continuation.isActive) continuation.resume(null)
+                        }
+                        .create()
+
+                    continuation.invokeOnCancellation { dialog.dismiss() }
+                    dialog.show()
+
+                } catch (e: Exception) {
+                    Log.e("Uprot", "Errore dialog griglia: ${e.message}")
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            }
+        }
+    }
+
+    // ==========================================
+    // 2. LOGICA DI BYPASS E RICHIESTE HTTP
+    // ==========================================
+
+    private suspend fun bypassUprot(link: String): String? {
+        val updatedLink = fixUrl(if ("msf" in link) link.replace("msf", "mse") else link)
+        Log.d("Uprot", "🟦 bypassUprot() Avvio: $updatedLink")
+
+        val response = app.get(updatedLink, headers = baseHeaders, timeout = 10_000)
+        val document = response.document
+        Log.d("Uprot", "🟡 GET completato, URL finale: ${response.url}")
+
+        val tokenElement = document.selectFirst("input[name=token]")
+        val token = tokenElement?.attr("value") ?: ""
+
+        // CASE A: Rilevato CAPTCHA a Griglia di Immagini
+        val gridTilesElements = document.select("div.captcha-tile img, img.captcha-grid-item")
+        val instruction = document.selectFirst(".captcha-instruction, #captcha-text")?.text() ?: ""
+
+        if (gridTilesElements.isNotEmpty() && token.isNotEmpty()) {
+            Log.d("Uprot", "🟠 CAPTCHA a griglia rilevato (${gridTilesElements.size} immagini)")
+
+            val tilesList = mutableListOf<CaptchaTile>()
+            gridTilesElements.forEachIndexed { index, el ->
+                val src = el.attr("src")
+                val tileId = el.attr("data-id").ifEmpty { index.toString() }
+                
+                val bitmap = if (src.contains("base64,")) {
+                    val base64Data = src.substringAfter("base64,")
+                    val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                } else {
+                    val tileUrl = fixUrl(src)
+                    val imgBytes = app.get(tileUrl, headers = baseHeaders).body.bytes()
+                    BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)
+                }
+
+                if (bitmap != null) {
+                    tilesList.add(CaptchaTile(tileId, bitmap))
+                }
+            }
+
+            val selectedTileIds = showImageGridCaptchaDialog(instruction, tilesList)
+            if (selectedTileIds.isNullOrEmpty()) {
+                Log.d("Uprot", "❌ Annullato dall'utente o nessuna selezione")
+                return null
+            }
+
+            val postResponse = app.post(
+                updatedLink,
+                headers = baseHeaders,
+                data = mapOf(
+                    "token" to token,
+                    "capt" to selectedTileIds.joinToString(",")
+                ),
+                timeout = 10_000
+            )
+
+            return parsePostResult(postResponse.document, postResponse.url)
+        }
+
+        // CASE B: CAPTCHA Testuale/Numerico su Singola Immagine
+        val captchaImg = document.selectFirst("img[alt=CAPTCHA], img#captcha_img")
+        if (captchaImg != null && token.isNotEmpty()) {
+            Log.d("Uprot", "🟠 Captcha singolo numeri/testo rilevato")
+            val imgSrc = captchaImg.attr("src")
+            val base64Data = imgSrc.substringAfter("base64,")
+
+            val captchaRisolto = showCaptchaDialog(base64Data)
+            if (captchaRisolto.isNullOrEmpty()) {
+                Log.d("Uprot", "❌ Captcha numerico annullato dall'utente")
+                return null
+            }
+
+            val postResponse = app.post(
+                updatedLink,
+                headers = baseHeaders,
+                data = mapOf("token" to token, "capt" to captchaRisolto),
+                timeout = 10_000
+            )
+
+            return parsePostResult(postResponse.document, postResponse.url)
+        }
+
+        // CASE C: Nessun CAPTCHA, cerca link diretto
+        Log.d("Uprot", "🟢 Nessun CAPTCHA form trovato, estrazione diretta")
+        val directLink = document.selectFirst("a[href*='maxstream'], a[href*='maxwe'], a[href*='uprots']")?.attr("href")
+        return if (!directLink.isNullOrEmpty()) fixUrl(directLink) else null
+    }
+
+    private fun parsePostResult(postDoc: org.jsoup.nodes.Document, postUrl: String): String? {
+        if (!postUrl.contains("uprot.net")) {
+            Log.d("Uprot", "✅ Redirect diretto post-form: $postUrl")
+            return postUrl
+        }
+
+        val buttokLink = postDoc.selectFirst("#buttok")?.parent()?.attr("href")
+        if (!buttokLink.isNullOrEmpty()) return fixUrl(buttokLink)
+
+        val uprotsLink = postDoc.selectFirst("a[href*='uprots']")?.attr("href")
+        if (!uprotsLink.isNullOrEmpty()) return fixUrl(uprotsLink)
+
+        val fallbackLink = postDoc.selectFirst("a[href*='maxstream'], a[href*='maxwe']")?.attr("href")
+        return if (!fallbackLink.isNullOrEmpty()) fixUrl(fallbackLink) else null
+    }
+
+    // ==========================================
+    // 3. EXTRACTOR MAIN ENTRY POINT
+    // ==========================================
+
     override suspend fun getUrl(
         url: String,
         referer: String?,
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val target = normalizeUrl(url)
-        println("DEBUG_UPROT: Target Normalizzato -> $target")
+        val target = fixUrl(url)
+        Log.d("Uprot", "Avvio getUrl su: $target")
 
-        val dynamicHeaders = baseHeaders.toMutableMap()
-        dynamicHeaders["Referer"] = referer ?: url
+        // 1. Prova prima il bypass nativo (Captcha immagine / Form POST)
+        var extractedUrl = bypassUprot(target)
 
-        var htmlText: String
-        var currentUrl = target
-
-        // 1. Primo tentativo HTTP silente
-        try {
-            val response = app.get(target, headers = dynamicHeaders, allowRedirects = true)
-            htmlText = response.text
-            currentUrl = response.url
-        } catch (e: Exception) {
-            println("DEBUG_UPROT: Errore GET iniziale: ${e.message}")
-            return
-        }
-
-        // 2. Controllo se è presente un CAPTCHA visuale o protezione Cloudflare
-        val hasProtection = htmlText.contains("challenge-platform") || 
-                            htmlText.contains("cf-turnstile") || 
-                            htmlText.contains("h-captcha") || 
-                            htmlText.contains("g-recaptcha") || 
-                            htmlText.contains("captcha", ignoreCase = true)
-
-        if (hasProtection) {
-            println("DEBUG_UPROT: Rilevato CAPTCHA/Cloudflare. Avvio WebViewResolver...")
+        // 2. Se il bypass nativo fallisce o trova Cloudflare Turnstile/JS, passa alla WebView
+        if (extractedUrl.isNullOrEmpty()) {
+            Log.d("Uprot", "Bypass nativo non risolto, tentativo con WebViewResolver...")
             try {
-                // Apre la WebView per permettere all'utente di selezionare le immagini/risolvere il CAPTCHA
                 val webViewResponse = app.get(
                     target,
-                    headers = dynamicHeaders,
+                    headers = baseHeaders,
                     interceptor = WebViewResolver(
-                        // Intercetta quando si approda sulla pagina sbloccata o su maxstream
                         interceptUrl = Regex("""https?://(?:www\.)?(?:maxstream\.video|uprot\.net/(?:uprotem|mse|msf)).*"""),
                         additionalUrls = listOf(Regex(""".*maxstream\.video.*"""))
                     )
                 )
 
-                htmlText = webViewResponse.text
-                currentUrl = webViewResponse.url
-                println("DEBUG_UPROT: WebView completata. URL finale -> $currentUrl")
+                val html = webViewResponse.text
+                extractedUrl = parsePostResult(Jsoup.parse(html), webViewResponse.url)
             } catch (e: Exception) {
-                println("DEBUG_UPROT: Errore o annullamento WebView: ${e.message}")
-                return
+                Log.e("Uprot", "Errore WebViewResolver: ${e.message}")
             }
         }
 
-        // 3. Estrazione e risoluzione del link finale
-        val finalUrl = resolveRedirects(htmlText, currentUrl, dynamicHeaders)
-        println("DEBUG_UPROT: URL Finale per Extractor -> $finalUrl")
-
-        // 4. Caricamento dell'extractor evitando loop ricorsivi
-        if (finalUrl != null && !finalUrl.literaryEquals(target) && !finalUrl.literaryEquals(url)) {
-            val refererToUse = if (finalUrl.contains("maxstream")) target else url
-            loadExtractor(finalUrl, refererToUse, subtitleCallback, callback)
+        // 3. Invio del link all'Extractor finale (Maxstream)
+        if (!extractedUrl.isNullOrEmpty() && !extractedUrl.literaryEquals(target)) {
+            Log.d("Uprot", "🔗 Caricamento Extractor finale: $extractedUrl")
+            val refererToUse = if (extractedUrl.contains("maxstream")) target else url
+            loadExtractor(extractedUrl, refererToUse, subtitleCallback, callback)
         } else {
-            println("DEBUG_UPROT: Impossibile trovare un link Maxstream valido.")
+            Log.e("Uprot", "❌ Impossibile ottenere un link video valido")
         }
     }
 
-    private fun normalizeUrl(url: String): String {
-        return when {
-            url.contains("/msf/") -> url.replace("/msf/", "/mse/")
-            url.contains("/msfi/") -> url.replace("/msfi/", "/mse/")
-            else -> url
-        }
-    }
+    // ==========================================
+    // 4. UTILITIES FORMATTAZIONE E CONFRONTO
+    // ==========================================
 
     private fun fixUrl(url: String, domain: String = "https://uprot.net"): String {
         return when {
@@ -107,89 +374,5 @@ class Uprot : ExtractorApi() {
     private fun String?.literaryEquals(other: String?): Boolean {
         if (this == null || other == null) return this == other
         return this.trimEnd('/') == other.trimEnd('/')
-    }
-
-    private fun extractUrlFromHtml(html: String): String? {
-        val doc = Jsoup.parse(html)
-
-        // A. Cerca bottone "#buttok" o link con testo "CONTINUE" / "AVANTI"
-        val buttok = doc.selectFirst("#buttok")?.parent()?.attr("href")
-        if (!buttok.isNullOrEmpty()) return fixUrl(buttok)
-
-        doc.select("a[href]").forEach { tag ->
-            val href = tag.attr("href")
-            val text = tag.text().uppercase().replace(" ", "")
-            if (text.contains("CONTINUE") || text.contains("PROCEED") || text.contains("AVANTI") || href.contains("maxstream")) {
-                if (href.isNotEmpty() && !href.startsWith("#")) {
-                    return fixUrl(href)
-                }
-            }
-        }
-
-        // B. Cerca Form Action
-        val formAction = doc.selectFirst("form")?.attr("action")
-        if (!formAction.isNullOrEmpty()) {
-            return fixUrl(formAction)
-        }
-
-        // C. Cerca redirect JavaScript
-        val jsRegex = Regex("""(?:window\.location\.href|location\.assign)\s*=\s*["']([^"']+)["']""")
-        val match = jsRegex.find(html)
-        if (match != null) {
-            return fixUrl(match.groupValues[1])
-        }
-
-        return null
-    }
-
-    private suspend fun resolveRedirects(
-        initialHtml: String,
-        initialUrl: String,
-        headers: Map<String, String>
-    ): String? {
-        var currentHtml = initialHtml
-        var currentUrl = initialUrl
-        var redirectUrl = extractUrlFromHtml(currentHtml) ?: currentUrl
-        var depth = 0
-
-        while ((redirectUrl.contains("uprot") || redirectUrl.contains("uprots") || redirectUrl.contains("/uprotem/")) && depth < 5) {
-            depth++
-            println("DEBUG_UPROT: Salto $depth -> $redirectUrl")
-
-            try {
-                val res = app.get(redirectUrl, headers = headers, allowRedirects = true)
-                currentUrl = res.url
-                currentHtml = res.text
-
-                if (!currentUrl.contains("uprot") && !currentUrl.contains("uprots")) {
-                    redirectUrl = currentUrl
-                    break
-                }
-
-                val nextStep = extractUrlFromHtml(currentHtml)
-                if (nextStep == null || nextStep.literaryEquals(redirectUrl)) {
-                    redirectUrl = currentUrl
-                    break
-                } else {
-                    redirectUrl = nextStep
-                }
-            } catch (e: Exception) {
-                println("DEBUG_UPROT: Errore durante il salto $depth: ${e.message}")
-                break
-            }
-        }
-
-        // Mappatura finale per gli embed di Maxstream
-        return when {
-            redirectUrl.contains("watchfree/") -> {
-                val parts = redirectUrl.split("watchfree/")[1].split("/")
-                if (parts.size > 1) "https://maxstream.video/emvvv/${parts[1]}" else redirectUrl
-            }
-            redirectUrl.contains("uprotem/") -> {
-                val part = redirectUrl.substringAfter("uprotem/").substringBefore("/")
-                "https://maxstream.video/emvvv/$part"
-            }
-            else -> redirectUrl
-        }
     }
 }
