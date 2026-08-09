@@ -30,26 +30,27 @@ class Uprot : ExtractorApi() {
 
         val dynamicHeaders = baseHeaders.toMutableMap()
         dynamicHeaders["Referer"] = referer ?: url
-        dynamicHeaders["Origin"] = target.split("/msf/")[0].split("/mse/")[0]
+        dynamicHeaders["Origin"] = target.substringBefore("/mse/").substringBefore("/msf/")
 
         // 1. Primo tentativo HTTP standard
         var res = app.get(target, headers = dynamicHeaders, allowRedirects = true)
         var htmlText = res.text
 
-        // 2. Se bloccato da Cloudflare (403, 503 o testo challenge)
+        // 2. Se c'è il blocco Cloudflare o la challenge Turnstile
         if (res.code == 403 || res.code == 503 || htmlText.contains("cloudflare") || htmlText.contains("challenge-platform")) {
             println("DEBUG_UPROT: Rilevato blocco Cloudflare (${res.code}). Avvio WebViewResolver...")
-            
+
             try {
-                // NOTA: Non usiamo più ".*"! Usiamo un interceptor che attende un cambio di pagina o un cookie,
-                // oppure intercettiamo la richiesta quando non è più la pagina di challenge.
+                // Intercettiamo l'URL del target dopo che il JS ha finito il controllo o reinserito il form.
+                // Usiamo una Regex più permissiva o catturiamo la risposta valida.
                 val webViewResponse = app.get(
                     target,
                     headers = dynamicHeaders,
                     interceptor = WebViewResolver(
-                        // Intercetta e chiudi il webview solo se l'URL NON contiene più la solita pagina mse/msf di partenza
-                        // o quando carica risorse dell'host maxstream/uprot sbloccate.
-                        interceptUrl = Regex("""https?://(?:www\.)?(?:maxstream\.video|uprot\.net/uprotem/).*""")
+                        // Intercetta quando l'URL cambia verso maxstream O quando torna su uprot ma senza challenge
+                        interceptUrl = Regex("""https?://(?:www\.)?(?:maxstream\.video|uprot\.net/(?:uprotem|mse|msf)).*"""),
+                        // Aggiungiamo un check per verificare se abbiamo superato il captcha
+                        additionalUrls = listOf(Regex(""".*maxstream\.video.*"""))
                     )
                 )
 
@@ -57,8 +58,8 @@ class Uprot : ExtractorApi() {
                 res = webViewResponse
                 println("DEBUG_UPROT: WebViewResolver completato. Status Code: ${webViewResponse.code}")
 
-                if (webViewResponse.code == 503 || webViewResponse.code == 403) {
-                    println("DEBUG_UPROT: Impossibile superare Cloudflare con il WebView.")
+                if (webViewResponse.code in listOf(403, 503) || htmlText.contains("challenge-platform")) {
+                    println("DEBUG_UPROT: Cloudflare non superato.")
                     return
                 }
             } catch (e: Exception) {
@@ -71,16 +72,18 @@ class Uprot : ExtractorApi() {
         val finalUrl = getFinalMaxstreamLink(htmlText, dynamicHeaders)
         println("DEBUG_UPROT: URL finale ottenuto -> $finalUrl")
 
-        // 4. Controllo di sicurezza anti-ricorsione: carica l'extractor SOLO se il link è cambiato
-        if (finalUrl != null && finalUrl != target && finalUrl != url) {
-            if (finalUrl.contains("maxstream")) {
-                loadExtractor(finalUrl, target, subtitleCallback, callback)
-            } else {
-                loadExtractor(finalUrl, url, subtitleCallback, callback)
-            }
+        // 4. Carica l'extractor evitando ricorsioni
+        if (!finalUrl.isNull literaryEquals target && finalUrl != url) {
+            val refererToUse = if (finalUrl.contains("maxstream")) target else url
+            loadExtractor(finalUrl, refererToUse, subtitleCallback, callback)
         } else {
-            println("DEBUG_UPROT: Impossibile estrarre un link Maxstream valido. Operazione annullata per evitare loop.")
+            println("DEBUG_UPROT: Impossibile estrarre un link Maxstream valido.")
         }
+    }
+
+    private fun String?.literaryEquals(other: String?): Boolean {
+        if (this == null || other == null) return false
+        return this.trimEnd('/') == other.trimEnd('/')
     }
 
     private fun normalize(url: String): String {
@@ -93,31 +96,43 @@ class Uprot : ExtractorApi() {
 
     private fun findLinkInHtml(html: String): String? {
         val doc = Jsoup.parse(html)
-        
-        // Cerca tag <a> con testo CONTINUE o pulsanti
-        doc.select("a").forEach { tag ->
+
+        // A. Cerca link diretti in <a>
+        doc.select("a[href]").forEach { tag ->
+            val href = tag.attr("href")
             val text = tag.text().uppercase().replace(" ", "")
-            if (text.contains("CONTINUE") || text.contains("PROCEED") || text.contains("AVANTI")) {
-                val href = tag.attr("href")
+            if (text.contains("CONTINUE") || text.contains("PROCEED") || text.contains("AVANTI") || href.contains("maxstream")) {
                 if (href.isNotEmpty() && !href.startsWith("#")) {
-                    return if (href.startsWith("/")) "https://maxstream.video$href" else href
+                    return formatUrl(href)
                 }
             }
         }
 
-        // Cerca form POST
-        val form = doc.select("form").firstOrNull { formElement ->
-            formElement.text().uppercase().replace(" ", "").contains("CONTINUE")
-        }
-
+        // B. Cerca in Form POST
+        val form = doc.select("form").firstOrNull()
         if (form != null) {
             val action = form.attr("action")
             if (action.isNotEmpty()) {
-                return if (action.startsWith("/")) "https://maxstream.video$action" else action
+                return formatUrl(action)
             }
         }
 
+        // C. Extraction da Script Regex (Spesso Uprot nasconde l'URL redirect in una variabile JS)
+        val jsRegex = Regex("""(?:window\.location\.href|location\.assign)\s*=\s*["']([^"']+)["']""")
+        val match = jsRegex.find(html)
+        if (match != null) {
+            return formatUrl(match.groupValues[1])
+        }
+
         return null
+    }
+
+    private fun formatUrl(url: String): String {
+        return when {
+            url.startsWith("//") -> "https:$url"
+            url.startsWith("/") -> "https://maxstream.video$url"
+            else -> url
+        }
     }
 
     private suspend fun getFinalMaxstreamLink(html: String, currentHeaders: Map<String, String>): String? {
