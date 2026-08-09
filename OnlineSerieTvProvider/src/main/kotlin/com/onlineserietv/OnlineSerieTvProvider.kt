@@ -1,5 +1,6 @@
 package com.onlineserietv
 
+import android.util.Log
 import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.ActorData
