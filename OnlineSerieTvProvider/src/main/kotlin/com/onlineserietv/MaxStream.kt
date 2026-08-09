@@ -1,68 +1,70 @@
 package com.onlineserietv
 
-import com.lagradost.api.Log
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.network.CloudflareKiller
+import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class MaxStream : ExtractorApi() {
-    override var name = "MaxStream"
-    override var mainUrl = "https://maxstream.video/"
-    override val requiresReferer = false
-
-    private val cfClient by lazy {
-        app.baseClient.newBuilder()
-            .addInterceptor(CloudflareKiller())
-            .build()
-    }
+    override val name = "MaxStream"
+    override val mainUrl = "https://maxstream.video"
+    override val requiresReferer = true
 
     override suspend fun getUrl(
         url: String,
         referer: String?,
         subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit,
+        callback: (ExtractorLink) -> Unit
     ) {
-        Log.d("MaxStream", "🟦 getUrl() INIZIO")
-        Log.d("MaxStream", "🟦 URL ricevuto: $url")
+        val headers = mapOf("Referer" to (referer ?: url))
+        
+        // 1. Chiamata iniziale
+        var response = app.get(url, headers = headers)
+        var html = response.text
 
-        try {
-            val request = okhttp3.Request.Builder()
-                .url(url)
-                .header("Referer", url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .build()
+        // 2. Fallback con WebView se Cloudflare blocca la richiesta
+        if (response.code == 403 || response.code == 503 || html.contains("challenge-platform")) {
+            response = app.get(
+                url,
+                headers = headers,
+                interceptor = WebViewResolver(Regex("""https?://(?:www\.)?maxstream\.video/.*"""))
+            )
+            html = response.text
+        }
 
-            Log.d("MaxStream", "🟡 Fetch URL con CloudflareKiller...")
-            val response = cfClient.newCall(request).execute()
-            val finalUrl = response.request.url.toString()
-            val html = response.body?.string() ?: ""
-            response.close()
+        // 3. Regex più flessibile per catturare sia 'file' che 'src' con apici doppi o singoli
+        val pattern = """(?:sources|file|src)\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""".toRegex(RegexOption.IGNORE_CASE)
+        val match = pattern.find(html)
 
-            Log.d("MaxStream", "🟡 URL finale: $finalUrl")
-            Log.d("MaxStream", "🟡 HTML ricevuto, lunghezza: ${html.length}")
+        // Fallback: cerca qualsiasi stringa che termini in .m3u8 nel JS
+        val videoUrl = match?.groupValues?.get(1) 
+            ?: """["'](https?://[^"']+\.m3u8[^"']*)["']""".toRegex(RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
 
-            val m3u8Match = Regex("""src:\s*"([^"]+master\.m3u8[^"]*)""").find(html)
-            val m3u8Url = m3u8Match?.groupValues?.get(1)
-
-            if (m3u8Url == null) {
-                Log.e("MaxStream", "❌ M3U8 non trovato nell'HTML!")
-                Log.d("MaxStream", "🔍 master.m3u8 presente? ${html.contains("master.m3u8")}")
-                Log.d("MaxStream", "🔍 sources presente? ${html.contains("sources")}")
-                return
+        if (videoUrl != null) {
+            if (videoUrl.contains(".m3u8")) {
+                // Scompatta automaticamente le risoluzioni (1080p, 720p, ecc.)
+                M3u8Helper.generateM3u8(
+                    name = this.name,
+                    m3u8Url = videoUrl,
+                    referer = url,
+                    headers = mapOf("Referer" to mainUrl)
+                ).forEach(callback)
+            } else {
+                // Link video diretto (es. MP4)
+                val link = newExtractorLink(
+                    source = this.name,
+                    name = this.name,
+                    url = videoUrl,
+                ) {
+                    this.referer = url
+                    this.quality = Qualities.Unknown.value
+                }
+                callback.invoke(link)
             }
-
-            Log.d("MaxStream", "✅✅✅ M3U8: $m3u8Url")
-            M3u8Helper.generateM3u8(
-                name, m3u8Url, finalUrl,
-                headers = mapOf("referer" to "https://maxstream.video/")
-            ).forEach(callback)
-            Log.d("MaxStream", "🎉 Done!")
-        } catch (e: Exception) {
-            Log.e("MaxStream", "❌ Errore: ${e.message}")
         }
     }
 }
