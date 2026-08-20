@@ -18,16 +18,17 @@ class MaxStream : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // 1. Richiesta alla pagina video finale
         val response = app.get(url, referer = referer ?: mainUrl)
-        val html: String = response.text
+        val html = response.text
 
-        // 2. Estrazione sorgente tramite Regex
-        val pattern = """sources\W+src\W+([^"\s]+)""".toRegex()
+        // Regex più generica per catturare link file o sorgenti m3u8/mp4
+        val pattern = """(?:file|src)\s*:\s*["']([^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)["']""".toRegex(RegexOption.IGNORE_CASE)
         val match = pattern.find(html)
 
-        if (match != null) {
-            val videoUrl = match.groupValues[1].replace("\"", "").trim()
+        val videoUrl = match?.groupValues?.get(1) 
+            ?: """(https?://[^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)""".toRegex(RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+
+        if (!videoUrl.isNullOrEmpty()) {
             val isM3u8 = videoUrl.contains(".m3u8")
 
             val link = newExtractorLink(
