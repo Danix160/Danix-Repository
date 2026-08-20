@@ -27,12 +27,10 @@ class MaxStream : ExtractorApi() {
         val response = app.get(url, headers = headers)
         var html = response.text
 
-        // Unpack dell'eventuale codice JS compresso
         if (html.contains("eval(function(p,a,c,k,e,d)")) {
             html = getPackedJs(html) ?: html
         }
 
-        // Estrazione di tutti i flussi .m3u8 o .mp4 presenti nella pagina
         val streamUrlRegex = """https?://[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*""".toRegex()
         val matches = streamUrlRegex.findAll(html).map { it.value }.distinct().toList()
 
@@ -40,23 +38,28 @@ class MaxStream : ExtractorApi() {
             val isM3u8 = streamUrl.contains(".m3u8")
 
             if (isM3u8) {
-                // Utilizzo corretto e suspend-safe dell'M3u8Helper
-                val m3u8Links = M3u8Helper().m3u8Generation(
-                    streamUrl,
-                    streamUrl
+                // Utilizzo della funzione generateM3u8 nativa
+                val m3u8Links = M3u8Helper.generateM3u8(
+                    source = this.name,
+                    streamUrl = streamUrl,
+                    referer = url,
+                    headers = headers
                 )
 
-                for (link in m3u8Links) {
+                if (m3u8Links.isNotEmpty()) {
+                    m3u8Links.forEach(callback)
+                } else {
+                    // Fallback nel caso la lista master M3U8 sia singola
                     callback.invoke(
                         newExtractorLink(
                             source = this.name,
-                            name = "${this.name} ${link.quality}p",
-                            url = link.url,
+                            name = this.name,
+                            url = streamUrl,
                             type = ExtractorLinkType.M3U8
                         ) {
                             this.referer = url
                             this.headers = headers
-                            this.quality = link.quality
+                            this.quality = Qualities.Unknown.value
                         }
                     )
                 }
