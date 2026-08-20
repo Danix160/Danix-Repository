@@ -402,83 +402,76 @@ class OnlineSerieTvProvider : MainAPI() {
 
         val rows = document.select("table tr")
         var siteMaxSeason = 1
-        rows.forEach { row ->
-            val fullText = row.selectFirst("td")?.text() ?: return@forEach
-            val se = parseSeasonAndEpisode(fullText)
-            if (se != null && se.first > siteMaxSeason) {
-                siteMaxSeason = se.first
+        // In load(): sostituisci la logica di estrazione 'streamLinkEl' con la seguente
+
+rows.forEach { row ->
+    val fullText = row.selectFirst("td")?.text() ?: return@forEach
+
+    // Raccoglie TUTTI i link presenti nella riga dell'episodio (es. MaxStream, Scarica, ecc.)
+    val linksInRow = row.select("a[href]").mapNotNull { a ->
+        val href = a.attr("href").trim()
+        if (href.isNotEmpty()) fixUrl(href) else null
+    }
+
+    if (linksInRow.isEmpty()) return@forEach
+
+    // Uniamo i link con un separatore "|" per passarli a loadLinks
+    val epData = linksInRow.joinToString("|")
+
+    val se = parseSeasonAndEpisode(fullText)
+    val explicitEpNum = parseEpisodeNumberFromText(fullText)
+
+    val siteSeason = se?.first ?: 1
+    val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
+
+    globalIndex++
+
+    var seasonNumber = siteSeason
+    var epInSeason = siteEpisode
+
+    if (tmdbSeasonsInfo.isNotEmpty() && siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
+        var remaining = globalIndex
+        var mapped = false
+        for ((sn, epCount) in tmdbSeasonsInfo) {
+            if (remaining <= epCount) {
+                seasonNumber = sn
+                epInSeason = remaining
+                mapped = true
+                break
+            }
+            remaining -= epCount
+        }
+        if (!mapped) {
+            seasonNumber = siteSeason
+            epInSeason = siteEpisode
+        }
+    }
+
+    val seasonMap = if (tmdb != null) {
+        tmdbSeasonsCache.getOrPut(seasonNumber) {
+            getTmdbSeason(tmdb.id, seasonNumber)
+        }
+    } else emptyMap()
+
+    val info = seasonMap[epInSeason]
+
+    episodesList.add(
+        newEpisode(epData) { // Passiamo la lista dei link uniti da "|"
+            this.name = info?.name ?: "Episodio $epInSeason"
+            this.season = seasonNumber
+            this.episode = epInSeason
+            this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
+
+            val runtime = info?.runtime ?: defaultRuntime ?: 0
+            this.description = buildString {
+                append(info?.overview ?: "")
+                if (runtime > 0) {
+                    append("\n\nDurata: ${runtime} min")
+                }
             }
         }
-
-        var globalIndex = 0
-
-        rows.forEach { row ->
-            val streamLinkEl = row.select("a[href]").firstOrNull { a ->
-                val href = a.attr("href")
-                href.contains("/msf/") || href.contains("uprot") || href.contains("stream") || href.contains("tape") || href.contains("flexy") || href.contains("delta")
-            } ?: row.select("a[href]").firstOrNull() ?: return@forEach
-
-            val epUrl = streamLinkEl.attr("href")
-            val fullText = row.selectFirst("td")?.text() ?: ""
-
-            val se = parseSeasonAndEpisode(fullText)
-            val explicitEpNum = parseEpisodeNumberFromText(fullText)
-
-            val siteSeason = se?.first ?: 1
-            val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
-
-            globalIndex++
-
-            var seasonNumber = siteSeason
-            var epInSeason = siteEpisode
-
-            if (tmdbSeasonsInfo.isNotEmpty()) {
-                if (siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
-                    var remaining = globalIndex
-                    var mapped = false
-
-                    for ((sn, epCount) in tmdbSeasonsInfo) {
-                        if (remaining <= epCount) {
-                            seasonNumber = sn
-                            epInSeason = remaining
-                            mapped = true
-                            break
-                        }
-                        remaining -= epCount
-                    }
-
-                    if (!mapped) {
-                        seasonNumber = siteSeason
-                        epInSeason = siteEpisode
-                    }
-                }
-            }
-
-            val seasonMap = if (tmdb != null) {
-                tmdbSeasonsCache.getOrPut(seasonNumber) {
-                    getTmdbSeason(tmdb.id, seasonNumber)
-                }
-            } else emptyMap()
-
-            val info = seasonMap[epInSeason]
-
-            episodesList.add(
-                newEpisode(epUrl) {
-                    this.name = info?.name ?: "Episodio $epInSeason"
-                    this.season = seasonNumber
-                    this.episode = epInSeason
-                    this.posterUrl = info?.stillPath?.let { "https://image.tmdb.org/t/p/w500$it" } ?: poster
-
-                    val runtime = info?.runtime ?: defaultRuntime ?: 0
-                    this.description = buildString {
-                        append(info?.overview ?: "")
-                        if (runtime > 0) {
-                            append("\n\nDurata: ${runtime} min")
-                        }
-                    }
-                }
-            )
-        }
+    )
+}
 
         return@withContext newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodesList) {
             this.posterUrl = poster
@@ -491,30 +484,47 @@ class OnlineSerieTvProvider : MainAPI() {
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean = withContext(Dispatchers.IO) {
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean = withContext(Dispatchers.IO) {
 
-        val fixedDataUrl = fixUrl(data)
+    // Separa i link inviati da load()
+    val urls = data.split("|").filter { it.isNotBlank() }
 
-        // Tenta il caricamento diretto
-        val loadedDirect = loadExtractor(fixedDataUrl, subtitleCallback, callback)
-        if (loadedDirect) return@withContext true
+    for (rawUrl in urls) {
+        val fixedUrl = fixUrl(rawUrl)
 
-        val response = app.get(fixedDataUrl).text
-        val doc = Jsoup.parse(response)
+        // 1. Tenta prima la risoluzione diretta dell'URL
+        val directSuccess = loadExtractor(fixedUrl, subtitleCallback, callback)
+        if (directSuccess) continue
 
-        // Cerca iFrame o link ed estrae usando la funzione della classe MainAPI
-        doc.select("iframe[src], a[href]").forEach { element ->
-            val link = element.attr("src").ifEmpty { element.attr("href") }
-            if (link.isNotBlank()) {
-                val fullUrl = fixUrl(link)
-                loadExtractor(fullUrl, subtitleCallback, callback)
+        // 2. Se è un link uprot.net o simile, effettua una richiesta GET per seguire il Redirect HTTP
+        try {
+            val response = app.get(fixedUrl, followRedirects = true)
+            val destinationUrl = response.url
+
+            // Se il redirect ci ha portato a una nuova pagina/hoster, tenta l'estrazione
+            if (destinationUrl != fixedUrl && destinationUrl.isNotBlank()) {
+                val redirectSuccess = loadExtractor(destinationUrl, subtitleCallback, callback)
+                if (redirectSuccess) continue
             }
-        }
 
-        return@withContext true
+            // 3. Se ancora non trova nulla, analizza l'HTML della pagina di destinazione per eventuali iframe
+            val doc = response.document
+            doc.select("iframe[src], a[href]").forEach { element ->
+                val link = element.attr("src").ifEmpty { element.attr("href") }
+                if (link.isNotBlank()) {
+                    val fullUrl = fixUrl(link)
+                    loadExtractor(fullUrl, subtitleCallback, callback)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
+
+    return@withContext true
+}
 }
