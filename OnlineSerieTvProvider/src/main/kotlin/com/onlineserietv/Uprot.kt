@@ -22,7 +22,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
-import okhttp3.Interceptor
 import kotlin.coroutines.resume
 
 data class CaptchaTile(
@@ -38,25 +37,42 @@ class Uprot : ExtractorApi() {
 
     private var sessionCookies: String = ""
 
-    private val cookieInterceptor = Interceptor { chain ->
-        val requestBuilder = chain.request().newBuilder()
+    private fun getHeaders(referer: String? = null): Map<String, String> {
+        val headers = mutableMapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language" to "it-IT,it;q=0.9",
+            "Connection" to "keep-alive"
+        )
         if (sessionCookies.isNotEmpty()) {
-            requestBuilder.addHeader("Cookie", sessionCookies)
+            headers["Cookie"] = sessionCookies
         }
-        val response = chain.proceed(requestBuilder.build())
-        val cookies = response.headers("Set-Cookie")
-        if (cookies.isNotEmpty()) {
-            sessionCookies = cookies.joinToString("; ") { it.split(";")[0] }
+        if (!referer.isNullOrEmpty()) {
+            headers["Referer"] = referer
         }
-        response
+        return headers
     }
 
-    private val baseHeaders = mapOf(
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language" to "it-IT,it;q=0.9",
-        "Connection" to "keep-alive"
-    )
+    private fun saveCookies(headers: okhttp3.Headers) {
+        val cookies = headers.values("Set-Cookie")
+        if (cookies.isNotEmpty()) {
+            val cookieMap = mutableMapOf<String, String>()
+            // Preserva i vecchi cookie
+            sessionCookies.split("; ").filter { it.contains("=") }.forEach {
+                val parts = it.split("=")
+                cookieMap[parts[0]] = parts.getOrElse(1) { "" }
+            }
+            // Aggiorna con i nuovi
+            cookies.forEach { cookieStr ->
+                val cookie = cookieStr.split(";")[0]
+                val parts = cookie.split("=")
+                if (parts.size >= 2) {
+                    cookieMap[parts[0]] = parts[1]
+                }
+            }
+            sessionCookies = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        }
+    }
 
     private fun getActivity(): Activity? {
         return try {
@@ -160,17 +176,19 @@ class Uprot : ExtractorApi() {
 
         val response = app.get(
             updatedLink,
-            headers = baseHeaders,
-            interceptor = cookieInterceptor,
+            headers = getHeaders(),
             timeout = 15_000
         )
+        saveCookies(response.headers)
         val document = response.document
 
         val token = document.selectFirst("input[name=token]")?.attr("value")
-            ?: document.selectFirst("input[name=_token]")?.attr("value") ?: ""
+            ?: document.selectFirst("input[name=_token]")?.attr("value")
+            ?: Regex("""name=["']_?token["']\s+value=["']([^"']+)["']""").find(response.text)?.groupValues?.get(1)
+            ?: ""
 
-        // Selettori CSS ampliati per la griglia CAPTCHA
-        val gridTilesElements = document.select("div.captcha-tile img, img.captcha-grid-item, form img[src*='base64'], .captcha-container img")
+        // Selettori estesi per intercettare sia immagini b64 sia url relative
+        val gridTilesElements = document.select("div.captcha-tile img, img.captcha-grid-item, form img[src*='base64'], .captcha-container img, grid-item img")
         val instruction = document.selectFirst(".captcha-instruction, #captcha-text, form p, form b, .instruction")?.text() ?: ""
 
         if (gridTilesElements.isNotEmpty() && token.isNotEmpty()) {
@@ -179,7 +197,10 @@ class Uprot : ExtractorApi() {
             val tilesList = mutableListOf<CaptchaTile>()
             gridTilesElements.forEachIndexed { index, el ->
                 val src = el.attr("src")
-                val tileId = el.attr("data-id").ifEmpty { el.attr("value") }.ifEmpty { index.toString() }
+                val tileId = el.attr("data-id")
+                    .ifEmpty { el.attr("data-val") }
+                    .ifEmpty { el.attr("value") }
+                    .ifEmpty { index.toString() }
 
                 val bitmap = if (src.contains("base64,")) {
                     val base64Data = src.substringAfter("base64,")
@@ -187,11 +208,12 @@ class Uprot : ExtractorApi() {
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 } else {
                     val tileUrl = fixUrl(src)
-                    val imgBytes = app.get(
+                    val imgResponse = app.get(
                         tileUrl,
-                        headers = baseHeaders,
-                        interceptor = cookieInterceptor
-                    ).body.bytes()
+                        headers = getHeaders(updatedLink)
+                    )
+                    saveCookies(imgResponse.headers)
+                    val imgBytes = imgResponse.body.bytes()
                     BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)
                 }
 
@@ -203,48 +225,73 @@ class Uprot : ExtractorApi() {
             val selectedTileIds = showImageGridCaptchaDialog(instruction, tilesList)
             if (selectedTileIds.isNullOrEmpty()) return null
 
-            val formBodyBuilder = FormBody.Builder().add("token", token)
-            for (id in selectedTileIds) {
-                formBodyBuilder.add("capt[]", id)
-                formBodyBuilder.add("capt", id)
+            val formBodyBuilder = FormBody.Builder()
+            
+            // Aggiunge eventuali input hidden dinamici presenti nel form
+            document.select("form input[type=hidden]").forEach { hiddenInput ->
+                val name = hiddenInput.attr("name")
+                val value = hiddenInput.attr("value")
+                if (name.isNotEmpty() && name != "token" && name != "_token") {
+                    formBodyBuilder.add(name, value)
+                }
             }
 
-            val postHeaders = baseHeaders.toMutableMap().apply {
-                put("Referer", updatedLink)
+            formBodyBuilder.add("token", token)
+            for (id in selectedTileIds) {
+                formBodyBuilder.add("capt[]", id)
+            }
+
+            val postHeaders = getHeaders(updatedLink).toMutableMap().apply {
                 put("Origin", "https://uprot.net")
+                put("Content-Type", "application/x-www-form-urlencoded")
             }
 
             val postResponse = app.post(
                 updatedLink,
                 headers = postHeaders,
                 requestBody = formBodyBuilder.build(),
-                interceptor = cookieInterceptor,
                 timeout = 15_000
             )
+            saveCookies(postResponse.headers)
 
-            return parsePostResult(postResponse.document, postResponse.url)
+            return parsePostResult(postResponse.document, postResponse.url, postResponse.text)
         }
 
-        // Estrazione fallback link diretto
-        val directLink = document.selectFirst("a[href*='maxstream'], a[href*='maxwe'], a[href*='uprots'], #buttok parent, a.btn-download")?.attr("href")
-            ?: document.selectFirst("#buttok")?.parent()?.attr("href")
-
-        return if (!directLink.isNullOrEmpty()) fixUrl(directLink) else null
+        // Estrazione fallback link diretto se non c'è captcha
+        return extractDirectLink(document, response.text)
     }
 
-    private fun parsePostResult(postDoc: org.jsoup.nodes.Document, postUrl: String): String? {
+    private fun parsePostResult(postDoc: org.jsoup.nodes.Document, postUrl: String, rawHtml: String): String? {
         if (!postUrl.contains("uprot.net")) {
             return postUrl
         }
 
-        val buttokLink = postDoc.selectFirst("#buttok")?.parent()?.attr("href")
+        val parsedLink = extractDirectLink(postDoc, rawHtml)
+        if (!parsedLink.isNullOrEmpty()) return parsedLink
+
+        // Controllo reindirizzamenti Javascript (es. window.location.href = "...")
+        val jsRedirect = Regex("""window\.location(?:\.href)?\s*=\s*["']([^"']+)["']""").find(rawHtml)?.groupValues?.get(1)
+        if (!jsRedirect.isNullOrEmpty()) return fixUrl(jsRedirect)
+
+        return null
+    }
+
+    private fun extractDirectLink(doc: org.jsoup.nodes.Document, rawHtml: String): String? {
+        val buttokLink = doc.selectFirst("#buttok")?.parent()?.attr("href")
+            ?: doc.selectFirst("a#buttok")?.attr("href")
         if (!buttokLink.isNullOrEmpty()) return fixUrl(buttokLink)
 
-        val uprotsLink = postDoc.selectFirst("a[href*='uprots']")?.attr("href")
+        val uprotsLink = doc.selectFirst("a[href*='uprots']")?.attr("href")
         if (!uprotsLink.isNullOrEmpty()) return fixUrl(uprotsLink)
 
-        val fallbackLink = postDoc.selectFirst("a[href*='maxstream'], a[href*='maxwe']")?.attr("href")
-        return if (!fallbackLink.isNullOrEmpty()) fixUrl(fallbackLink) else null
+        val fallbackLink = doc.selectFirst("a[href*='maxstream'], a[href*='maxwe']")?.attr("href")
+        if (!fallbackLink.isNullOrEmpty()) return fixUrl(fallbackLink)
+
+        // Ricerca regex su tutto il documento in caso di link offuscati in JS
+        val regexLink = Regex("""https?://(?:www\.)?(?:maxstream|maxwe|uprots)\.[a-z]{2,}/[^\s"']+""").find(rawHtml)?.value
+        if (!regexLink.isNullOrEmpty()) return regexLink
+
+        return null
     }
 
     override suspend fun getUrl(
