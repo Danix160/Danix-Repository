@@ -18,19 +18,18 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // 1. Richiesta alla pagina di Uprot (es. /msf/m2conw034rnu)
+        // 1. Chiamata alla pagina iniziale di Uprot
         val response = app.get(url, referer = referer)
         val document = Jsoup.parse(response.text)
 
-        // 2. Estrazione del link verso MaxStream o del path /uprots/
+        // 2. Cerca il link intermedio (es. /uprots/...)
         val rawTargetUrl = document.selectFirst("a[href*=/uprots/]")?.attr("href")
             ?: document.selectFirst("a[href*=/msf/]")?.attr("href")
             ?: document.select("a[href]").map { it.attr("href") }.firstOrNull { 
                 it.contains("maxstream") || it.contains("uprots") 
             }
 
-        // 3. Risoluzione dell'URL completo
-        val targetUrl: String? = if (!rawTargetUrl.isNullOrEmpty()) {
+        val stepUrl = if (!rawTargetUrl.isNullOrEmpty()) {
             if (rawTargetUrl.startsWith("http://") || rawTargetUrl.startsWith("https://")) {
                 rawTargetUrl
             } else {
@@ -38,9 +37,24 @@ class Uprot : ExtractorApi() {
             }
         } else null
 
-        // 4. Se il link finale è stato trovato, lo passiamo al sistema di risoluzione di Cloudstream
-        targetUrl?.let { finalUrl ->
-            loadExtractor(finalUrl, url, subtitleCallback, callback)
+        if (stepUrl != null) {
+            // 3. Eseguiamo la richiesta al link /uprots/ seguendo i redirect (followRedirects = true)
+            // in modo da catturare l'URL finale di MaxStream dall'oggetto della risposta
+            val finalResponse = app.get(stepUrl, referer = url, followRedirects = true)
+            val destinationUrl = finalResponse.url
+
+            // Se il reindirizzamento ha portato a un dominio diverso (MaxStream)
+            if (destinationUrl.contains("maxstream") || destinationUrl != stepUrl) {
+                loadExtractor(destinationUrl, stepUrl, subtitleCallback, callback)
+            } else {
+                // Se non c'è stato redirect 302, proviamo a cercare un eventuale iframe o tag meta refresh nell'HTML
+                val doc2 = Jsoup.parse(finalResponse.text)
+                val realUrl = doc2.selectFirst("iframe[src*=maxstream]")?.attr("src")
+                    ?: doc2.selectFirst("a[href*=maxstream]")?.attr("href")
+                    ?: destinationUrl
+
+                loadExtractor(realUrl, stepUrl, subtitleCallback, callback)
+            }
         }
     }
 }
