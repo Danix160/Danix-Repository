@@ -1,7 +1,6 @@
 package com.onlineserietv
 
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
@@ -28,7 +27,8 @@ class MaxStream : ExtractorApi() {
         val rawNextUrl = document.selectFirst("a[href*=/uprots/]")?.attr("href")
             ?: document.select("a[href*=/uprots/]").firstOrNull()?.attr("href")
 
-        val nextUrl = fixUrlNull(rawNextUrl) ?: url
+        // Usa fixUrl della classe ExtractorApi per normalizzare l'URL relativo
+        val nextUrl = rawNextUrl?.let { fixUrl(it) } ?: url
 
         // 3. Seconda richiesta alla pagina effettiva del video se il redirect è presente
         val finalHtml = if (nextUrl != url) {
