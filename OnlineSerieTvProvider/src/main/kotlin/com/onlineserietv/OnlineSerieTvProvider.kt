@@ -11,8 +11,11 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.utils.FixUrl.fixUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jsoup.Jsoup
 
 // -----------------------------
 // TMDB DATA CLASS
@@ -411,7 +414,6 @@ class OnlineSerieTvProvider : MainAPI() {
         var globalIndex = 0
 
         rows.forEach { row ->
-            // Estrazione flessibile del link video/hoster nella riga della tabella
             val streamLinkEl = row.select("a[href]").firstOrNull { a ->
                 val href = a.attr("href")
                 href.contains("/msf/") || href.contains("uprot") || href.contains("stream") || href.contains("tape") || href.contains("flexy") || href.contains("delta")
@@ -496,34 +498,22 @@ class OnlineSerieTvProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
 
-        // Ripuliamo l'URL da eventuali spazi residui
-        val cleanUrl = data.trim()
+        val fixedDataUrl = fixUrl(data)
 
-        if (cleanUrl.startsWith("http")) {
-            val response = app.get(cleanUrl)
-            val doc = response.document
+        // tentiamo direttamente il caricamento se 'data' punta direttamente ad un hoster gestito da Cloudstream
+        val loadedDirect = loadExtractor(fixedDataUrl, subtitleCallback, callback)
+        if (loadedDirect) return@withContext true
 
-            // 1. Cerca iframe diretti (es. MixDrop, SuperVideo, Streamtape, ecc.)
-            doc.select("iframe[src]").forEach { iframe ->
-                val src = iframe.attr("src")
-                if (src.isNotEmpty()) {
-                    loadExtractor(src, cleanUrl, subtitleCallback, callback)
-                }
+        val response = app.get(fixedDataUrl).text
+        val doc = Jsoup.parse(response)
+
+        // Estrazione di iFrame o link nascosti nella pagina di destinazione
+        doc.select("iframe[src], a[href]").forEach { element ->
+            val link = element.attr("src").ifEmpty { element.attr("href") }
+            if (link.isNotBlank()) {
+                val fullUrl = fixUrl(link)
+                loadExtractor(fullUrl, subtitleCallback, callback)
             }
-
-            // 2. Cerca link reindirizzati o bottoni di mirror/hoster
-            doc.select("a[href]").forEach { element ->
-                val href = element.attr("href")
-                if (href.contains("uprot") || href.contains("stream") || href.contains("tape") || 
-                    href.contains("flexy") || href.contains("delta") || href.contains("mixdrop") || href.contains("supervideo")) {
-                    loadExtractor(href, cleanUrl, subtitleCallback, callback)
-                }
-            }
-
-            // 3. Fallback: Se il link stesso è già un embed/extractor
-            loadExtractor(cleanUrl, mainUrl, subtitleCallback, callback)
-        } else {
-            loadExtractor(cleanUrl, mainUrl, subtitleCallback, callback)
         }
 
         return@withContext true
