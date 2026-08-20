@@ -21,7 +21,6 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.FormBody
 import okhttp3.Interceptor
-import okhttp3.Response
 import kotlin.coroutines.resume
 
 data class CaptchaTile(
@@ -34,6 +33,9 @@ class Uprot : ExtractorApi() {
     override val name = "Uprot"
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
+
+    // Permette di intercettare sia /msf/ che /mse/ o nuove varianti /msX/
+    private val mainUrlRegex = Regex("""https?://(?:www\.)?uprot\.net/ms[a-z]/[a-zA-Z0-9]+""")
 
     // Gestione manuale della sessione Cookie tramite Interceptor per NiceHttp/Cloudstream
     private var sessionCookies: String = ""
@@ -155,7 +157,10 @@ class Uprot : ExtractorApi() {
     }
 
     private suspend fun bypassUprot(link: String): String? {
-        val updatedLink = fixUrl(if ("msf" in link) link.replace("msf", "mse") else link)
+        // FIX: Mantiene /msf/ se presente, corregge /mse/ in /msf/
+        val updatedLink = fixUrl(
+            if ("mse" in link) link.replace("mse", "msf") else link
+        )
         Log.d("Uprot", "Avvio bypass: $updatedLink")
 
         // Inizio sessione pulita
