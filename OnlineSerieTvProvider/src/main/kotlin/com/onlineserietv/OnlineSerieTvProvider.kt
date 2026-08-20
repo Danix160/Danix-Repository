@@ -500,9 +500,9 @@ class OnlineSerieTvProvider : MainAPI() {
             val directSuccess = loadExtractor(fixedUrl, subtitleCallback, callback)
             if (directSuccess) continue
 
-            // 2. Se è un link esterno/redirect (es. uprot/maxstream), effettua la GET
+            // 2. Se è un link esterno/redirect, effettua la GET standard
             try {
-                val response = app.get(fixedUrl, followRedirects = true)
+                val response = app.get(fixedUrl)
                 val destinationUrl = response.url
 
                 if (destinationUrl != fixedUrl && destinationUrl.isNotBlank()) {
