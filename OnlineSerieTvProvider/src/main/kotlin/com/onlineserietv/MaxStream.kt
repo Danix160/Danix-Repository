@@ -21,12 +21,11 @@ class MaxStream : ExtractorApi() {
         val response = app.get(url, referer = referer ?: mainUrl)
         val html = response.text
 
-        // Regex più generica per catturare link file o sorgenti m3u8/mp4
-        val pattern = """(?:file|src)\s*:\s*["']([^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)["']""".toRegex(RegexOption.IGNORE_CASE)
+        // Regex estratta dal codice di StreamFlix
+        val pattern = """sources\s*:\s*\[\s*\{\s*[sS]rc\s*:\s*["']([^"']+)["']""".toRegex()
         val match = pattern.find(html)
 
-        val videoUrl = match?.groupValues?.get(1) 
-            ?: """(https?://[^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)""".toRegex(RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+        val videoUrl = match?.groupValues?.get(1)
 
         if (!videoUrl.isNullOrEmpty()) {
             val isM3u8 = videoUrl.contains(".m3u8")
