@@ -38,16 +38,15 @@ class Uprot : ExtractorApi() {
         } else null
 
         if (stepUrl != null) {
-            // 3. Eseguiamo la richiesta al link /uprots/ seguendo i redirect (followRedirects = true)
-            // in modo da catturare l'URL finale di MaxStream dall'oggetto della risposta
-            val finalResponse = app.get(stepUrl, referer = url, followRedirects = true)
+            // 3. Eseguiamo la richiesta (app.get segue i redirect di default)
+            val finalResponse = app.get(stepUrl, referer = url)
             val destinationUrl = finalResponse.url
 
-            // Se il reindirizzamento ha portato a un dominio diverso (MaxStream)
+            // Se il reindirizzamento ha portato a MaxStream o a un dominio differente
             if (destinationUrl.contains("maxstream") || destinationUrl != stepUrl) {
                 loadExtractor(destinationUrl, stepUrl, subtitleCallback, callback)
             } else {
-                // Se non c'è stato redirect 302, proviamo a cercare un eventuale iframe o tag meta refresh nell'HTML
+                // Se rimane sulla stessa pagina, cerchiamo un eventuale iframe o link all'interno del DOM
                 val doc2 = Jsoup.parse(finalResponse.text)
                 val realUrl = doc2.selectFirst("iframe[src*=maxstream]")?.attr("src")
                     ?: doc2.selectFirst("a[href*=maxstream]")?.attr("href")
