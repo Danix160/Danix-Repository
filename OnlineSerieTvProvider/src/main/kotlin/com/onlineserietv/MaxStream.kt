@@ -6,8 +6,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.Jsoup
-import java.net.URI
 
 class MaxStream : ExtractorApi() {
     override val name = "MaxStream"
@@ -20,36 +18,13 @@ class MaxStream : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // 1. Prima richiesta
-        val initialResponse = app.get(url, referer = referer)
-        val initialHtml: String = initialResponse.text
-        val document = Jsoup.parse(initialHtml)
+        // 1. Richiesta alla pagina video finale
+        val response = app.get(url, referer = referer ?: mainUrl)
+        val html: String = response.text
 
-        // 2. Estrazione del link intermedio dal tag <a> con il path /uprots/
-        val rawNextUrl = document.selectFirst("a[href*=/uprots/]")?.attr("href")
-            ?: document.select("a[href*=/uprots/]").firstOrNull()?.attr("href")
-
-        // Risoluzione manuale dell'URL per evitare errori di compilazione con fixUrl/fixUrlNull
-        val nextUrl: String = if (!rawNextUrl.isNullOrEmpty()) {
-            if (rawNextUrl.startsWith("http://") || rawNextUrl.startsWith("https://")) {
-                rawNextUrl
-            } else {
-                URI(mainUrl).resolve(rawNextUrl).toString()
-            }
-        } else {
-            url
-        }
-
-        // 3. Seconda richiesta se presente un reindirizzamento
-        val finalHtml: String = if (nextUrl != url) {
-            app.get(nextUrl, referer = url).text
-        } else {
-            initialHtml
-        }
-
-        // 4. Estrazione dell'URL video tramite Regex
+        // 2. Estrazione sorgente tramite Regex
         val pattern = """sources\W+src\W+([^"\s]+)""".toRegex()
-        val match = pattern.find(finalHtml)
+        val match = pattern.find(html)
 
         if (match != null) {
             val videoUrl = match.groupValues[1].replace("\"", "").trim()
@@ -61,7 +36,7 @@ class MaxStream : ExtractorApi() {
                 url = videoUrl,
                 type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             ) {
-                this.referer = nextUrl
+                this.referer = url
                 this.quality = Qualities.Unknown.value
             }
 
