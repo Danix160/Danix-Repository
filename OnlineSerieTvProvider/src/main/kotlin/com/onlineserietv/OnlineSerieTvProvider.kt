@@ -490,17 +490,11 @@ class OnlineSerieTvProvider : MainAPI() {
     subtitleCallback: (SubtitleFile) -> Unit,
     callback: (ExtractorLink) -> Unit
 ): Boolean {
-    println("DEBUG_PROVIDER: Inizio loadLinks per data -> $data")
-
-    // Separa i link inviati (es. "https://uprot.net/msf/123|https://uprot.net/msd/123")
     val urls = data.split("|").map { it.trim() }.filter { it.isNotEmpty() }
 
     urls.forEach { url ->
-        println("DEBUG_PROVIDER: Esecuzione extractor su -> $url")
-        
-        // Passa l'URL pulito a Cloudstream che invocherà l'extractor di Uprot/Maxstream
-        val success = loadExtractor(url, subtitleCallback, callback)
-        println("DEBUG_PROVIDER: Extractor per $url -> esito $success")
+        // Nel caso in cui il link sia direttamente un redirect Maxstream o Uprot
+        loadExtractor(url, subtitleCallback, callback)
     }
 
     return true
