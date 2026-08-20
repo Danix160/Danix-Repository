@@ -484,27 +484,23 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 
-   override suspend fun loadLinks(
+  override suspend fun loadLinks(
     data: String,
     isCasting: Boolean,
     subtitleCallback: (SubtitleFile) -> Unit,
     callback: (ExtractorLink) -> Unit
 ): Boolean {
-    // 1. Verifica l'URL o i dati in ingresso
     println("DEBUG_PROVIDER: Inizio loadLinks per data -> $data")
 
-    val document = app.get(data).document
-    // 2. Verifica se l'HTML viene scaricato
-    println("DEBUG_PROVIDER: HTML scaricato, titolo -> ${document.title()}")
+    // Separa i link inviati (es. "https://uprot.net/msf/123|https://uprot.net/msd/123")
+    val urls = data.split("|").map { it.trim() }.filter { it.isNotEmpty() }
 
-    // 3. Estrazione iframe/link
-    val iframes = document.select("iframe").map { it.attr("src") }
-    println("DEBUG_PROVIDER: Trovati ${iframes.size} iframe: $iframes")
-
-    iframes.forEach { embedUrl ->
-        // 4. Verifica il caricamento dell'estrattore
-        val loaded = loadExtractor(embedUrl, data, subtitleCallback, callback)
-        println("DEBUG_PROVIDER: Extractor per $embedUrl -> esito $loaded")
+    urls.forEach { url ->
+        println("DEBUG_PROVIDER: Esecuzione extractor su -> $url")
+        
+        // Passa l'URL pulito a Cloudstream che invocherà l'extractor di Uprot/Maxstream
+        val success = loadExtractor(url, subtitleCallback, callback)
+        println("DEBUG_PROVIDER: Extractor per $url -> esito $success")
     }
 
     return true
