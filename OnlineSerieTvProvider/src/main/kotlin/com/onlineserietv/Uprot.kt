@@ -18,14 +18,16 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // 1. Trasformiamo l'URL da /msf/ o /msfi/ a /mse/ come fa l'algoritmo
         val uprotUrl = url.replace("/msf/", "/mse/").replace("/msfi/", "/mse/")
-        
         var maxstreamUrl: String? = null
 
-        // 2. Troviamo il link MaxStream decodificando il Base64 contenuto nel JS
+        val customHeaders = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Referer" to (referer ?: mainUrl)
+        )
+
         try {
-            val response = app.get(uprotUrl, referer = referer ?: mainUrl)
+            val response = app.get(uprotUrl, headers = customHeaders)
             val html = response.text
 
             val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""").find(html)?.groupValues?.getOrNull(1)
@@ -41,18 +43,19 @@ class Uprot : ExtractorApi() {
             }
         } catch (_: Exception) { }
 
-        // 3. Fallback: Se la decodifica Base64 fallisce, cerchiamo un reindirizzamento diretto o tag iframe
+        // Fallback tramite DOM parsing
         if (maxstreamUrl == null) {
-            val fallbackResponse = app.get(url, referer = referer)
+            val fallbackResponse = app.get(url, headers = customHeaders)
             val doc = Jsoup.parse(fallbackResponse.text)
             
-            maxstreamUrl = doc.selectFirst("iframe[src*=maxstream]")?.attr("src")
-                ?: doc.selectFirst("a[href*=maxstream]")?.attr("href")
-                ?: fallbackResponse.url.takeIf { it.contains("maxstream") }
+            maxstreamUrl = doc.selectFirst("iframe[src*=/ms/]")?.attr("src")
+                ?: doc.selectFirst("iframe[src*=max]")?.attr("src")
+                ?: doc.selectFirst("a[href*=max]")?.attr("href")
+                ?: fallbackResponse.url.takeIf { it.contains("max") }
         }
 
-        // 4. Passiamo l'URL estratto di MaxStream all'estrattore MaxStream.kt
         maxstreamUrl?.let { finalUrl ->
+            // Invia l'URL a Cloudstream affinché lo passi a MaxStream.kt
             loadExtractor(finalUrl, uprotUrl, subtitleCallback, callback)
         }
     }
