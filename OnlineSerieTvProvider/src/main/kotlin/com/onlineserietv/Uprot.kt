@@ -11,7 +11,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AbsListView
 import android.widget.BaseAdapter
-import android.widget.EditText
 import android.widget.GridView
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -20,10 +19,9 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import kotlinx.coroutines.suspendCancellableCoroutine
-import okhttp3.Cookie
-import okhttp3.CookieJar
-import okhttp3.HttpUrl
 import okhttp3.FormBody
+import okhttp3.Interceptor
+import okhttp3.Response
 import kotlin.coroutines.resume
 
 data class CaptchaTile(
@@ -37,26 +35,20 @@ class Uprot : ExtractorApi() {
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
 
-    // CookieJar in-memory per preservare la sessione tra GET e POST
-    private val cookieJar = object : CookieJar {
-        private val cookieStore = mutableMapOf<String, List<Cookie>>()
+    // Gestione manuale della sessione Cookie tramite Interceptor per NiceHttp/Cloudstream
+    private var sessionCookies: String = ""
 
-        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            cookieStore[url.host] = cookies
+    private val cookieInterceptor = Interceptor { chain ->
+        val requestBuilder = chain.request().newBuilder()
+        if (sessionCookies.isNotEmpty()) {
+            requestBuilder.addHeader("Cookie", sessionCookies)
         }
-
-        override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            return cookieStore[url.host] ?: emptyList()
+        val response = chain.proceed(requestBuilder.build())
+        val cookies = response.headers("Set-Cookie")
+        if (cookies.isNotEmpty()) {
+            sessionCookies = cookies.joinToString("; ") { it.split(";")[0] }
         }
-    }
-
-    // Client HTTP con gestione automatica dei cookie
-    private val sessionClient by lazy {
-        app.baseClient.newBuilder()
-            .cookieJar(cookieJar)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
+        response
     }
 
     private val baseHeaders = mapOf(
@@ -166,8 +158,15 @@ class Uprot : ExtractorApi() {
         val updatedLink = fixUrl(if ("msf" in link) link.replace("msf", "mse") else link)
         Log.d("Uprot", "Avvio bypass: $updatedLink")
 
-        // Usa sessionClient per salvare la sessione nei cookie
-        val response = app.get(updatedLink, headers = baseHeaders, client = sessionClient, timeout = 10_000)
+        // Inizio sessione pulita
+        sessionCookies = ""
+
+        val response = app.get(
+            updatedLink,
+            headers = baseHeaders,
+            interceptor = cookieInterceptor,
+            timeout = 10_000
+        )
         val document = response.document
 
         val tokenElement = document.selectFirst("input[name=token]")
@@ -190,7 +189,11 @@ class Uprot : ExtractorApi() {
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 } else {
                     val tileUrl = fixUrl(src)
-                    val imgBytes = app.get(tileUrl, headers = baseHeaders, client = sessionClient).body.bytes()
+                    val imgBytes = app.get(
+                        tileUrl,
+                        headers = baseHeaders,
+                        interceptor = cookieInterceptor
+                    ).body.bytes()
                     BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)
                 }
 
@@ -202,14 +205,10 @@ class Uprot : ExtractorApi() {
             val selectedTileIds = showImageGridCaptchaDialog(instruction, tilesList)
             if (selectedTileIds.isNullOrEmpty()) return null
 
-            // Costruzione form payload con array capt[]
-            val formBodyBuilder = FormBody.Builder()
-                .add("token", token)
-
-            // Aggiungi ciascun elemento selezionato come parametro capt[]
+            val formBodyBuilder = FormBody.Builder().add("token", token)
             for (id in selectedTileIds) {
                 formBodyBuilder.add("capt[]", id)
-                formBodyBuilder.add("capt", id) // Fallback per form con name="capt"
+                formBodyBuilder.add("capt", id)
             }
 
             val postHeaders = baseHeaders.toMutableMap().apply {
@@ -221,7 +220,7 @@ class Uprot : ExtractorApi() {
                 updatedLink,
                 headers = postHeaders,
                 requestBody = formBodyBuilder.build(),
-                client = sessionClient,
+                interceptor = cookieInterceptor,
                 timeout = 10_000
             )
 
