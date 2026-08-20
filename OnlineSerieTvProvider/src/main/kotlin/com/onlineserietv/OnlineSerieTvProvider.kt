@@ -12,7 +12,6 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.utils.FixUrl.fixUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
@@ -500,14 +499,14 @@ class OnlineSerieTvProvider : MainAPI() {
 
         val fixedDataUrl = fixUrl(data)
 
-        // tentiamo direttamente il caricamento se 'data' punta direttamente ad un hoster gestito da Cloudstream
+        // Tenta il caricamento diretto
         val loadedDirect = loadExtractor(fixedDataUrl, subtitleCallback, callback)
         if (loadedDirect) return@withContext true
 
         val response = app.get(fixedDataUrl).text
         val doc = Jsoup.parse(response)
 
-        // Estrazione di iFrame o link nascosti nella pagina di destinazione
+        // Cerca iFrame o link ed estrae usando la funzione della classe MainAPI
         doc.select("iframe[src], a[href]").forEach { element ->
             val link = element.attr("src").ifEmpty { element.attr("href") }
             if (link.isNotBlank()) {
