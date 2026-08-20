@@ -18,7 +18,9 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.Interceptor
 import kotlin.coroutines.resume
@@ -34,10 +36,6 @@ class Uprot : ExtractorApi() {
     override val mainUrl = "https://uprot.net"
     override val requiresReferer = true
 
-    // Permette di intercettare sia /msf/ che /mse/ o nuove varianti /msX/
-    private val mainUrlRegex = Regex("""https?://(?:www\.)?uprot\.net/ms[a-z]/[a-zA-Z0-9]+""")
-
-    // Gestione manuale della sessione Cookie tramite Interceptor per NiceHttp/Cloudstream
     private var sessionCookies: String = ""
 
     private val cookieInterceptor = Interceptor { chain ->
@@ -74,111 +72,106 @@ class Uprot : ExtractorApi() {
     private suspend fun showImageGridCaptchaDialog(
         instructionText: String,
         tiles: List<CaptchaTile>
-    ): List<String>? {
-        return suspendCancellableCoroutine { continuation ->
+    ): List<String>? = withContext(Dispatchers.Main) {
+        suspendCancellableCoroutine { continuation ->
             val activity = getActivity()
-            if (activity == null) {
-                Log.e("Uprot", "Activity non disponibile")
+            if (activity == null || activity.isFinishing || activity.isDestroyed) {
+                Log.e("Uprot", "Activity non valida o distrutta")
                 if (continuation.isActive) continuation.resume(null)
                 return@suspendCancellableCoroutine
             }
 
-            activity.runOnUiThread {
-                try {
-                    val layout = LinearLayout(activity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(40, 30, 40, 30)
-                    }
-
-                    val gridView = GridView(activity).apply {
-                        numColumns = 3
-                        horizontalSpacing = 10
-                        verticalSpacing = 10
-                        stretchMode = GridView.STRETCH_COLUMN_WIDTH
-                    }
-
-                    val adapter = object : BaseAdapter() {
-                        override fun getCount(): Int = tiles.size
-                        override fun getItem(position: Int): Any = tiles[position]
-                        override fun getItemId(position: Int): Long = position.toLong()
-
-                        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                            val imageView = (convertView as? ImageView) ?: ImageView(activity).apply {
-                                layoutParams = AbsListView.LayoutParams(250, 250)
-                                scaleType = ImageView.ScaleType.CENTER_CROP
-                            }
-
-                            val item = tiles[position]
-                            imageView.setImageBitmap(item.bitmap)
-
-                            if (item.isSelected) {
-                                imageView.setBackgroundColor(Color.parseColor("#0088FF"))
-                                imageView.setPadding(8, 8, 8, 8)
-                            } else {
-                                imageView.setBackgroundColor(Color.TRANSPARENT)
-                                imageView.setPadding(0, 0, 0, 0)
-                            }
-
-                            imageView.setOnClickListener {
-                                item.isSelected = !item.isSelected
-                                notifyDataSetChanged()
-                            }
-
-                            return imageView
-                        }
-                    }
-
-                    gridView.adapter = adapter
-                    layout.addView(gridView)
-
-                    val dialog = AlertDialog.Builder(activity)
-                        .setTitle("Verifica Uprot")
-                        .setMessage(instructionText.ifEmpty { "Seleziona le immagini richieste" })
-                        .setView(layout)
-                        .setCancelable(false)
-                        .setPositiveButton("Invia") { _, _ ->
-                            val selectedIds = tiles.filter { it.isSelected }.map { it.id }
-                            if (continuation.isActive) continuation.resume(selectedIds)
-                        }
-                        .setNegativeButton("Annulla") { _, _ ->
-                            if (continuation.isActive) continuation.resume(null)
-                        }
-                        .create()
-
-                    continuation.invokeOnCancellation { dialog.dismiss() }
-                    dialog.show()
-
-                } catch (e: Exception) {
-                    Log.e("Uprot", "Errore dialog: ${e.message}")
-                    if (continuation.isActive) continuation.resume(null)
+            try {
+                val layout = LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(40, 30, 40, 30)
                 }
+
+                val gridView = GridView(activity).apply {
+                    numColumns = 3
+                    horizontalSpacing = 10
+                    verticalSpacing = 10
+                    stretchMode = GridView.STRETCH_COLUMN_WIDTH
+                }
+
+                val adapter = object : BaseAdapter() {
+                    override fun getCount(): Int = tiles.size
+                    override fun getItem(position: Int): Any = tiles[position]
+                    override fun getItemId(position: Int): Long = position.toLong()
+
+                    override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                        val imageView = (convertView as? ImageView) ?: ImageView(activity).apply {
+                            layoutParams = AbsListView.LayoutParams(250, 250)
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                        }
+
+                        val item = tiles[position]
+                        imageView.setImageBitmap(item.bitmap)
+
+                        if (item.isSelected) {
+                            imageView.setBackgroundColor(Color.parseColor("#0088FF"))
+                            imageView.setPadding(8, 8, 8, 8)
+                        } else {
+                            imageView.setBackgroundColor(Color.TRANSPARENT)
+                            imageView.setPadding(0, 0, 0, 0)
+                        }
+
+                        imageView.setOnClickListener {
+                            item.isSelected = !item.isSelected
+                            notifyDataSetChanged()
+                        }
+
+                        return imageView
+                    }
+                }
+
+                gridView.adapter = adapter
+                layout.addView(gridView)
+
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Verifica Uprot")
+                    .setMessage(instructionText.ifEmpty { "Seleziona le immagini richieste" })
+                    .setView(layout)
+                    .setCancelable(false)
+                    .setPositiveButton("Invia") { _, _ ->
+                        val selectedIds = tiles.filter { it.isSelected }.map { it.id }
+                        if (continuation.isActive) continuation.resume(selectedIds)
+                    }
+                    .setNegativeButton("Annulla") { _, _ ->
+                        if (continuation.isActive) continuation.resume(null)
+                    }
+                    .create()
+
+                continuation.invokeOnCancellation { dialog.dismiss() }
+                dialog.show()
+
+            } catch (e: Exception) {
+                Log.e("Uprot", "Errore creazione UI CAPTCHA: ${e.message}")
+                if (continuation.isActive) continuation.resume(null)
             }
         }
     }
 
     private suspend fun bypassUprot(link: String): String? {
-        // FIX: Mantiene /msf/ se presente, corregge /mse/ in /msf/
-        val updatedLink = fixUrl(
-            if ("mse" in link) link.replace("mse", "msf") else link
-        )
+        val updatedLink = fixUrl(if ("mse" in link) link.replace("mse", "msf") else link)
         Log.d("Uprot", "Avvio bypass: $updatedLink")
 
-        // Inizio sessione pulita
         sessionCookies = ""
 
         val response = app.get(
             updatedLink,
             headers = baseHeaders,
             interceptor = cookieInterceptor,
-            timeout = 10_000
+            timeout = 15_000
         )
         val document = response.document
 
-        val tokenElement = document.selectFirst("input[name=token]")
-        val token = tokenElement?.attr("value") ?: ""
+        val token = document.selectFirst("input[name=token]")?.attr("value")
+            ?: document.selectFirst("input[name=_token]")?.attr("value") ?: ""
 
-        val gridTilesElements = document.select("div.captcha-tile img, img.captcha-grid-item, form img[src*='base64']")
-        val instruction = document.selectFirst(".captcha-instruction, #captcha-text, form p, form b")?.text() ?: ""
+        // Selettori CSS ampliati per la griglia CAPTCHA
+        val gridTilesElements = document.select("div.captcha-tile img, img.captcha-grid-item, form img[src*='base64'], .captcha-container img")
+        val instruction = document.selectFirst(".captcha-instruction, #captcha-text, form p, form b, .instruction")?.text() ?: ""
 
         if (gridTilesElements.isNotEmpty() && token.isNotEmpty()) {
             Log.d("Uprot", "Trovata griglia CAPTCHA (${gridTilesElements.size} elementi)")
@@ -226,13 +219,16 @@ class Uprot : ExtractorApi() {
                 headers = postHeaders,
                 requestBody = formBodyBuilder.build(),
                 interceptor = cookieInterceptor,
-                timeout = 10_000
+                timeout = 15_000
             )
 
             return parsePostResult(postResponse.document, postResponse.url)
         }
 
-        val directLink = document.selectFirst("a[href*='maxstream'], a[href*='maxwe'], a[href*='uprots']")?.attr("href")
+        // Estrazione fallback link diretto
+        val directLink = document.selectFirst("a[href*='maxstream'], a[href*='maxwe'], a[href*='uprots'], #buttok parent, a.btn-download")?.attr("href")
+            ?: document.selectFirst("#buttok")?.parent()?.attr("href")
+
         return if (!directLink.isNullOrEmpty()) fixUrl(directLink) else null
     }
 
@@ -264,7 +260,7 @@ class Uprot : ExtractorApi() {
             val refererToUse = if (extractedUrl.contains("maxstream")) target else url
             loadExtractor(extractedUrl, refererToUse, subtitleCallback, callback)
         } else {
-            Log.e("Uprot", "Impossibile ottenere un link video valido")
+            Log.e("Uprot", "Impossibile ottenere un link video valido per: $target")
         }
     }
 
