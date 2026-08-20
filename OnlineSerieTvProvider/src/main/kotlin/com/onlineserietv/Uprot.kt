@@ -1,11 +1,11 @@
 package com.onlineserietv
 
+import android.util.Base64
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.Jsoup
-import java.net.URI
 
 class Uprot : ExtractorApi() {
     override val name = "Uprot"
@@ -18,42 +18,42 @@ class Uprot : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        // 1. Chiamata alla pagina iniziale di Uprot
-        val response = app.get(url, referer = referer)
-        val document = Jsoup.parse(response.text)
+        // 1. Trasformiamo l'URL da /msf/ o /msfi/ a /mse/ come fa l'algoritmo
+        val uprotUrl = url.replace("/msf/", "/mse/").replace("/msfi/", "/mse/")
+        
+        var maxstreamUrl: String? = null
 
-        // 2. Cerca il link intermedio (es. /uprots/...)
-        val rawTargetUrl = document.selectFirst("a[href*=/uprots/]")?.attr("href")
-            ?: document.selectFirst("a[href*=/msf/]")?.attr("href")
-            ?: document.select("a[href]").map { it.attr("href") }.firstOrNull { 
-                it.contains("maxstream") || it.contains("uprots") 
+        // 2. Troviamo il link MaxStream decodificando il Base64 contenuto nel JS
+        try {
+            val response = app.get(uprotUrl, referer = referer ?: mainUrl)
+            val html = response.text
+
+            val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""").find(html)?.groupValues?.getOrNull(1)
+            val b64Val = Regex("""decodedEncryptedVal\s*=\s*atob\(["']([^"']+)["']\)""").find(html)?.groupValues?.getOrNull(1)
+
+            if (!b64Base.isNullOrBlank() && !b64Val.isNullOrBlank()) {
+                val decodedBase = String(Base64.decode(b64Base, Base64.DEFAULT), Charsets.UTF_8)
+                val decodedVal = String(Base64.decode(b64Val, Base64.DEFAULT), Charsets.UTF_8)
+                val candidate = decodedBase + decodedVal
+                if (candidate.isNotBlank()) {
+                    maxstreamUrl = candidate
+                }
             }
+        } catch (_: Exception) { }
 
-        val stepUrl = if (!rawTargetUrl.isNullOrEmpty()) {
-            if (rawTargetUrl.startsWith("http://") || rawTargetUrl.startsWith("https://")) {
-                rawTargetUrl
-            } else {
-                URI(mainUrl).resolve(rawTargetUrl).toString()
-            }
-        } else null
+        // 3. Fallback: Se la decodifica Base64 fallisce, cerchiamo un reindirizzamento diretto o tag iframe
+        if (maxstreamUrl == null) {
+            val fallbackResponse = app.get(url, referer = referer)
+            val doc = Jsoup.parse(fallbackResponse.text)
+            
+            maxstreamUrl = doc.selectFirst("iframe[src*=maxstream]")?.attr("src")
+                ?: doc.selectFirst("a[href*=maxstream]")?.attr("href")
+                ?: fallbackResponse.url.takeIf { it.contains("maxstream") }
+        }
 
-        if (stepUrl != null) {
-            // 3. Eseguiamo la richiesta (app.get segue i redirect di default)
-            val finalResponse = app.get(stepUrl, referer = url)
-            val destinationUrl = finalResponse.url
-
-            // Se il reindirizzamento ha portato a MaxStream o a un dominio differente
-            if (destinationUrl.contains("maxstream") || destinationUrl != stepUrl) {
-                loadExtractor(destinationUrl, stepUrl, subtitleCallback, callback)
-            } else {
-                // Se rimane sulla stessa pagina, cerchiamo un eventuale iframe o link all'interno del DOM
-                val doc2 = Jsoup.parse(finalResponse.text)
-                val realUrl = doc2.selectFirst("iframe[src*=maxstream]")?.attr("src")
-                    ?: doc2.selectFirst("a[href*=maxstream]")?.attr("href")
-                    ?: destinationUrl
-
-                loadExtractor(realUrl, stepUrl, subtitleCallback, callback)
-            }
+        // 4. Passiamo l'URL estratto di MaxStream all'estrattore MaxStream.kt
+        maxstreamUrl?.let { finalUrl ->
+            loadExtractor(finalUrl, uprotUrl, subtitleCallback, callback)
         }
     }
 }
