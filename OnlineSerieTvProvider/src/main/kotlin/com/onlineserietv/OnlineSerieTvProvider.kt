@@ -484,46 +484,29 @@ class OnlineSerieTvProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean = withContext(Dispatchers.IO) {
+   override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    // 1. Verifica l'URL o i dati in ingresso
+    println("DEBUG_PROVIDER: Inizio loadLinks per data -> $data")
 
-        val urls = data.split("|").filter { it.isNotBlank() }
+    val document = app.get(data).document
+    // 2. Verifica se l'HTML viene scaricato
+    println("DEBUG_PROVIDER: HTML scaricato, titolo -> ${document.title()}")
 
-        for (rawUrl in urls) {
-            val fixedUrl = fixUrl(rawUrl)
+    // 3. Estrazione iframe/link
+    val iframes = document.select("iframe").map { it.attr("src") }
+    println("DEBUG_PROVIDER: Trovati ${iframes.size} iframe: $iframes")
 
-            // 1. Tenta la risoluzione diretta dell'URL
-            val directSuccess = loadExtractor(fixedUrl, subtitleCallback, callback)
-            if (directSuccess) continue
-
-            // 2. Se è un link esterno/redirect, effettua la GET standard
-            try {
-                val response = app.get(fixedUrl)
-                val destinationUrl = response.url
-
-                if (destinationUrl != fixedUrl && destinationUrl.isNotBlank()) {
-                    val redirectSuccess = loadExtractor(destinationUrl, subtitleCallback, callback)
-                    if (redirectSuccess) continue
-                }
-
-                // 3. Estrazione fallback di iframe o link presenti nella pagina di destinazione
-                val doc = response.document
-                doc.select("iframe[src], a[href]").forEach { element ->
-                    val link = element.attr("src").ifEmpty { element.attr("href") }
-                    if (link.isNotBlank()) {
-                        val fullUrl = fixUrl(link)
-                        loadExtractor(fullUrl, subtitleCallback, callback)
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        return@withContext true
+    iframes.forEach { embedUrl ->
+        // 4. Verifica il caricamento dell'estrattore
+        val loaded = loadExtractor(embedUrl, data, subtitleCallback, callback)
+        println("DEBUG_PROVIDER: Extractor per $embedUrl -> esito $loaded")
     }
+
+    return true
+}
 }
