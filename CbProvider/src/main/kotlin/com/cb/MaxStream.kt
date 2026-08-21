@@ -27,6 +27,66 @@ class MaxStream : ExtractorApi() {
         val response = app.get(url, headers = headers)
         var html = response.text
 
+        android.util.Log.e("MAXSTREAM_DEBUG", "==============================")
+android.util.Log.e("MAXSTREAM_DEBUG", "URL = $url")
+android.util.Log.e("MAXSTREAM_DEBUG", "REFERER = $referer")
+android.util.Log.e("MAXSTREAM_DEBUG", "STATUS = ${response.code}")
+android.util.Log.e("MAXSTREAM_DEBUG", "FINAL URL = ${response.url}")
+android.util.Log.e("MAXSTREAM_DEBUG", "HTML LENGTH = ${html.length}")
+
+val document = org.jsoup.Jsoup.parse(html)
+
+android.util.Log.e("MAXSTREAM_DEBUG", "TITLE = ${document.title()}")
+
+document.select("script").forEachIndexed { index, script ->
+    val src = script.attr("src")
+
+    if (src.isNotBlank()) {
+        android.util.Log.e(
+            "MAXSTREAM_DEBUG",
+            "SCRIPT SRC [$index] = $src"
+        )
+    }
+
+    val content = script.data().ifBlank { script.html() }
+
+    if (content.isNotBlank()) {
+        android.util.Log.e(
+            "MAXSTREAM_DEBUG",
+            "SCRIPT [$index] = ${
+                content.replace("\n", " ").take(5000)
+            }"
+        )
+    }
+}
+
+document.select("iframe").forEachIndexed { index, iframe ->
+    android.util.Log.e(
+        "MAXSTREAM_DEBUG",
+        "IFRAME [$index] = ${iframe.attr("src")}"
+    )
+}
+
+document.select("a[href]").forEachIndexed { index, a ->
+    val href = a.attr("href")
+
+    if (
+        href.contains("maxstream", true) ||
+        href.contains("m3u8", true) ||
+        href.contains("mp4", true)
+    ) {
+        android.util.Log.e(
+            "MAXSTREAM_DEBUG",
+            "LINK [$index] = $href"
+        )
+    }
+}
+
+android.util.Log.e(
+    "MAXSTREAM_DEBUG",
+    "HTML = ${html.take(15000)}"
+)
+
         if (html.contains("eval(function(p,a,c,k,e,d)")) {
             html = getPackedJs(html) ?: html
         }
