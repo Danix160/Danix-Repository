@@ -1,6 +1,5 @@
 package com.cb
 
-import android.util.Base64
 import com.lagradost.api.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.app
@@ -823,31 +822,6 @@ document
             this.posterUrl = poster
             this.plot = plot
             addSeasonNames(seasonsData)
-        }
-    }
-
-    private suspend fun resolveMaxstreamAdvanced(url: String): String? {
-        return try {
-            val doc = app.get(url).document
-            val html = doc.html()
-
-            val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""")
-                .find(html)?.groupValues?.getOrNull(1)
-
-            val b64Val = Regex("""decodedEncryptedVal\s*=\s*atob\(["']([^"']+)["']\)""")
-                .find(html)?.groupValues?.getOrNull(1)
-
-            if (!b64Base.isNullOrBlank() && !b64Val.isNullOrBlank()) {
-                val decodedBase = String(Base64.decode(b64Base, Base64.DEFAULT))
-                val decodedVal = String(Base64.decode(b64Val, Base64.DEFAULT))
-                val finalUrl = decodedBase + decodedVal
-                if (finalUrl.isNotBlank()) return finalUrl
-            }
-
-            null
-        } catch (e: Exception) {
-            Log.e("CB01:MaxstreamAdvanced", "Errore nella decodifica avanzata Maxstream: ${e.message}")
-            null
         }
     }
 
