@@ -77,18 +77,74 @@ class Uprot : ExtractorApi() {
 
 val document = Jsoup.parse(html)
 
+Log.d(TAG, "TITLE = ${document.title()}")
+
+Log.d(
+    TAG,
+    "BODY TEXT = ${
+        document.body()
+            ?.text()
+            ?.take(2000)
+    }"
+)
+
+document.select("form").forEachIndexed { index, form ->
+    Log.d(
+        TAG,
+        "FORM HTML [$index] = ${
+            form.outerHtml()
+                .replace("\n", " ")
+                .take(5000)
+        }"
+    )
+}
+
+document.select("button").forEachIndexed { index, button ->
+    Log.d(
+        TAG,
+        "BUTTON [$index] = ${button.outerHtml().replace("\n", " ").take(1000)}"
+    )
+}
+
+document.select("input").forEachIndexed { index, input ->
+    Log.d(
+        TAG,
+        "INPUT FULL [$index] = ${input.outerHtml()}"
+    )
+}
+
+document.select("[class*=captcha], [id*=captcha], [class*=capt], [id*=capt]").forEach {
+    Log.d(
+        TAG,
+        "CAPTCHA ELEMENT = ${
+            it.outerHtml()
+                .replace("\n", " ")
+                .take(3000)
+        }"
+    )
+}
+
 document.select("script").forEachIndexed { index, script ->
 
     val src = script.attr("src")
 
     if (src.isNotBlank()) {
-        Log.d(
-            TAG,
-            "SCRIPT SRC [$index] = $src"
-        )
+        Log.d(TAG, "SCRIPT SRC [$index] = $src")
     }
 
-    val content = script.html()
+    val content = script.data()
+        .ifBlank { script.html() }
+
+    if (content.isNotBlank()) {
+        Log.d(
+            TAG,
+            "SCRIPT INLINE [$index] = ${
+                content
+                    .replace("\n", " ")
+                    .take(1500)
+            }"
+        )
+    }
 
     val interesting =
         content.contains("fetch(", true) ||
@@ -99,7 +155,6 @@ document.select("script").forEachIndexed { index, script ->
         content.contains("/ms", true)
 
     if (interesting) {
-
         Log.d(
             TAG,
             "SCRIPT INTERESSANTE [$index] = ${
