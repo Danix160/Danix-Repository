@@ -410,7 +410,7 @@ object UprotWebView {
             webView.loadUrl(
                 url,
                 mapOf(
-                    "Referer" to "https://onlineserietv.mom/"
+                    "Referer" to "https://cb01uno.cam/"
                 )
             )
         }
