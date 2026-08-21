@@ -235,53 +235,79 @@ object UprotWebView {
                 object : WebViewClient() {
 
                     private fun checkUrl(
-                        targetUrl: String?
-                    ): Boolean {
-                    
-                        val target = targetUrl ?: return false
-                    
-                        Log.d(TAG, "NAV = $target")
-                    
-                        val uri = try {
-                            android.net.Uri.parse(target)
-                        } catch (_: Exception) {
-                            return true
-                        }
-                    
-                        val host = uri.host?.lowercase().orEmpty()
-                    
-                        // Link finale valido
-                        if (
-                            host == "maxstream.video" &&
-                            (
-                                target.contains("/uprots/", ignoreCase = true) ||
-                                target.contains("/uprotem/", ignoreCase = true) ||
-                                target.contains("/emiuhi/", ignoreCase = true)
-                            )
-                        ) {
-                            Log.d(TAG, "MAXSTREAM intercettato: $target")
-                        
-                            finish(target)
-                            return true
-                        }
-                    
-                        // Uprot deve poter navigare normalmente
-                        if (
-                            host == "uprot.net" ||
-                            host.endsWith(".uprot.net")
-                        ) {
-                            return false
-                        }
-                    
-                        // Tutto il resto viene bloccato
-                        Log.d(
-                            TAG,
-                            "Navigazione esterna bloccata: $target"
-                        )
-                    
-                        return true
-                    }
-
+                                targetUrl: String?
+                            ): Boolean {
+                            
+                                val target = targetUrl ?: return false
+                            
+                                Log.d(TAG, "NAV = $target")
+                            
+                                val uri =
+                                    try {
+                                        android.net.Uri.parse(target)
+                                    } catch (_: Exception) {
+                                        return true
+                                    }
+                            
+                                val host =
+                                    uri.host
+                                        ?.lowercase()
+                                        .orEmpty()
+                            
+                                // MaxStream finale valido
+                                if (
+                                    host.equals(
+                                        "maxstream.video",
+                                        ignoreCase = true
+                                    ) &&
+                                    (
+                                        target.contains(
+                                            "/uprotem/",
+                                            ignoreCase = true
+                                        ) ||
+                                        target.contains(
+                                            "/emiuhi/",
+                                            ignoreCase = true
+                                        ) ||
+                                        target.contains(
+                                            "/uprots/",
+                                            ignoreCase = true
+                                        )
+                                    )
+                                ) {
+                            
+                                    Log.d(
+                                        TAG,
+                                        "MAXSTREAM intercettato dalla navigazione: $target"
+                                    )
+                            
+                                    finish(target)
+                            
+                                    return true
+                                }
+                            
+                                // Navigazione interna Uprot consentita
+                                if (
+                                    host.equals(
+                                        "uprot.net",
+                                        ignoreCase = true
+                                    ) ||
+                                    host.endsWith(
+                                        ".uprot.net",
+                                        ignoreCase = true
+                                    )
+                                ) {
+                                    return false
+                                }
+                            
+                                // Pubblicità / popup / redirect esterni
+                                Log.d(
+                                    TAG,
+                                    "Navigazione esterna bloccata: $target"
+                                )
+                            
+                                return true
+                            }
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         request: WebResourceRequest?
@@ -326,25 +352,78 @@ object UprotWebView {
                         )
 
                         fun searchMaxstream(attempt: Int = 0) {
-                        
-                            if (completed || attempt >= 20) {
+
+                            if (completed || attempt >= 30) {
                                 return
                             }
                         
                             view?.evaluateJavascript(
                                 """
                                 (function() {
-                                    var links = document.querySelectorAll('a[href]');
                         
-                                    for (var i = 0; i < links.length; i++) {
-                                        var href = links[i].href || "";
+                                    // 1. Prima cerchiamo il vero pulsante Continue
+                                    var button = document.querySelector('button#buttok');
+                        
+                                    if (button) {
+                                        var parent = button.closest('a[href]');
+                        
+                                        if (parent && parent.href) {
+                                            var href = parent.href;
+                        
+                                            if (
+                                                href.indexOf('https://maxstream.video/uprotem/') === 0 ||
+                                                href.indexOf('https://maxstream.video/emiuhi/') === 0 ||
+                                                href.indexOf('https://maxstream.video/uprots/') === 0
+                                            ) {
+                                                return href;
+                                            }
+                                        }
+                                    }
+                        
+                                    // 2. Cerchiamo un anchor che contenga un button Continue
+                                    var anchors = document.querySelectorAll('a[href]');
+                        
+                                    for (var i = 0; i < anchors.length; i++) {
+                        
+                                        var a = anchors[i];
+                                        var btn = a.querySelector('button');
+                        
+                                        if (!btn)
+                                            continue;
+                        
+                                        var text =
+                                            (btn.innerText || btn.textContent || '')
+                                                .replace(/\s+/g, '')
+                                                .toUpperCase();
+                        
+                                        var href = a.href || '';
                         
                                         if (
-                                            href.indexOf('https://maxstream.video/uprots/') === 0 ||
-                                            href.indexOf('https://maxstream.video/uprotem/') === 0 ||
-                                            href.indexOf('https://maxstream.video/emiuhi/') === 0
+                                            text.indexOf('CONTINUE') !== -1 &&
+                                            (
+                                                href.indexOf('https://maxstream.video/uprotem/') === 0 ||
+                                                href.indexOf('https://maxstream.video/emiuhi/') === 0 ||
+                                                href.indexOf('https://maxstream.video/uprots/') === 0
+                                            )
                                         ) {
                                             return href;
+                                        }
+                                    }
+                        
+                                    // 3. Come fallback preferiamo i nuovi /uprotem/
+                                    for (var j = 0; j < anchors.length; j++) {
+                        
+                                        var fallbackHref = anchors[j].href || '';
+                        
+                                        if (
+                                            fallbackHref.indexOf(
+                                                'https://maxstream.video/uprotem/'
+                                            ) === 0 ||
+                                            fallbackHref.indexOf(
+                                                'https://maxstream.video/emiuhi/'
+                                            ) === 0
+                                        ) {
+                                            return fallbackHref;
                                         }
                                     }
                         
@@ -370,7 +449,7 @@ object UprotWebView {
                         
                                     Log.d(
                                         TAG,
-                                        "MAXSTREAM trovato automaticamente: $maxstreamUrl"
+                                        "MAXSTREAM Continue reale trovato: $maxstreamUrl"
                                     )
                         
                                     finish(maxstreamUrl)
