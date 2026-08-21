@@ -491,6 +491,118 @@ class OnlineSerieTvProvider : MainAPI() {
     callback: (ExtractorLink) -> Unit
 ): Boolean {
 
+    println("OSTV LOADLINKS DATA = $data")
+
+    /*
+     * FILM
+     *
+     * Per i film `data` è la pagina OnlineSerieTv.
+     * Prima dobbiamo aprirla e trovare i veri player.
+     */
+    if (
+        data.contains("/film/", ignoreCase = true) ||
+        data.contains("/movies/", ignoreCase = true)
+    ) {
+
+        println("OSTV: rilevata pagina FILM")
+
+        val document = app.get(
+            data,
+            referer = mainUrl
+        ).document
+
+        val playerUrls = mutableSetOf<String>()
+
+        // Link normali
+        document.select("a[href]").forEach { element ->
+
+            val href = element.attr("href").trim()
+
+            if (href.isNotBlank()) {
+
+                val fixed = fixUrl(href)
+
+                if (
+                    fixed.contains("uprot.net", ignoreCase = true) ||
+                    fixed.contains("maxstream.video", ignoreCase = true)
+                ) {
+                    println("OSTV FILM LINK = $fixed")
+                    playerUrls.add(fixed)
+                }
+            }
+        }
+
+        // Eventuali iframe
+        document.select("iframe[src]").forEach { iframe ->
+
+            val src = iframe.attr("src").trim()
+
+            if (src.isNotBlank()) {
+
+                val fixed = fixUrl(src)
+
+                if (
+                    fixed.contains("uprot.net", ignoreCase = true) ||
+                    fixed.contains("maxstream.video", ignoreCase = true)
+                ) {
+                    println("OSTV FILM IFRAME = $fixed")
+                    playerUrls.add(fixed)
+                }
+            }
+        }
+
+        // Alcuni link possono essere dentro attributi data-*
+        document.select("[data-link], [data-url], [data-src]").forEach { element ->
+
+            listOf(
+                element.attr("data-link"),
+                element.attr("data-url"),
+                element.attr("data-src")
+            ).forEach { value ->
+
+                val candidate = value.trim()
+
+                if (candidate.isNotBlank()) {
+
+                    val fixed = fixUrl(candidate)
+
+                    if (
+                        fixed.contains("uprot.net", ignoreCase = true) ||
+                        fixed.contains("maxstream.video", ignoreCase = true)
+                    ) {
+                        println("OSTV FILM DATA LINK = $fixed")
+                        playerUrls.add(fixed)
+                    }
+                }
+            }
+        }
+
+        println(
+            "OSTV FILM: trovati ${playerUrls.size} player"
+        )
+
+        playerUrls.forEach { playerUrl ->
+
+            println(
+                "OSTV FILM -> loadExtractor = $playerUrl"
+            )
+
+            loadExtractor(
+                playerUrl,
+                data,
+                subtitleCallback,
+                callback
+            )
+        }
+
+        return true
+    }
+
+    /*
+     * SERIE TV
+     *
+     * Manteniamo la logica che già funziona.
+     */
     val urls = data
         .split("|")
         .map { it.trim() }
