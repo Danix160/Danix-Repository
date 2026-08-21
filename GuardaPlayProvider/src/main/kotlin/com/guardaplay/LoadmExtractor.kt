@@ -167,7 +167,15 @@ Log.e(
         html.take(20000)
     }"
 )
+       return
 
-return
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "ERRORE LOADM DIAGNOSTICO: ${e.message}",
+                e
+            )
+        }
     }
 }
