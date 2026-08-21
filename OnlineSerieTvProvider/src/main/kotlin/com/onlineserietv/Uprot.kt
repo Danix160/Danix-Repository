@@ -310,3 +310,13 @@ if (!maxstreamUrl.isNullOrBlank()) {
 } else {
     Log.e(TAG, "NESSUN MAXSTREAM TROVATO")
 }
+
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "ERRORE UPROT: ${e.message}",
+                e
+            )
+        }
+    }
+}
