@@ -308,38 +308,38 @@ object UprotWebView {
                         checkUrl(url)
                     }
 
-                    override fun onPageFinished(
+                                       override fun onPageFinished(
                         view: WebView?,
                         url: String?
                     ) {
                         Log.d(TAG, "PAGE FINISH = $url")
-                    
+
                         val cookies =
                             CookieManager.getInstance()
                                 .getCookie("https://uprot.net")
-                    
+
                         Log.d(
                             TAG,
                             "Cookie Uprot dopo pagina presenti = ${
                                 !cookies.isNullOrBlank()
                             }"
                         )
-                    
+
                         view?.evaluateJavascript(
                             """
                             (function() {
                                 var btn = document.querySelector('button#buttok');
-                    
+
                                 if (!btn) {
                                     return "";
                                 }
-                    
+
                                 var link = btn.closest('a');
-                    
+
                                 if (!link || !link.href) {
                                     return "";
                                 }
-                    
+
                                 if (
                                     link.href.indexOf('https://maxstream.video/uprots/') === 0 ||
                                     link.href.indexOf('https://maxstream.video/uprotem/') === 0 ||
@@ -347,12 +347,12 @@ object UprotWebView {
                                 ) {
                                     return link.href;
                                 }
-                    
+
                                 return "";
                             })();
                             """.trimIndent()
                         ) { result ->
-                    
+
                             val maxstreamUrl =
                                 result
                                     ?.trim()
@@ -365,19 +365,20 @@ object UprotWebView {
                                             ignoreCase = true
                                         )
                                     }
-                    
+
                             if (!maxstreamUrl.isNullOrBlank()) {
-                    
                                 Log.d(
                                     TAG,
                                     "MAXSTREAM trovato automaticamente: $maxstreamUrl"
                                 )
-                    
+
                                 finish(maxstreamUrl)
                             }
                         }
                     }
+                }
 
+            // Siamo FUORI da WebViewClient
             Log.d(TAG, "Apro WebView: $url")
 
             val existingCookies =
@@ -396,8 +397,7 @@ object UprotWebView {
             webView.loadUrl(
                 url,
                 mapOf(
-                    "Referer" to
-                        "https://onlineserietv.mom/"
+                    "Referer" to "https://onlineserietv.mom/"
                 )
             )
         }
