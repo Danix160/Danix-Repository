@@ -8,6 +8,7 @@ import android.content.Context
 class CbPlugin: Plugin() {
     override fun load(context: Context) {
         // Registra il provider definito sopra nella classe ToonItaliaProvider
+        UprotWebView.setContext(context)
         registerMainAPI(CbProvider())
         registerExtractorAPI(Uprot())
         registerExtractorAPI(MaxStream())
