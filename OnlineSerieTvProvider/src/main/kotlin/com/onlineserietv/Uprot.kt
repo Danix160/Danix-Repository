@@ -2,7 +2,6 @@ package com.onlineserietv
 
 import android.util.Base64
 import android.util.Log
-import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
@@ -269,12 +268,39 @@ val isCaptchaPage =
     document.selectFirst(".upcaptcha-box") != null
 
 if (isCaptchaPage) {
-    Log.w(TAG, "UPCaptcha richiesto: apertura verifica manuale")
 
-    CloudStreamApp.openBrowser(
-        mseUrl,
-        true
+    Log.w(
+        TAG,
+        "UPCaptcha richiesto: apro WebView interna"
     )
+
+    val webViewResult =
+        UprotWebView.resolve(
+            mseUrl,
+            USER_AGENT
+        )
+
+    Log.d(
+        TAG,
+        "Risultato WebView Uprot = $webViewResult"
+    )
+
+    if (!webViewResult.isNullOrBlank()) {
+
+        loadExtractor(
+            webViewResult,
+            mseUrl,
+            subtitleCallback,
+            callback
+        )
+
+    } else {
+
+        Log.e(
+            TAG,
+            "WebView chiusa senza link MaxStream"
+        )
+    }
 
     return
 }
