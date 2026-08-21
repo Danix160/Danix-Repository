@@ -308,7 +308,7 @@ object UprotWebView {
                         checkUrl(url)
                     }
 
-                                       override fun onPageFinished(
+                    override fun onPageFinished(
                         view: WebView?,
                         url: String?
                     ) {
@@ -325,56 +325,69 @@ object UprotWebView {
                             }"
                         )
 
-                        view?.evaluateJavascript(
-                            """
-                            (function() {
-                                var btn = document.querySelector('button#buttok');
-
-                                if (!btn) {
-                                    return "";
-                                }
-
-                                var link = btn.closest('a');
-
-                                if (!link || !link.href) {
-                                    return "";
-                                }
-
-                                if (
-                                    link.href.indexOf('https://maxstream.video/uprots/') === 0 ||
-                                    link.href.indexOf('https://maxstream.video/uprotem/') === 0 ||
-                                    link.href.indexOf('https://maxstream.video/emiuhi/') === 0
-                                ) {
-                                    return link.href;
-                                }
-
-                                return "";
-                            })();
-                            """.trimIndent()
-                        ) { result ->
-
-                            val maxstreamUrl =
-                                result
-                                    ?.trim()
-                                    ?.removePrefix("\"")
-                                    ?.removeSuffix("\"")
-                                    ?.replace("\\/", "/")
-                                    ?.takeIf {
-                                        it.startsWith(
-                                            "https://maxstream.video/",
-                                            ignoreCase = true
-                                        )
+                        fun searchMaxstream(attempt: Int = 0) {
+                        
+                            if (completed || attempt >= 20) {
+                                return
+                            }
+                        
+                            view?.evaluateJavascript(
+                                """
+                                (function() {
+                                    var links = document.querySelectorAll('a[href]');
+                        
+                                    for (var i = 0; i < links.length; i++) {
+                                        var href = links[i].href || "";
+                        
+                                        if (
+                                            href.indexOf('https://maxstream.video/uprots/') === 0 ||
+                                            href.indexOf('https://maxstream.video/uprotem/') === 0 ||
+                                            href.indexOf('https://maxstream.video/emiuhi/') === 0
+                                        ) {
+                                            return href;
+                                        }
                                     }
-
-                            if (!maxstreamUrl.isNullOrBlank()) {
-                                Log.d(
-                                    TAG,
-                                    "MAXSTREAM trovato automaticamente: $maxstreamUrl"
-                                )
-
-                                finish(maxstreamUrl)
+                        
+                                    return "";
+                                })();
+                                """.trimIndent()
+                            ) { result ->
+                        
+                                val maxstreamUrl =
+                                    result
+                                        ?.trim()
+                                        ?.removePrefix("\"")
+                                        ?.removeSuffix("\"")
+                                        ?.replace("\\/", "/")
+                                        ?.takeIf {
+                                            it.startsWith(
+                                                "https://maxstream.video/",
+                                                ignoreCase = true
+                                            )
+                                        }
+                        
+                                if (!maxstreamUrl.isNullOrBlank()) {
+                        
+                                    Log.d(
+                                        TAG,
+                                        "MAXSTREAM trovato automaticamente: $maxstreamUrl"
+                                    )
+                        
+                                    finish(maxstreamUrl)
+                        
+                                } else {
+                        
+                                    view?.postDelayed(
+                                        {
+                                            searchMaxstream(attempt + 1)
+                                        },
+                                        500L
+                                    )
+                                }
                             }
                         }
+                        
+                        searchMaxstream()
                     }
                 }
 
