@@ -1,9 +1,12 @@
 package com.cb
 
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.SubtitleFile
-import android.util.Base64
+import com.lagradost.cloudstream3.utils.ExtractorApi
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class MaxStream : ExtractorApi() {
     override val name = "MaxStream"
@@ -13,85 +16,72 @@ class MaxStream : ExtractorApi() {
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (SubtitleFile) -> Unit,
+        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        var cleanUrl = url.trim()
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Referer" to (referer ?: url)
+        )
 
-        // Fix link tipo /watchfree/ID1/ID2/token
-        if (cleanUrl.contains("watchfree/")) {
-            val parts = cleanUrl.split("watchfree/")[1].removeSuffix("/").split("/")
-            val videoId = if (parts.size == 3) parts[1] else parts[0]
-            cleanUrl = "https://maxstream.video/emvvv/$videoId"
+        val response = app.get(url, headers = headers)
+        var html = response.text
+
+        if (html.contains("eval(function(p,a,c,k,e,d)")) {
+            html = getPackedJs(html) ?: html
         }
 
-        // Fix link Uprot → Maxstream
-        if (cleanUrl.contains("uprots.com/v/")) {
-            cleanUrl = cleanUrl.replace("uprots.com/v/", "maxstream.video/emvvv/")
-        }
+        val streamUrlRegex = """https?://[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*""".toRegex()
+        val matches = streamUrlRegex.findAll(html).map { it.value }.distinct().toList()
 
-        val response = app.get(cleanUrl, referer = referer)
-        val html = response.text
+        for (streamUrl in matches) {
+            val isM3u8 = streamUrl.contains(".m3u8")
 
-        // 1️⃣ Regex classico: sources: [{src:"..."}]
-        val classicRegex = Regex("""sources\s*[:=]\s*
+            if (isM3u8) {
+                // Utilizzo della funzione generateM3u8 nativa
+                val m3u8Links = M3u8Helper.generateM3u8(
+                    source = this.name,
+                    streamUrl = streamUrl,
+                    referer = url,
+                    headers = headers
+                )
 
-\[\s*\{\s*src\s*[:=]\s*["']([^"']+)["']""")
-        classicRegex.find(html)?.groupValues?.getOrNull(1)?.let { src ->
-            return callback(
-                newExtractorLink(
-                    source = name,
-                    name = name,
-                    url = src,
-                    type = if (src.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = cleanUrl
-                    this.quality = Qualities.Unknown.value
+                if (m3u8Links.isNotEmpty()) {
+                    m3u8Links.forEach(callback)
+                } else {
+                    // Fallback nel caso la lista master M3U8 sia singola
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = this.name,
+                            url = streamUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = url
+                            this.headers = headers
+                            this.quality = Qualities.Unknown.value
+                        }
+                    )
                 }
-            )
-        }
-
-        // 2️⃣ Decodifica avanzata: decodedBaseUrl + decodedEncryptedVal
-        val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""")
-            .find(html)?.groupValues?.getOrNull(1)
-
-        val b64Val = Regex("""decodedEncryptedVal\s*=\s*atob\(["']([^"']+)["']\)""")
-            .find(html)?.groupValues?.getOrNull(1)
-
-        if (!b64Base.isNullOrBlank() && !b64Val.isNullOrBlank()) {
-            try {
-                val decodedBase = String(Base64.decode(b64Base, Base64.DEFAULT))
-                val decodedVal = String(Base64.decode(b64Val, Base64.DEFAULT))
-                val finalUrl = decodedBase + decodedVal
-
-                return callback(
+            } else {
+                callback.invoke(
                     newExtractorLink(
-                        source = name,
-                        name = name,
-                        url = finalUrl,
-                        type = if (finalUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        source = this.name,
+                        name = this.name,
+                        url = streamUrl,
+                        type = ExtractorLinkType.VIDEO
                     ) {
-                        this.referer = cleanUrl
+                        this.referer = url
+                        this.headers = headers
                         this.quality = Qualities.Unknown.value
                     }
                 )
-            } catch (_: Exception) {}
+            }
         }
+    }
 
-        // 3️⃣ Regex fallback: src:"..."
-        val fallbackRegex = Regex("""src\s*[:=]\s*["']([^"']+)["']""")
-        fallbackRegex.find(html)?.groupValues?.getOrNull(1)?.let { src ->
-            return callback(
-                newExtractorLink(
-                    source = name,
-                    name = name,
-                    url = src,
-                    type = if (src.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = cleanUrl
-                    this.quality = Qualities.Unknown.value
-                }
-            )
-        }
+    private fun getPackedJs(html: String): String? {
+        val packedRegex = """eval\(function\(p,a,c,k,e,d\).*?\}\((.*?)\)\)""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        return packedRegex.find(html)?.value
     }
 }
