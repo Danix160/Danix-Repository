@@ -2,6 +2,7 @@ package com.onlineserietv
 
 import android.util.Base64
 import android.util.Log
+import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
@@ -263,62 +264,49 @@ document.select("*").forEach { element ->
                     "MAXSTREAM DA BASE64 = $maxstreamUrl"
                 )
             }
+val isCaptchaPage =
+    document.selectFirst("#upcaptcha-form") != null ||
+    document.selectFirst(".upcaptcha-box") != null
 
-           if (maxstreamUrl == null) {
+if (isCaptchaPage) {
+    Log.w(TAG, "UPCaptcha richiesto: apertura verifica manuale")
 
-    maxstreamUrl =
-        document.selectFirst(
-            "iframe[src*=maxstream]"
-        )?.attr("src")
-            ?: document.selectFirst(
-                "iframe[src*=max]"
-            )?.attr("src")
-            ?: document.selectFirst(
-                "a[href*=maxstream]"
-            )?.attr("href")
-            ?: document.selectFirst(
-                "a[href*=max]"
-            )?.attr("href")
-
-    Log.d(
-        TAG,
-        "MAXSTREAM DA DOM = $maxstreamUrl"
+    CloudStreamApp.openBrowser(
+        mseUrl,
+        true
     )
+
+    return
+}
+if (maxstreamUrl.isNullOrBlank()) {
+    maxstreamUrl =
+        document.selectFirst("button#buttok")
+            ?.parent()
+            ?.attr("href")
+            ?.takeIf {
+                it.startsWith("https://maxstream.video/uprots/")
+            }
 }
 
-            if (!maxstreamUrl.isNullOrBlank()) {
-
-                if (maxstreamUrl.startsWith("//")) {
-                    maxstreamUrl = "https:$maxstreamUrl"
-                }
-
-                Log.d(
-                    TAG,
-                    "PASSO A MAXSTREAM: $maxstreamUrl"
-                )
-
-                loadExtractor(
-                    maxstreamUrl,
-                    mseUrl,
-                    subtitleCallback,
-                    callback
-                )
-
-            } else {
-
-                Log.e(
-                    TAG,
-                    "NESSUN MAXSTREAM TROVATO"
-                )
+if (maxstreamUrl.isNullOrBlank()) {
+    maxstreamUrl =
+        document
+            .select("a[href*='maxstream.video/uprots/']")
+            .firstOrNull { a ->
+                a.selectFirst("button#buttok") != null
             }
+            ?.attr("href")
+}
 
-        } catch (e: Exception) {
+if (!maxstreamUrl.isNullOrBlank()) {
+    Log.d(TAG, "PASSO A MAXSTREAM: $maxstreamUrl")
 
-            Log.e(
-                TAG,
-                "ERRORE UPROT: ${e.message}",
-                e
-            )
-        }
-    }
+    loadExtractor(
+        maxstreamUrl,
+        mseUrl,
+        subtitleCallback,
+        callback
+    )
+} else {
+    Log.e(TAG, "NESSUN MAXSTREAM TROVATO")
 }
