@@ -2,6 +2,7 @@ package com.altadefinizione01
 
 import android.util.Log
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import kotlinx.coroutines.Dispatchers
@@ -577,6 +578,17 @@ class Altadefinizione01Provider : MainAPI() {
                     )
                     .toIntOrNull()
 
+                    val imdbNumeric =
+                        findVidxGoImdb(document)
+                    
+                    val imdbId =
+                        imdbNumeric?.let { "tt$it" }
+                    
+                    Log.d(
+                        TAG,
+                        "IMDB LOAD = $imdbId"
+                    )
+
             // ====================================================
             // MOVIE
             // ====================================================
@@ -598,6 +610,10 @@ class Altadefinizione01Provider : MainAPI() {
 
                     this.year =
                         year
+                    
+                    imdbId?.let {
+                    this.addImdbId(it)
+                    }
 
                     if (
                         duration != null &&
@@ -1041,6 +1057,10 @@ class Altadefinizione01Provider : MainAPI() {
 
                 this.year =
                     year
+               
+                imdbId?.let {
+                this.addImdbId(it)
+                }
             }
         }
 
