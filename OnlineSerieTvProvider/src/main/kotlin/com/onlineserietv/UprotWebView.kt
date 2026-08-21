@@ -2,6 +2,8 @@ package com.onlineserietv
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -14,33 +16,74 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ProgressBar
-import com.lagradost.cloudstream3.CloudStreamApp
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.lang.ref.WeakReference
 import kotlin.coroutines.resume
 
 object UprotWebView {
 
     private const val TAG = "UPROT_WEBVIEW"
 
+    private var activityRef: WeakReference<Activity>? = null
+
+    fun setContext(context: Context) {
+        val activity = context.findActivity()
+
+        if (activity != null) {
+            activityRef = WeakReference(activity)
+
+            Log.e(
+                TAG,
+                "Activity CloudStream registrata: ${activity.javaClass.name}"
+            )
+        } else {
+            Log.e(
+                TAG,
+                "Impossibile trovare Activity dal context: ${context.javaClass.name}"
+            )
+        }
+    }
+
+    private fun Context.findActivity(): Activity? {
+        var current: Context? = this
+
+        while (current is ContextWrapper) {
+            if (current is Activity) {
+                return current
+            }
+
+            val base = current.baseContext
+
+            if (base === current) {
+                break
+            }
+
+            current = base
+        }
+
+        return current as? Activity
+    }
+
     suspend fun resolve(
         url: String,
         userAgent: String
     ): String? = suspendCancellableCoroutine { continuation ->
-     Log.e(TAG, ">>> UprotWebView.resolve CHIAMATA <<<")
-     Log.e(TAG, "URL = $url")
 
-        val context = CloudStreamApp.context
+        Log.e(TAG, ">>> UprotWebView.resolve CHIAMATA <<<")
+        Log.e(TAG, "URL = $url")
 
-        val activity = when (context) {
-            is Activity -> context
-            else -> null
-        }
+        val activity = activityRef?.get()
 
         if (activity == null) {
             Log.e(TAG, "Activity CloudStream non disponibile")
             continuation.resume(null)
             return@suspendCancellableCoroutine
         }
+
+        Log.e(
+            TAG,
+            "Uso Activity: ${activity.javaClass.name}"
+        )
 
         activity.runOnUiThread {
 
