@@ -16,9 +16,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ProgressBar
+import android.webkit.CookieManager
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.lang.ref.WeakReference
 import kotlin.coroutines.resume
+
 
 object UprotWebView {
 
@@ -94,6 +96,11 @@ object UprotWebView {
             val container = FrameLayout(activity)
 
             val webView = WebView(activity)
+
+            val cookieManager = CookieManager.getInstance()
+
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
 
             val progressBar = ProgressBar(
                 activity,
@@ -193,70 +200,91 @@ object UprotWebView {
                 userAgentString = userAgent
 
                 javaScriptCanOpenWindowsAutomatically = false
+                setSupportMultipleWindows(false)
                 mediaPlaybackRequiresUserGesture = true
             }
 
             webView.webChromeClient =
                 object : WebChromeClient() {
-
+            
                     override fun onProgressChanged(
                         view: WebView?,
                         newProgress: Int
                     ) {
-
                         progressBar.progress = newProgress
-
+            
                         progressBar.visibility =
                             if (newProgress >= 100)
                                 android.view.View.GONE
                             else
                                 android.view.View.VISIBLE
                     }
+            
+                    override fun onCreateWindow(
+                        view: WebView?,
+                        isDialog: Boolean,
+                        isUserGesture: Boolean,
+                        resultMsg: android.os.Message?
+                    ): Boolean {
+                        Log.d(TAG, "Popup bloccato")
+                        return false
+                    }
                 }
 
-            webView.webViewClient =
+                        webView.webViewClient =
                 object : WebViewClient() {
 
                     private fun checkUrl(
                         targetUrl: String?
                     ): Boolean {
-
-                        val target =
-                            targetUrl ?: return false
-
-                        Log.d(
-                            TAG,
-                            "NAV = $target"
-                        )
-
-                        if (
-                            target.contains(
-                                "maxstream.video/uprots/",
-                                ignoreCase = true
-                            ) ||
-                            target.contains(
-                                "maxstream.video/emiuhi/",
-                                ignoreCase = true
-                            )
-                        ) {
-
-                            finish(target)
-
+                    
+                        val target = targetUrl ?: return false
+                    
+                        Log.d(TAG, "NAV = $target")
+                    
+                        val uri = try {
+                            android.net.Uri.parse(target)
+                        } catch (_: Exception) {
                             return true
                         }
-
-                        return false
+                    
+                        val host = uri.host?.lowercase().orEmpty()
+                    
+                        // Link finale valido
+                        if (
+                            host == "maxstream.video" &&
+                            (
+                                target.contains("/uprots/", ignoreCase = true) ||
+                                target.contains("/emiuhi/", ignoreCase = true)
+                            )
+                        ) {
+                            finish(target)
+                            return true
+                        }
+                    
+                        // Uprot deve poter navigare normalmente
+                        if (
+                            host == "uprot.net" ||
+                            host.endsWith(".uprot.net")
+                        ) {
+                            return false
+                        }
+                    
+                        // Tutto il resto viene bloccato
+                        Log.d(
+                            TAG,
+                            "Navigazione esterna bloccata: $target"
+                        )
+                    
+                        return true
                     }
 
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         request: WebResourceRequest?
                     ): Boolean {
-
                         return checkUrl(
-                            request
-                                ?.url
-                                ?.toString()
+                            request?.url?.toString()
                         )
                     }
 
@@ -265,7 +293,6 @@ object UprotWebView {
                         view: WebView?,
                         url: String?
                     ): Boolean {
-
                         return checkUrl(url)
                     }
 
@@ -274,12 +301,7 @@ object UprotWebView {
                         url: String?,
                         favicon: Bitmap?
                     ) {
-
-                        Log.d(
-                            TAG,
-                            "PAGE START = $url"
-                        )
-
+                        Log.d(TAG, "PAGE START = $url")
                         checkUrl(url)
                     }
 
@@ -287,17 +309,32 @@ object UprotWebView {
                         view: WebView?,
                         url: String?
                     ) {
+                        Log.d(TAG, "PAGE FINISH = $url")
+
+                        val cookies =
+                            CookieManager.getInstance()
+                                .getCookie("https://uprot.net")
 
                         Log.d(
                             TAG,
-                            "PAGE FINISH = $url"
+                            "Cookie Uprot dopo pagina presenti = ${
+                                !cookies.isNullOrBlank()
+                            }"
                         )
                     }
                 }
 
+            Log.d(TAG, "Apro WebView: $url")
+
+            val existingCookies =
+                CookieManager.getInstance()
+                    .getCookie("https://uprot.net")
+
             Log.d(
                 TAG,
-                "Apro WebView: $url"
+                "Cookie Uprot presenti = ${
+                    !existingCookies.isNullOrBlank()
+                }"
             )
 
             dialog.show()
