@@ -145,32 +145,72 @@ object UprotWebView {
             }
 
             fun finish(result: String?) {
-
-                if (completed)
-                    return
-
-                completed = true
-
-                Log.d(
-                    TAG,
-                    "Risultato WebView = $result"
-                )
-
-                try {
-                    webView.stopLoading()
-                    webView.destroy()
-                } catch (_: Exception) {
+                
+                    if (completed)
+                        return
+                
+                    completed = true
+                
+                    Log.d(
+                        TAG,
+                        "Risultato WebView = $result"
+                    )
+                
+                    val cookieManager =
+                        CookieManager.getInstance()
+                
+                    val uprotCookies =
+                        cookieManager.getCookie(
+                            "https://uprot.net"
+                        ).orEmpty()
+                
+                    val maxstreamCookies =
+                        cookieManager.getCookie(
+                            "https://maxstream.video"
+                        ).orEmpty()
+                
+                    val allCookies =
+                        listOf(
+                            uprotCookies,
+                            maxstreamCookies
+                        )
+                            .filter { it.isNotBlank() }
+                            .joinToString("; ")
+                
+                    UprotSession.cookieHeader = allCookies
+                    UprotSession.userAgent =
+                        webView.settings.userAgentString.orEmpty()
+                
+                    Log.d(
+                        TAG,
+                        "Cookie sessione salvati = ${allCookies.isNotBlank()}"
+                    )
+                
+                    try {
+                        webView.stopLoading()
+                    } catch (_: Exception) {
+                    }
+                
+                    try {
+                        dialog.dismiss()
+                    } catch (_: Exception) {
+                    }
+                
+                    /*
+                     * Distruggiamo solo DOPO aver tolto
+                     * la WebView dalla finestra.
+                     */
+                    webView.post {
+                        try {
+                            webView.destroy()
+                        } catch (_: Exception) {
+                        }
+                    }
+                
+                    if (continuation.isActive) {
+                        continuation.resume(result)
+                    }
                 }
-
-                try {
-                    dialog.dismiss()
-                } catch (_: Exception) {
-                }
-
-                if (continuation.isActive) {
-                    continuation.resume(result)
-                }
-            }
 
             dialog.setOnCancelListener {
                 finish(null)
