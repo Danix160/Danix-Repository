@@ -12,7 +12,7 @@ import java.net.URLEncoder
 
 class GuardaPlayProvider : MainAPI() {
 
-    override var mainUrl = "https://guardaplay.store"
+    override var mainUrl = "https://guardaplay.online"
     override var name = "GuardaPlay"
     override var lang = "it"
 
