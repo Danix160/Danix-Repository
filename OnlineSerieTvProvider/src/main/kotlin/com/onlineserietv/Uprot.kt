@@ -6,7 +6,6 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.Jsoup
 
 class Uprot : ExtractorApi() {
@@ -295,10 +294,10 @@ if (isCaptchaPage) {
 
         Log.e(
             TAG,
-            ">>> PASSO WEBVIEW A MAXSTREAM: $webViewResult <<<"
+            ">>> PASSO DIRETTAMENTE A MAXSTREAM: $webViewResult <<<"
         )
 
-        loadExtractor(
+        MaxStream().getUrl(
             webViewResult,
             mseUrl,
             subtitleCallback,
@@ -316,36 +315,74 @@ if (isCaptchaPage) {
     return
 }
 if (maxstreamUrl.isNullOrBlank()) {
-    maxstreamUrl =
-        document.selectFirst("button#buttok")
-            ?.parent()
-            ?.attr("href")
-            ?.takeIf {
-                it.startsWith("https://maxstream.video/uprots/")
-            }
-}
 
-if (maxstreamUrl.isNullOrBlank()) {
     maxstreamUrl =
         document
-            .select("a[href*='maxstream.video/uprots/']")
+            .select("a[href*='maxstream.video/']")
             .firstOrNull { a ->
-                a.selectFirst("button#buttok") != null
+
+                val href =
+                    a.attr("href")
+
+                val validMaxStream =
+                    href.contains(
+                        "/uprots/",
+                        ignoreCase = true
+                    ) ||
+                    href.contains(
+                        "/uprotem/",
+                        ignoreCase = true
+                    ) ||
+                    href.contains(
+                        "/emiuhi/",
+                        ignoreCase = true
+                    )
+
+                val button =
+                    a.selectFirst("button")
+
+                val validButton =
+                    button != null &&
+                    (
+                        button.id() == "buttok" ||
+                        button.text()
+                            .replace(" ", "")
+                            .contains(
+                                "CONTINUE",
+                                ignoreCase = true
+                            )
+                    )
+
+                validMaxStream && validButton
             }
             ?.attr("href")
+
+    Log.d(
+        TAG,
+        "MAXSTREAM DA CONTINUE = $maxstreamUrl"
+    )
 }
 
 if (!maxstreamUrl.isNullOrBlank()) {
-    Log.d(TAG, "PASSO A MAXSTREAM: $maxstreamUrl")
 
-    loadExtractor(
+    Log.d(
+        TAG,
+        "PASSO DIRETTAMENTE A MAXSTREAM: $maxstreamUrl"
+    )
+
+    MaxStream().getUrl(
         maxstreamUrl,
         mseUrl,
         subtitleCallback,
         callback
     )
+
 } else {
-    Log.e(TAG, "NESSUN MAXSTREAM TROVATO")
+
+    Log.e(
+        TAG,
+        "NESSUN MAXSTREAM TROVATO"
+    )
 }
 
         } catch (e: Exception) {
