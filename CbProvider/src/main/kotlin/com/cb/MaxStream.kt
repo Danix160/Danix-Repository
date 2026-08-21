@@ -1,5 +1,6 @@
 package com.cb
 
+import android.util.Log
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -7,11 +8,20 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.jsoup.Jsoup
 
 class MaxStream : ExtractorApi() {
+
     override val name = "MaxStream"
     override val mainUrl = "https://maxstream.video"
     override val requiresReferer = true
+
+    companion object {
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 10; K) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/139.0.0.0 Mobile Safari/537.36"
+    }
 
     override suspend fun getUrl(
         url: String,
@@ -19,13 +29,60 @@ class MaxStream : ExtractorApi() {
         subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Referer" to (referer ?: url)
-        )
 
-        val response = app.get(url, headers = headers)
+        val sessionUserAgent =
+            UprotSession.userAgent
+                .takeIf { it.isNotBlank() }
+                ?: USER_AGENT
+
+        val sessionCookies =
+            UprotSession.cookieHeader
+
+        val headers =
+            mutableMapOf(
+                "User-Agent" to sessionUserAgent,
+                "Referer" to (referer ?: mainUrl),
+                "Accept" to
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to
+                    "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+
+        if (sessionCookies.isNotBlank()) {
+            headers["Cookie"] = sessionCookies
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
+                "Cookie WebView applicati a MaxStream"
+            )
+        }
+
+        val response =
+            app.get(
+                url,
+                headers = headers
+            )
+
         var html = response.text
+
+        Log.e("MAXSTREAM_DEBUG", "STATUS = ${response.code}")
+        Log.e("MAXSTREAM_DEBUG", "HTML LENGTH = ${html.length}")
+
+        val maxDoc = Jsoup.parse(html)
+
+        val isCaptcha =
+            maxDoc.selectFirst("#upcaptcha-form") != null ||
+            maxDoc.selectFirst(".upcaptcha-box") != null
+
+        if (isCaptcha) {
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "MaxStream richiede ancora UPCaptcha nonostante la sessione WebView"
+            )
+            return
+        }
+
+        // ...continua qui con il tuo extractor attuale
 
         android.util.Log.e("MAXSTREAM_DEBUG", "==============================")
 android.util.Log.e("MAXSTREAM_DEBUG", "URL = $url")
