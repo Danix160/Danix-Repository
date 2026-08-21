@@ -142,49 +142,225 @@ class CbProvider : MainAPI() {
         return results.distinctBy { it.url }
     }
 
-    private suspend fun parseUprotFolder(url: String, season: Int): List<Episode> {
-        Log.d("CB01", "Parsing Uprot folder: $url")
-        val eps = mutableListOf<Episode>()
+    private suspend fun parseUprotFolder(
+    url: String,
+    requestedSeason: Int
+): List<Episode> {
 
-        try {
-            val response = app.get(url).text
-            val doc = Jsoup.parse(response, url)
-            val rows = doc.select("table.table tr")
+    Log.d(
+        "CB01",
+        "Parsing Uprot folder: $url - stagione richiesta: $requestedSeason"
+    )
 
-            var calculatedEpisodeNum = 1
+    return try {
 
-            rows.forEach { row ->
-                val streamAnchor = row.selectFirst("a[href*=/msfi/], a[href*=/msdi/]") ?: return@forEach
-                val link = streamAnchor.attr("abs:href").ifBlank { streamAnchor.attr("href") }
-                val fileText = row.selectFirst("td")?.text().orEmpty().trim()
+        val response = app.get(
+            url,
+            headers = commonHeaders
+        ).text
 
-                if (link.isNotBlank()) {
-                    val epMatch = Regex("(?i)(?:x|e|ep|episodio)\\s*(\\d+)").find(fileText)
-                    val eNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: calculatedEpisodeNum
+        val doc = Jsoup.parse(response, url)
 
-                    val cleanName = fileText
-                        .replace(".mp4", "", ignoreCase = true)
-                        .replace(".mkv", "", ignoreCase = true)
-                        .replace(".", " ")
-                        .trim()
+        val rows = doc.select("table tr")
 
-                    eps.add(
-                        newEpisode(link) {
-                            this.season = season
-                            this.episode = eNum
-                            this.name = cleanName.ifBlank { "${season}x${String.format("%02d", eNum)}" }
-                        }
-                    )
-                    calculatedEpisodeNum++
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("CB01:UprotFolder", "Errore nel parsing della cartella Uprot: ${e.message}")
+        if (rows.isEmpty()) {
+            Log.d("CB01:UprotFolder", "Nessuna riga trovata nella cartella")
+            return emptyList()
         }
 
-        return eps
-    }
+        // Prima controlliamo se la cartella contiene più stagioni.
+        val seasonsInFolder =
+            rows.mapNotNull { row ->
 
+                val fileName =
+                    row.selectFirst("td")
+                        ?.text()
+                        ?.trim()
+                        .orEmpty()
+
+                Regex(
+                    """(?i)S(\d{1,2})E\d{1,3}"""
+                )
+                    .find(fileName)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.toIntOrNull()
+            }
+                .distinct()
+
+        val hasMultipleSeasons =
+            seasonsInFolder.size > 1
+
+        Log.d(
+            "CB01:UprotFolder",
+            "Stagioni presenti nella cartella = $seasonsInFolder"
+        )
+
+        val episodes = mutableListOf<Episode>()
+
+        rows.forEachIndexed { index, row ->
+
+            val fileName =
+                row.selectFirst("td")
+                    ?.text()
+                    ?.trim()
+                    .orEmpty()
+
+            if (fileName.isBlank()) {
+                return@forEachIndexed
+            }
+
+            val watchUrl =
+                row.selectFirst(
+                    "a[href*='/msfi/'], a[href*='/mse/'], a[href*='/msf/']"
+                )
+                    ?.attr("abs:href")
+                    ?.ifBlank {
+                        row.selectFirst(
+                            "a[href*='/msfi/'], a[href*='/mse/'], a[href*='/msf/']"
+                        )
+                            ?.attr("href")
+                            .orEmpty()
+                    }
+                    .orEmpty()
+
+            if (watchUrl.isBlank()) {
+                return@forEachIndexed
+            }
+
+            /*
+             * Formati che vogliamo riconoscere:
+             *
+             * S01E01
+             * S1E1
+             * S02E105
+             */
+            val seasonEpisodeMatch =
+                Regex(
+                    """(?i)S(\d{1,2})E(\d{1,3})"""
+                ).find(fileName)
+
+            val detectedSeason: Int?
+            val episodeNumber: Int
+
+            if (seasonEpisodeMatch != null) {
+
+                detectedSeason =
+                    seasonEpisodeMatch
+                        .groupValues
+                        .getOrNull(1)
+                        ?.toIntOrNull()
+
+                episodeNumber =
+                    seasonEpisodeMatch
+                        .groupValues
+                        .getOrNull(2)
+                        ?.toIntOrNull()
+                        ?: (index + 1)
+
+                /*
+                 * Se nella stessa cartella ci sono S01, S02, S03...
+                 * mostriamo soltanto gli episodi della stagione selezionata.
+                 */
+                if (
+                    hasMultipleSeasons &&
+                    detectedSeason != null &&
+                    detectedSeason != requestedSeason
+                ) {
+                    return@forEachIndexed
+                }
+
+            } else {
+
+                detectedSeason = null
+
+                /*
+                 * Fallback per nomi meno standard.
+                 *
+                 * Esempi:
+                 * 01.mkv
+                 * Episodio 02
+                 * E03
+                 */
+                episodeNumber =
+                    Regex(
+                        """(?i)(?:episodio|episode|ep|e)\s*0*(\d{1,3})"""
+                    )
+                        .find(fileName)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull()
+
+                        ?: Regex(
+                            """(?:^|[.\s_-])0*(\d{1,3})(?:[.\s_-]|$)"""
+                        )
+                            .find(fileName)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                            ?.toIntOrNull()
+
+                        ?: (index + 1)
+            }
+
+            val cleanName =
+                fileName
+                    .replace(".mp4", "", ignoreCase = true)
+                    .replace(".mkv", "", ignoreCase = true)
+                    .replace(".avi", "", ignoreCase = true)
+                    .replace("_", " ")
+                    .replace(".", " ")
+                    .trim()
+
+            val finalSeason =
+                detectedSeason ?: requestedSeason
+
+            Log.d(
+                "CB01:UprotFolder",
+                "EP trovato → S${finalSeason}E${episodeNumber} | $watchUrl"
+            )
+
+            episodes.add(
+                newEpisode(watchUrl) {
+
+                    this.season = finalSeason
+                    this.episode = episodeNumber
+
+                    this.name =
+                        cleanName.ifBlank {
+                            "S${String.format("%02d", finalSeason)}E${
+                                String.format("%02d", episodeNumber)
+                            }"
+                        }
+                }
+            )
+        }
+
+        episodes
+            .distinctBy {
+                Triple(
+                    it.season,
+                    it.episode,
+                    it.data
+                )
+            }
+            .sortedWith(
+                compareBy<Episode> {
+                    it.season ?: requestedSeason
+                }.thenBy {
+                    it.episode ?: 0
+                }
+            )
+
+    } catch (e: Exception) {
+
+        Log.e(
+            "CB01:UprotFolder",
+            "Errore parsing Uprot folder: ${e.message}"
+        )
+
+        emptyList()
+    }
+}
     override suspend fun load(url: String): LoadResponse {
         Log.d("CB01", "Caricamento pagina: $url")
         val document = app.get(url, headers = commonHeaders).document
@@ -251,18 +427,103 @@ class CbProvider : MainAPI() {
                 val rowText = row.text().trim()
                 if (rowText.isBlank() || rowText.contains("[riduci]", ignoreCase = true)) return@forEach
 
-                if (rowText.contains(Regex("(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"))) {
-                    val folderLinks = anchors.map { it.attr("href") }.filter { l -> supportedHosts.any { l.contains(it) } }
+                if (
+                    rowText.contains(
+                        Regex(
+                            "(?i)TUTTA LA SERIE|TUTTI GLI EPISODI|INTERA STAGIONE|STAGIONE COMPLETA"
+                        )
+                    )
+                ) {
+                
+                    Log.d(
+                        "CB01",
+                        "Possibile cartella stagione completa trovata: $rowText"
+                    )
+                
+                    // Cerchiamo prima una vera cartella Uprot /msfld/
+                    val uprotFolder =
+                        anchors
+                            .map { anchor ->
+                                anchor.attr("abs:href")
+                                    .ifBlank { anchor.attr("href") }
+                            }
+                            .firstOrNull { link ->
+                                link.contains(
+                                    "/msfld/",
+                                    ignoreCase = true
+                                )
+                            }
+                
+                    if (!uprotFolder.isNullOrBlank()) {
+                
+                        Log.d(
+                            "CB01",
+                            "Cartella Uprot trovata: $uprotFolder"
+                        )
+                
+                        val folderEpisodes =
+                            parseUprotFolder(
+                                uprotFolder,
+                                currentSeason
+                            )
+                
+                        Log.d(
+                            "CB01",
+                            "Episodi estratti dalla cartella Uprot: ${folderEpisodes.size}"
+                        )
+                
+                        folderEpisodes.forEach { episode ->
+                
+                            val alreadyExists =
+                                episodes.any {
+                                    it.season == episode.season &&
+                                    it.episode == episode.episode
+                                }
+                
+                            if (!alreadyExists) {
+                                episodes.add(episode)
+                            }
+                        }
+                
+                        return@forEach
+                    }
+                
+                    /*
+                     * Se NON è una cartella /msfld/, manteniamo
+                     * il comportamento precedente come fallback.
+                     */
+                    val folderLinks =
+                        anchors
+                            .map { anchor ->
+                                anchor.attr("abs:href")
+                                    .ifBlank { anchor.attr("href") }
+                            }
+                            .filter { link ->
+                                supportedHosts.any { host ->
+                                    link.contains(
+                                        host,
+                                        ignoreCase = true
+                                    )
+                                }
+                            }
+                
                     if (folderLinks.isNotEmpty()) {
-                        val linksData = folderLinks.joinToString("###")
+                
+                        val linksData =
+                            folderLinks.joinToString("###")
+                
                         if (episodes.none { it.data == linksData }) {
-                            episodes.add(newEpisode(linksData) {
-                                this.name = "Stagione Completa"
-                                this.season = currentSeason
-                                this.episode = 1
-                            })
+                
+                            episodes.add(
+                                newEpisode(linksData) {
+                                    this.name = "Stagione Completa"
+                                    this.season = currentSeason
+                                    this.episode = 1
+                                }
+                            )
                         }
                     }
+                
                     return@forEach
                 }
 
