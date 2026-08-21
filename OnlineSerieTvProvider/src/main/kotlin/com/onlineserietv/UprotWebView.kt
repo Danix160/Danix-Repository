@@ -26,6 +26,8 @@ object UprotWebView {
         url: String,
         userAgent: String
     ): String? = suspendCancellableCoroutine { continuation ->
+     Log.e(TAG, ">>> UprotWebView.resolve CHIAMATA <<<")
+     Log.e(TAG, "URL = $url")
 
         val context = CloudStreamApp.context
 
