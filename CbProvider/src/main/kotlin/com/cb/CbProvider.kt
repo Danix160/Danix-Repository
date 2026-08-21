@@ -852,67 +852,134 @@ document
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        Log.d("CB01", "loadLinks() chiamato con data: $data")
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
 
-        val allLinks = data.split("###")
+    Log.d(
+        "CB01",
+        "loadLinks() chiamato con data: $data"
+    )
+
+    val allLinks =
+        data.split("###")
             .map { it.trim() }
-            .filter { it.isNotBlank() && it.startsWith("http") }
-            .sortedBy { it.contains("stayonline.pro") }
+            .filter {
+                it.isNotBlank() &&
+                it.startsWith("http")
+            }
+            .sortedBy {
+                it.contains(
+                    "stayonline.pro",
+                    ignoreCase = true
+                )
+            }
 
-        allLinks.forEach { cleanLink ->
-            try {
-                if (cleanLink.contains("stayonline.pro")) {
-                    Log.d("CB01", "StayOnline rilevato → bypass in corso per $cleanLink")
-                    var bypassed = bypassStayOnline(cleanLink)
+    allLinks.forEach { cleanLink ->
+
+        try {
+
+            when {
+
+                cleanLink.contains(
+                    "stayonline.pro",
+                    ignoreCase = true
+                ) -> {
+
+                    Log.d(
+                        "CB01",
+                        "StayOnline rilevato: $cleanLink"
+                    )
+
+                    var bypassed =
+                        bypassStayOnline(cleanLink)
 
                     if (!bypassed.isNullOrBlank()) {
+
                         if (!bypassed.startsWith("http")) {
-                            bypassed = "https://" + bypassed.removePrefix("//")
+                            bypassed =
+                                "https://" +
+                                    bypassed.removePrefix("//")
                         }
-                        Log.d("CB01", "StayOnline sbloccato! Link reale estratto: $bypassed")
 
-                        if (bypassed.contains("uprot")) {
-                            Log.d("CB01", "Il link sbloccato è un host Uprot. Avvio decodifica avanzata Maxstream...")
-                            val advanced = resolveMaxstreamAdvanced(bypassed)
+                        Log.d(
+                            "CB01",
+                            "StayOnline sbloccato: $bypassed"
+                        )
 
-                            if (!advanced.isNullOrBlank()) {
-                                Log.d("CB01", "Decodifica avanzata Maxstream riuscita: $advanced")
-                                loadExtractor(advanced, cleanLink, subtitleCallback, callback)
-                            } else {
-                                Log.d("CB01", "Decodifica avanzata fallita, uso UprotExtractor")
-                                val uprotExtractor = Uprot()
-                                uprotExtractor.getUrl(bypassed, referer = cleanLink, subtitleCallback, callback)
-                            }
+                        if (
+                            bypassed.contains(
+                                "uprot",
+                                ignoreCase = true
+                            )
+                        ) {
+
+                            Log.d(
+                                "CB01",
+                                "StayOnline → Uprot"
+                            )
+
+                            Uprot().getUrl(
+                                bypassed,
+                                cleanLink,
+                                subtitleCallback,
+                                callback
+                            )
+
                         } else {
-                            loadExtractor(bypassed, cleanLink, subtitleCallback, callback)
+
+                            loadExtractor(
+                                bypassed,
+                                cleanLink,
+                                subtitleCallback,
+                                callback
+                            )
                         }
                     }
-                } else if (cleanLink.contains("uprot")) {
-                    Log.d("CB01", "Link Uprot diretto rilevato: $cleanLink → provo decodifica avanzata Maxstream")
-                    val advanced = resolveMaxstreamAdvanced(cleanLink)
-
-                    if (!advanced.isNullOrBlank()) {
-                        Log.d("CB01", "Decodifica avanzata Maxstream riuscita (direct): $advanced")
-                        loadExtractor(advanced, cleanLink, subtitleCallback, callback)
-                    } else {
-                        Log.d("CB01", "Decodifica avanzata fallita (direct), uso UprotExtractor")
-                        val uprotExtractor = Uprot()
-                        uprotExtractor.getUrl(cleanLink, referer = cleanLink, subtitleCallback, callback)
-                    }
-                } else {
-                    loadExtractor(cleanLink, cleanLink, subtitleCallback, callback)
                 }
-            } catch (e: Exception) {
-                Log.e("CB01", "Errore nell'estrazione del link $cleanLink: ${e.message}")
+
+                cleanLink.contains(
+                    "uprot",
+                    ignoreCase = true
+                ) -> {
+
+                    Log.d(
+                        "CB01",
+                        "Uprot diretto: $cleanLink"
+                    )
+
+                    Uprot().getUrl(
+                        cleanLink,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+
+                else -> {
+
+                    loadExtractor(
+                        cleanLink,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+                }
             }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                "CB01",
+                "Errore estrazione $cleanLink: ${e.message}"
+            )
         }
-        return true
     }
+
+    return true
+}
 
     private suspend fun bypassStayOnline(link: String): String? {
         return try {
