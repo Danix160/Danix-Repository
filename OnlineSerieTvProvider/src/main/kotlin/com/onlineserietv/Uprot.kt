@@ -25,22 +25,31 @@ class Uprot : ExtractorApi() {
     }
 
     override suspend fun getUrl(
-        url: String,
-        referer: String?,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+    url: String,
+    referer: String?,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+) {
+
+    if (
+        !url.contains("/msf/") &&
+        !url.contains("/mse/") &&
+        !url.contains("/msfi/")
     ) {
+        Log.d(TAG, "URL UPROT ignorato: $url")
+        return
+    }
 
-        Log.d(TAG, "==============================")
-        Log.d(TAG, "URL ricevuto: $url")
-        Log.d(TAG, "Referer ricevuto: $referer")
+    Log.d(TAG, "==============================")
+    Log.d(TAG, "URL ricevuto: $url")
+    Log.d(TAG, "Referer ricevuto: $referer")
 
-        val mseUrl = when {
-            url.contains("/msf/") ->
-                url.replace("/msf/", "/mse/")
+    val mseUrl = when {
+        url.contains("/msf/") ->
+            url.replace("/msf/", "/mse/")
 
-            else -> url
-        }
+        else -> url
+    }
 
         Log.d(TAG, "URL da richiedere: $mseUrl")
 
@@ -63,6 +72,85 @@ class Uprot : ExtractorApi() {
             Log.d(TAG, "FINAL URL = ${response.url}")
 
             val html = response.text
+
+            Log.d(TAG, "----- ANALISI SCRIPT UPROT -----")
+
+val document = Jsoup.parse(html)
+
+document.select("script").forEachIndexed { index, script ->
+
+    val src = script.attr("src")
+
+    if (src.isNotBlank()) {
+        Log.d(
+            TAG,
+            "SCRIPT SRC [$index] = $src"
+        )
+    }
+
+    val content = script.html()
+
+    val interesting =
+        content.contains("fetch(", true) ||
+        content.contains("ajax", true) ||
+        content.contains("api", true) ||
+        content.contains("xhr", true) ||
+        content.contains("XMLHttpRequest", true) ||
+        content.contains("/ms", true)
+
+    if (interesting) {
+
+        Log.d(
+            TAG,
+            "SCRIPT INTERESSANTE [$index] = ${
+                content
+                    .replace("\n", " ")
+                    .take(2000)
+            }"
+        )
+    }
+}
+
+Log.d(TAG, "----- FORM -----")
+
+document.select("form").forEachIndexed { index, form ->
+
+    Log.d(
+        TAG,
+        "FORM [$index] action=${form.attr("action")} method=${form.attr("method")}"
+    )
+
+    form.select("input").forEach { input ->
+
+        Log.d(
+            TAG,
+            "INPUT name=${input.attr("name")} type=${input.attr("type")} value=${input.attr("value").take(150)}"
+        )
+    }
+}
+
+Log.d(TAG, "----- DATA ATTRIBUTES -----")
+
+document.select("*").forEach { element ->
+
+    element.attributes().forEach { attr ->
+
+        if (
+            attr.key.startsWith("data-") &&
+            (
+                attr.value.contains("http", true) ||
+                attr.value.contains("api", true) ||
+                attr.value.contains("ms", true)
+            )
+        ) {
+
+            Log.d(
+                TAG,
+                "${element.tagName()} ${attr.key}=${attr.value}"
+            )
+        }
+    }
+}
 
             Log.d(TAG, "HTML length = ${html.length}")
 
@@ -121,29 +209,27 @@ class Uprot : ExtractorApi() {
                 )
             }
 
-            if (maxstreamUrl == null) {
+           if (maxstreamUrl == null) {
 
-                val doc = Jsoup.parse(html)
+    maxstreamUrl =
+        document.selectFirst(
+            "iframe[src*=maxstream]"
+        )?.attr("src")
+            ?: document.selectFirst(
+                "iframe[src*=max]"
+            )?.attr("src")
+            ?: document.selectFirst(
+                "a[href*=maxstream]"
+            )?.attr("href")
+            ?: document.selectFirst(
+                "a[href*=max]"
+            )?.attr("href")
 
-                maxstreamUrl =
-                    doc.selectFirst(
-                        "iframe[src*=maxstream]"
-                    )?.attr("src")
-                        ?: doc.selectFirst(
-                            "iframe[src*=max]"
-                        )?.attr("src")
-                        ?: doc.selectFirst(
-                            "a[href*=maxstream]"
-                        )?.attr("href")
-                        ?: doc.selectFirst(
-                            "a[href*=max]"
-                        )?.attr("href")
-
-                Log.d(
-                    TAG,
-                    "MAXSTREAM DA DOM = $maxstreamUrl"
-                )
-            }
+    Log.d(
+        TAG,
+        "MAXSTREAM DA DOM = $maxstreamUrl"
+    )
+}
 
             if (!maxstreamUrl.isNullOrBlank()) {
 
