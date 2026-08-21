@@ -58,7 +58,7 @@ class Uprot : ExtractorApi() {
             "Accept" to
                 "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer" to (referer ?: "https://onlineserietv.mom/")
+            "Referer" to (referer ?: "https://cb01uno.cam/")
         )
 
         try {
