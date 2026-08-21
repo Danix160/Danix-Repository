@@ -91,84 +91,112 @@ Log.e(TAG, "LOADM HTML LENGTH = ${html.length}")
 val document =
     org.jsoup.Jsoup.parse(html)
 
+val scriptSrc =
+    document
+        .selectFirst("script[type=module][src]")
+        ?.attr("src")
+
 Log.e(
     TAG,
-    "LOADM TITLE = ${document.title()}"
+    "LOADM APP SCRIPT = $scriptSrc"
 )
 
-document
-    .select("script")
-    .forEachIndexed { index, script ->
+if (!scriptSrc.isNullOrBlank()) {
 
-        val src =
-            script.attr("src")
-
-        if (src.isNotBlank()) {
-            Log.e(
-                TAG,
-                "SCRIPT SRC [$index] = $src"
-            )
+    val scriptUrl =
+        if (scriptSrc.startsWith("http")) {
+            scriptSrc
+        } else {
+            mainUrl.trimEnd('/') + "/" + scriptSrc.trimStart('/')
         }
 
-        val content =
-            script.data()
-                .ifBlank {
-                    script.html()
-                }
+    Log.e(
+        TAG,
+        "SCARICO JS = $scriptUrl"
+    )
 
-        if (content.isNotBlank()) {
-            Log.e(
-                TAG,
-                "SCRIPT [$index] = ${
-                    content
-                        .replace("\n", " ")
-                        .take(10000)
-                }"
+    val jsResponse =
+        app.get(
+            scriptUrl,
+            headers = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Referer" to "$mainUrl/"
             )
-        }
-
-        val interesting =
-            content.contains("location.hash", true) ||
-            content.contains("window.location", true) ||
-            content.contains("fetch(", true) ||
-            content.contains("player", true) ||
-            content.contains("getVideo", true) ||
-            content.contains("fireplayer", true) ||
-            content.contains("videoSource", true) ||
-            content.contains("loadx", true)
-
-        if (interesting) {
-            Log.e(
-                TAG,
-                "SCRIPT INTERESSANTE [$index] = ${
-                    content
-                        .replace("\n", " ")
-                        .take(15000)
-                }"
-            )
-        }
-    }
-
-document
-    .select("iframe")
-    .forEachIndexed { index, iframe ->
-
-        Log.e(
-            TAG,
-            "IFRAME [$index] = ${
-                iframe.attr("src")
-            }"
         )
+
+    val js =
+        jsResponse.text
+
+    Log.e(
+        TAG,
+        "JS STATUS = ${jsResponse.code}"
+    )
+
+    Log.e(
+        TAG,
+        "JS LENGTH = ${js.length}"
+    )
+
+    Log.e(
+        TAG,
+        "========== LOADM JAVASCRIPT =========="
+    )
+
+    Log.e(
+        TAG,
+        js.take(50000)
+    )
+
+    Log.e(
+        TAG,
+        "========== FINE JAVASCRIPT =========="
+    )
+
+    val keywords = listOf(
+        "location.hash",
+        "getVideo",
+        "videoSource",
+        "fetch(",
+        "axios",
+        "m3u8",
+        "player",
+        "/api/",
+        "fireplayer"
+    )
+
+    keywords.forEach { keyword ->
+
+        val position =
+            js.indexOf(
+                keyword,
+                ignoreCase = true
+            )
+
+        if (position >= 0) {
+
+            val start =
+                (position - 1500)
+                    .coerceAtLeast(0)
+
+            val end =
+                (position + 4000)
+                    .coerceAtMost(js.length)
+
+            Log.e(
+                TAG,
+                "===== TROVATO $keyword ====="
+            )
+
+            Log.e(
+                TAG,
+                js.substring(
+                    start,
+                    end
+                )
+            )
+        }
     }
-
-Log.e(
-    TAG,
-    "LOADM HTML = ${
-        html.take(20000)
-    }"
-)
-       return
-
+}
         } catch (e: Exception) {
 
             Log.e(
