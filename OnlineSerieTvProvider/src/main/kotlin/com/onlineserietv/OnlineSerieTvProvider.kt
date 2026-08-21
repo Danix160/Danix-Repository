@@ -490,11 +490,22 @@ class OnlineSerieTvProvider : MainAPI() {
     subtitleCallback: (SubtitleFile) -> Unit,
     callback: (ExtractorLink) -> Unit
 ): Boolean {
-    val urls = data.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+
+    val urls = data
+        .split("|")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
 
     urls.forEach { url ->
-        // Nel caso in cui il link sia direttamente un redirect Maxstream o Uprot
-        loadExtractor(url, subtitleCallback, callback)
+
+        println("OSTV LOADLINKS URL = $url")
+
+        loadExtractor(
+            url,
+            mainUrl,
+            subtitleCallback,
+            callback
+        )
     }
 
     return true
