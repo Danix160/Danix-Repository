@@ -255,9 +255,12 @@ object UprotWebView {
                             host == "maxstream.video" &&
                             (
                                 target.contains("/uprots/", ignoreCase = true) ||
+                                target.contains("/uprotem/", ignoreCase = true) ||
                                 target.contains("/emiuhi/", ignoreCase = true)
                             )
                         ) {
+                            Log.d(TAG, "MAXSTREAM intercettato: $target")
+                        
                             finish(target)
                             return true
                         }
