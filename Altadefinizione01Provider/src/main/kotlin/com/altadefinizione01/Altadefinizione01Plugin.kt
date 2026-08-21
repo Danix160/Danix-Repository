@@ -13,12 +13,9 @@ class Altadefinizione01Plugin : Plugin() {
             Altadefinizione01Provider()
         )
 
-        /*
-         * Lo aggiungeremo nel prossimo passaggio:
-         *
-         * registerExtractorAPI(
-         *     VidxGoExtractor()
-         * )
-         */
+          registerExtractorAPI(
+             VidxGoExtractor()
+        )
+         
     }
 }
