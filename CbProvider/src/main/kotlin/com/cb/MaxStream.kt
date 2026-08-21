@@ -1,5 +1,6 @@
 package com.cb
 
+import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
@@ -65,10 +66,18 @@ class MaxStream : ExtractorApi() {
 
         var html = response.text
 
-        Log.e("MAXSTREAM_DEBUG", "STATUS = ${response.code}")
-        Log.e("MAXSTREAM_DEBUG", "HTML LENGTH = ${html.length}")
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "STATUS = ${response.code}"
+        )
 
-        val maxDoc = Jsoup.parse(html)
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "HTML LENGTH = ${html.length}"
+        )
+
+        val maxDoc =
+            Jsoup.parse(html)
 
         val isCaptcha =
             maxDoc.selectFirst("#upcaptcha-form") != null ||
@@ -82,123 +91,266 @@ class MaxStream : ExtractorApi() {
             return
         }
 
-        // ...continua qui con il tuo extractor attuale
+        /*
+         * Il player principale crea dinamicamente un iframe:
+         *
+         * decodedBaseUrl = atob(...)
+         * decodedFileCode = atob(...)
+         *
+         * Esempio finale:
+         * https://maxstream.video/emiuhi/xxxxxxxx
+         */
+        val iframeBase64 =
+            Regex(
+                """decodedBaseUrl\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
+            )
+                .find(html)
+                ?.groupValues
+                ?.getOrNull(1)
 
-        android.util.Log.e("MAXSTREAM_DEBUG", "==============================")
-android.util.Log.e("MAXSTREAM_DEBUG", "URL = $url")
-android.util.Log.e("MAXSTREAM_DEBUG", "REFERER = $referer")
-android.util.Log.e("MAXSTREAM_DEBUG", "STATUS = ${response.code}")
-android.util.Log.e("MAXSTREAM_DEBUG", "FINAL URL = ${response.url}")
-android.util.Log.e("MAXSTREAM_DEBUG", "HTML LENGTH = ${html.length}")
+        val iframeCodeBase64 =
+            Regex(
+                """decodedFileCode\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
+            )
+                .find(html)
+                ?.groupValues
+                ?.getOrNull(1)
 
-val document = org.jsoup.Jsoup.parse(html)
+        var playerReferer = response.url
 
-android.util.Log.e("MAXSTREAM_DEBUG", "TITLE = ${document.title()}")
+        if (
+            !iframeBase64.isNullOrBlank() &&
+            !iframeCodeBase64.isNullOrBlank()
+        ) {
 
-document.select("script").forEachIndexed { index, script ->
-    val src = script.attr("src")
+            try {
 
-    if (src.isNotBlank()) {
-        android.util.Log.e(
-            "MAXSTREAM_DEBUG",
-            "SCRIPT SRC [$index] = $src"
-        )
-    }
+                val decodedBase =
+                    String(
+                        Base64.decode(
+                            iframeBase64,
+                            Base64.DEFAULT
+                        ),
+                        Charsets.UTF_8
+                    )
 
-    val content = script.data().ifBlank { script.html() }
+                val decodedCode =
+                    String(
+                        Base64.decode(
+                            iframeCodeBase64,
+                            Base64.DEFAULT
+                        ),
+                        Charsets.UTF_8
+                    )
 
-    if (content.isNotBlank()) {
-        android.util.Log.e(
-            "MAXSTREAM_DEBUG",
-            "SCRIPT [$index] = ${
-                content.replace("\n", " ").take(5000)
-            }"
-        )
-    }
-}
+                val iframeUrl =
+                    decodedBase + decodedCode
 
-document.select("iframe").forEachIndexed { index, iframe ->
-    android.util.Log.e(
-        "MAXSTREAM_DEBUG",
-        "IFRAME [$index] = ${iframe.attr("src")}"
-    )
-}
-
-document.select("a[href]").forEachIndexed { index, a ->
-    val href = a.attr("href")
-
-    if (
-        href.contains("maxstream", true) ||
-        href.contains("m3u8", true) ||
-        href.contains("mp4", true)
-    ) {
-        android.util.Log.e(
-            "MAXSTREAM_DEBUG",
-            "LINK [$index] = $href"
-        )
-    }
-}
-
-android.util.Log.e(
-    "MAXSTREAM_DEBUG",
-    "HTML = ${html.take(15000)}"
-)
-
-        if (html.contains("eval(function(p,a,c,k,e,d)")) {
-            html = getPackedJs(html) ?: html
-        }
-
-        val streamUrlRegex = """https?://[^\s"'<>]+\.(?:m3u8|mp4)[^\s"'<>]*""".toRegex()
-        val matches = streamUrlRegex.findAll(html).map { it.value }.distinct().toList()
-
-        for (streamUrl in matches) {
-            val isM3u8 = streamUrl.contains(".m3u8")
-
-            if (isM3u8) {
-                // Utilizzo della funzione generateM3u8 nativa
-                val m3u8Links = M3u8Helper.generateM3u8(
-                    source = this.name,
-                    streamUrl = streamUrl,
-                    referer = url,
-                    headers = headers
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "IFRAME MAXSTREAM DECODED = $iframeUrl"
                 )
 
+                val iframeHeaders =
+                    headers.toMutableMap().apply {
+                        this["Referer"] =
+                            response.url
+                    }
+
+                val iframeResponse =
+                    app.get(
+                        iframeUrl,
+                        headers = iframeHeaders
+                    )
+
+                val iframeHtml =
+                    iframeResponse.text
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "IFRAME STATUS = ${iframeResponse.code}"
+                )
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "IFRAME FINAL URL = ${iframeResponse.url}"
+                )
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "IFRAME HTML LENGTH = ${iframeHtml.length}"
+                )
+
+                html = iframeHtml
+                playerReferer = iframeResponse.url
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "Errore caricamento iframe /emiuhi/: ${e.message}"
+                )
+            }
+        } else {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "decodedBaseUrl/decodedFileCode non trovati"
+            )
+        }
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "=============================="
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "PLAYER REFERER = $playerReferer"
+        )
+
+        val document =
+            Jsoup.parse(html)
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "PLAYER TITLE = ${document.title()}"
+        )
+
+        document.select("script")
+            .forEachIndexed { index, script ->
+
+                val src =
+                    script.attr("src")
+
+                if (src.isNotBlank()) {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "PLAYER SCRIPT SRC [$index] = $src"
+                    )
+                }
+
+                val content =
+                    script.data()
+                        .ifBlank {
+                            script.html()
+                        }
+
+                if (content.isNotBlank()) {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "PLAYER SCRIPT [$index] = ${
+                            content
+                                .replace("\n", " ")
+                                .take(5000)
+                        }"
+                    )
+                }
+            }
+
+        /*
+         * Primo tentativo:
+         * URL espliciti .m3u8 / .mp4
+         */
+        val streamUrlRegex =
+            """https?://[^\s"'<>\\]+\.(?:m3u8|mp4)[^\s"'<>\\]*"""
+                .toRegex(
+                    RegexOption.IGNORE_CASE
+                )
+
+        val matches =
+            streamUrlRegex
+                .findAll(html)
+                .map {
+                    it.value
+                        .replace("\\/", "/")
+                }
+                .distinct()
+                .toList()
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "Stream diretti trovati = ${matches.size}"
+        )
+
+        for (streamUrl in matches) {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "STREAM = $streamUrl"
+            )
+
+            val isM3u8 =
+                streamUrl.contains(
+                    ".m3u8",
+                    ignoreCase = true
+                )
+
+            val streamHeaders =
+                headers.toMutableMap().apply {
+                    this["Referer"] =
+                        playerReferer
+                }
+
+            if (isM3u8) {
+
+                val m3u8Links =
+                    M3u8Helper.generateM3u8(
+                        source = this.name,
+                        streamUrl = streamUrl,
+                        referer = playerReferer,
+                        headers = streamHeaders
+                    )
+
                 if (m3u8Links.isNotEmpty()) {
+
                     m3u8Links.forEach(callback)
+
                 } else {
-                    // Fallback nel caso la lista master M3U8 sia singola
+
                     callback.invoke(
                         newExtractorLink(
                             source = this.name,
                             name = this.name,
                             url = streamUrl,
-                            type = ExtractorLinkType.M3U8
+                            type =
+                                ExtractorLinkType.M3U8
                         ) {
-                            this.referer = url
-                            this.headers = headers
-                            this.quality = Qualities.Unknown.value
+                            this.referer =
+                                playerReferer
+
+                            this.headers =
+                                streamHeaders
+
+                            this.quality =
+                                Qualities.Unknown.value
                         }
                     )
                 }
+
             } else {
+
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
                         name = this.name,
                         url = streamUrl,
-                        type = ExtractorLinkType.VIDEO
+                        type =
+                            ExtractorLinkType.VIDEO
                     ) {
-                        this.referer = url
-                        this.headers = headers
-                        this.quality = Qualities.Unknown.value
+                        this.referer =
+                            playerReferer
+
+                        this.headers =
+                            streamHeaders
+
+                        this.quality =
+                            Qualities.Unknown.value
                     }
                 )
             }
         }
-    }
-
-    private fun getPackedJs(html: String): String? {
-        val packedRegex = """eval\(function\(p,a,c,k,e,d\).*?\}\((.*?)\)\)""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        return packedRegex.find(html)?.value
     }
 }
