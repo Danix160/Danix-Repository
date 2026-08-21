@@ -1,15 +1,28 @@
-package com.onlineserietv // Deve essere uguale a quello in cima al file
+package com.onlineserietv
 
+import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
-import android.content.Context
 
 @CloudstreamPlugin
-class OnlineSerieTvPlugin: Plugin() {
+class OnlineSerieTvPlugin : Plugin() {
+
     override fun load(context: Context) {
-        // Registra il provider definito sopra nella classe ToonItaliaProvider
-        registerMainAPI(OnlineSerieTvProvider())
-        registerExtractorAPI(Uprot())
-        registerExtractorAPI(MaxStream())
+
+        // Salviamo l'Activity/Context di CloudStream
+        // per la WebView interattiva Uprot
+        UprotWebView.setContext(context)
+
+        registerMainAPI(
+            OnlineSerieTvProvider()
+        )
+
+        registerExtractorAPI(
+            Uprot()
+        )
+
+        registerExtractorAPI(
+            MaxStream()
+        )
     }
 }
