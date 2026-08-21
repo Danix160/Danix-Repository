@@ -269,23 +269,34 @@ val isCaptchaPage =
 
 if (isCaptchaPage) {
 
-    Log.w(
-        TAG,
-        "UPCaptcha richiesto: apro WebView interna"
-    )
+    Log.e(TAG, ">>> CAPTCHA RILEVATO <<<")
+    Log.e(TAG, ">>> STO PER CHIAMARE UprotWebView.resolve <<<")
 
-    val webViewResult =
+    val webViewResult = try {
         UprotWebView.resolve(
             mseUrl,
             USER_AGENT
         )
+    } catch (e: Exception) {
+        Log.e(
+            TAG,
+            "ERRORE DURANTE UprotWebView.resolve: ${e.message}",
+            e
+        )
+        null
+    }
 
-    Log.d(
+    Log.e(
         TAG,
-        "Risultato WebView Uprot = $webViewResult"
+        ">>> UprotWebView TERMINATA: $webViewResult <<<"
     )
 
     if (!webViewResult.isNullOrBlank()) {
+
+        Log.e(
+            TAG,
+            ">>> PASSO WEBVIEW A MAXSTREAM: $webViewResult <<<"
+        )
 
         loadExtractor(
             webViewResult,
@@ -298,7 +309,7 @@ if (isCaptchaPage) {
 
         Log.e(
             TAG,
-            "WebView chiusa senza link MaxStream"
+            "WebView chiusa/fallita senza link MaxStream"
         )
     }
 
