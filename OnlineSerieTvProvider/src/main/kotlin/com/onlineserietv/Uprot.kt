@@ -15,48 +15,106 @@ class Uprot : ExtractorApi() {
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val uprotUrl = url.replace("/msf/", "/mse/").replace("/msfi/", "/mse/")
-        var maxstreamUrl: String? = null
-
-        val customHeaders = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        val headers = mapOf(
+            "User-Agent" to
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/145.0.0.0 Safari/537.36",
+            "Accept" to
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language" to "it-IT,it;q=0.9,en;q=0.8",
             "Referer" to (referer ?: mainUrl)
         )
 
+        val mseUrl = when {
+            url.contains("/msf/") ->
+                url.replace("/msf/", "/mse/")
+
+            else -> url
+        }
+
+        var maxstreamUrl: String? = null
+
         try {
-            val response = app.get(uprotUrl, headers = customHeaders)
+            val response = app.get(
+                mseUrl,
+                headers = headers
+            )
+
             val html = response.text
 
-            val b64Base = Regex("""decodedBaseUrl\s*=\s*atob\(["']([^"']+)["']\)""").find(html)?.groupValues?.getOrNull(1)
-            val b64Val = Regex("""decodedEncryptedVal\s*=\s*atob\(["']([^"']+)["']\)""").find(html)?.groupValues?.getOrNull(1)
+            val base64Base = Regex(
+                """decodedBaseUrl\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
+            ).find(html)?.groupValues?.getOrNull(1)
 
-            if (!b64Base.isNullOrBlank() && !b64Val.isNullOrBlank()) {
-                val decodedBase = String(Base64.decode(b64Base, Base64.DEFAULT), Charsets.UTF_8)
-                val decodedVal = String(Base64.decode(b64Val, Base64.DEFAULT), Charsets.UTF_8)
-                val candidate = decodedBase + decodedVal
-                if (candidate.isNotBlank()) {
-                    maxstreamUrl = candidate
-                }
+            val base64Value = Regex(
+                """decodedEncryptedVal\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
+            ).find(html)?.groupValues?.getOrNull(1)
+
+            if (!base64Base.isNullOrBlank() &&
+                !base64Value.isNullOrBlank()
+            ) {
+
+                val decodedBase = String(
+                    Base64.decode(base64Base, Base64.DEFAULT),
+                    Charsets.UTF_8
+                )
+
+                val decodedValue = String(
+                    Base64.decode(base64Value, Base64.DEFAULT),
+                    Charsets.UTF_8
+                )
+
+                maxstreamUrl = decodedBase + decodedValue
             }
-        } catch (_: Exception) { }
 
-        // Fallback tramite DOM parsing
-        if (maxstreamUrl == null) {
-            val fallbackResponse = app.get(url, headers = customHeaders)
-            val doc = Jsoup.parse(fallbackResponse.text)
-            
-            maxstreamUrl = doc.selectFirst("iframe[src*=/ms/]")?.attr("src")
-                ?: doc.selectFirst("iframe[src*=max]")?.attr("src")
-                ?: doc.selectFirst("a[href*=max]")?.attr("href")
-                ?: fallbackResponse.url.takeIf { it.contains("max") }
+            if (maxstreamUrl == null) {
+
+                maxstreamUrl =
+                    Regex(
+                        """https?://(?:www\.)?maxstream\.[^"'<>\\\s]+"""
+                    )
+                        .find(html)
+                        ?.value
+                        ?.replace("\\/", "/")
+            }
+
+            if (maxstreamUrl == null) {
+
+                val doc = Jsoup.parse(html)
+
+                maxstreamUrl =
+                    doc.selectFirst(
+                        "iframe[src*=maxstream]"
+                    )?.attr("src")
+                        ?: doc.selectFirst(
+                            "a[href*=maxstream]"
+                        )?.attr("href")
+            }
+
+        } catch (e: Exception) {
+            println("UPROT ERROR: ${e.message}")
         }
 
-        maxstreamUrl?.let { finalUrl ->
-            // Invia l'URL a Cloudstream affinché lo passi a MaxStream.kt
-            loadExtractor(finalUrl, uprotUrl, subtitleCallback, callback)
-        }
+        maxstreamUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let { finalUrl ->
+
+                val absoluteUrl =
+                    if (finalUrl.startsWith("//"))
+                        "https:$finalUrl"
+                    else
+                        finalUrl
+
+                loadExtractor(
+                    absoluteUrl,
+                    mseUrl,
+                    subtitleCallback,
+                    callback
+                )
+            }
     }
 }
