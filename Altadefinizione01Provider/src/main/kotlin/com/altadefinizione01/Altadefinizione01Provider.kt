@@ -1062,8 +1062,18 @@ class Altadefinizione01Provider : MainAPI() {
             "LOADLINKS = $data"
         )
 
-        val parts =
-            data.split("|")
+        val cleanData =
+            data
+                .removePrefix("$mainUrl/")
+                .removePrefix(mainUrl)
+        
+        Log.d(
+            TAG,
+            "LOADLINKS CLEAN = $cleanData"
+)
+
+val parts =
+    cleanData.split("|")
 
         if (
             parts.isEmpty()
