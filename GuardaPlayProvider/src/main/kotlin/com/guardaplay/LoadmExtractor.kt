@@ -170,6 +170,7 @@ class LoadmExtractor : ExtractorApi() {
 
         false
     }
+  }
 }
 
     override suspend fun getUrl(
