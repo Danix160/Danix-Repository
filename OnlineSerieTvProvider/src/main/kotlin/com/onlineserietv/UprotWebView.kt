@@ -1287,7 +1287,7 @@ if (hasExistingSession) {
      * Lo registriamo e sarà onPageFinished()
      * ad avviarlo quando il DOM sarà pronto.
      */
-    pageStateChecker = {
+        pageStateChecker = {
 
         Log.d(
             TAG,
@@ -1299,6 +1299,15 @@ if (hasExistingSession) {
         )
     }
 }
+
+/*
+ * chiude activity.runOnUiThread
+ */
+}
+
+/*
+ * chiude suspendCancellableCoroutine
+ */
 }
     /*
      * Funzione opzionale:
