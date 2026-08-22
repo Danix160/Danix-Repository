@@ -746,20 +746,19 @@ object UprotWebView {
                              * solo dopo che la pagina è terminata.
                              */
                             pageStateChecker?.let { checker ->
-                            
                                 Log.d(
                                     TAG,
                                     "PAGE FINISH: avvio controllo stato Uprot"
                                 )
                             
-                                view?.postDelayed(
-                                    {
-                                        if (!completed) {
-                                            checker()
-                                        }
-                                    },
-                                    250L
-                                )
+                                if (!completed) {
+                                    Log.d(
+                                        TAG,
+                                        "PAGE FINISH: chiamo pageStateChecker ORA"
+                                    )
+                            
+                                    checker()
+                                }
                             }
                         }
                     }
