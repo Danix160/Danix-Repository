@@ -80,36 +80,97 @@ class LoadmExtractor : ExtractorApi() {
             }
         }
 
-        private fun isVideoUrl(
-            url: String
-        ): Boolean {
+       private fun isVideoUrl(
+    url: String
+): Boolean {
 
-            val lower =
-                url.lowercase()
+    return try {
 
-            /*
-             * Evitiamo falsi positivi.
-             */
-            if (
-                lower.contains(".jpg") ||
-                lower.contains(".jpeg") ||
-                lower.contains(".png") ||
-                lower.contains(".webp") ||
-                lower.contains(".gif") ||
-                lower.contains(".svg") ||
-                lower.contains(".css") ||
-                lower.contains(".js") ||
-                lower.contains("favicon") ||
-                lower.contains("poster") ||
-                lower.contains("thumbnail")
-            ) {
-                return false
+        val uri =
+            android.net.Uri.parse(url)
+
+        val host =
+            uri.host
+                ?.lowercase()
+                ?: return false
+
+        val path =
+            uri.path
+                ?.lowercase()
+                ?: ""
+
+        /*
+         * Escludiamo esplicitamente tracker,
+         * pubblicità e analytics.
+         */
+        val blockedHosts =
+            listOf(
+                "yandex.",
+                "google-analytics.",
+                "googletagmanager.",
+                "googlesyndication.",
+                "doubleclick.",
+                "2mdn.net"
+            )
+
+        if (
+            blockedHosts.any {
+                host.contains(it)
             }
+        ) {
 
-            return lower.contains(".m3u8") ||
-                lower.contains(".mp4")
+            Log.d(
+                TAG,
+                "IGNORATO TRACKER = $url"
+            )
+
+            return false
         }
+
+        /*
+         * IMPORTANTE:
+         *
+         * controlliamo solamente il PATH.
+         *
+         * Non l'intero URL, perché parametri
+         * analytics possono contenere ".mp4"
+         * senza essere realmente video.
+         */
+        val isM3u8 =
+            path.endsWith(".m3u8")
+
+        val isMp4 =
+            path.endsWith(".mp4")
+
+        if (
+            isM3u8 ||
+            isMp4
+        ) {
+
+            Log.e(
+                TAG,
+                "POSSIBILE STREAM REALE: host=$host path=$path"
+            )
+
+            true
+
+        } else {
+
+            false
+        }
+
+    } catch (
+        e: Exception
+    ) {
+
+        Log.e(
+            TAG,
+            "Errore analisi URL: ${e.message}"
+        )
+
+        false
     }
+}
 
     override suspend fun getUrl(
         url: String,
