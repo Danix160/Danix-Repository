@@ -1239,209 +1239,207 @@ if (hasExistingSession) {
                     }
                 }
 
-                state.startsWith(
-                    "WAIT|"
-                ) -> {
-
+                state.startsWith("WAIT|") -> {
+                
                     Log.d(
                         TAG,
-                        "FAST PATH pagina non riconosciuta: ${
+                        "FAST PATH pagina Loading rilevata: ${
                             state.substringAfter("WAIT|")
                         }"
                     )
-                    
-                        webView.evaluateJavascript(
-                            """
-                            (function() {
-                                try {
-                        
-                                    var result = {
-                                        url: window.location.href,
-                                        title: document.title || "",
-                                        buttons: [],
-                                        links: [],
-                                        scripts: [],
-                                        storage: {}
-                                    };
-                        
+                
+                    /*
+                     * La pagina Uprot post-CAPTCHA contiene uno script del tipo:
+                     *
+                     * var decodedBaseUrl = atob("...");
+                     * var decodedEncryptedVal = atob("...");
+                     * var decodedBrowserHash = atob("...");
+                     *
+                     * finalRedirectUrl =
+                     *     decodedBaseUrl +
+                     *     decodedEncryptedVal +
+                     *     "/" +
+                     *     decodedBrowserHash;
+                     *
+                     * Lo ricostruiamo immediatamente,
+                     * senza attendere il setTimeout di 3 secondi.
+                     */
+                    webView.evaluateJavascript(
+                        """
+                        (function() {
+                
+                            try {
+                
+                                var scripts =
+                                    document.querySelectorAll("script");
+                
+                                for (
+                                    var i = 0;
+                                    i < scripts.length;
+                                    i++
+                                ) {
+                
+                                    var content =
+                                        scripts[i].textContent ||
+                                        scripts[i].innerHTML ||
+                                        "";
+                
+                                    if (
+                                        content.indexOf(
+                                            "decodedBaseUrl"
+                                        ) === -1 ||
+                                        content.indexOf(
+                                            "decodedEncryptedVal"
+                                        ) === -1
+                                    ) {
+                                        continue;
+                                    }
+                
                                     /*
-                                     * BUTTON / INPUT
+                                     * Prendiamo direttamente i Base64
+                                     * assegnati alle tre variabili.
                                      */
-                                    document
-                                        .querySelectorAll(
-                                            'button, input[type="submit"], input[type="button"]'
-                                        )
-                                        .forEach(function(el) {
-                        
-                                            result.buttons.push({
-                                                tag: el.tagName,
-                                                id: el.id || "",
-                                                cls: el.className || "",
-                                                text:
-                                                    (
-                                                        el.innerText ||
-                                                        el.textContent ||
-                                                        el.value ||
-                                                        ""
-                                                    ).trim(),
-                                                onclick:
-                                                    el.getAttribute("onclick") || ""
-                                            });
-                                        });
-                        
+                                    var baseMatch =
+                                        content.match(
+                                            /decodedBaseUrl\s*=\s*atob\(\s*["']([^"']+)["']\s*\)/
+                                        );
+                
+                                    var valueMatch =
+                                        content.match(
+                                            /decodedEncryptedVal\s*=\s*atob\(\s*["']([^"']+)["']\s*\)/
+                                        );
+                
+                                    var hashMatch =
+                                        content.match(
+                                            /decodedBrowserHash\s*=\s*atob\(\s*["']([^"']+)["']\s*\)/
+                                        );
+                
+                                    if (
+                                        !baseMatch ||
+                                        !valueMatch
+                                    ) {
+                                        continue;
+                                    }
+                
+                                    var decodedBase =
+                                        atob(
+                                            baseMatch[1]
+                                        );
+                
+                                    var decodedValue =
+                                        atob(
+                                            valueMatch[1]
+                                        );
+                
                                     /*
-                                     * LINK
+                                     * Alcune versioni potrebbero non avere
+                                     * decodedBrowserHash.
                                      */
-                                    document
-                                        .querySelectorAll('a[href]')
-                                        .forEach(function(el) {
-                        
-                                            var href =
-                                                el.href || "";
-                        
-                                            var text =
-                                                (
-                                                    el.innerText ||
-                                                    el.textContent ||
-                                                    ""
-                                                ).trim();
-                        
-                                            if (
-                                                text ||
-                                                href.indexOf("maxstream") !== -1 ||
-                                                href.indexOf("uprot") !== -1
-                                            ) {
-                        
-                                                result.links.push({
-                                                    text: text,
-                                                    href: href,
-                                                    id: el.id || "",
-                                                    cls: el.className || "",
-                                                    onclick:
-                                                        el.getAttribute("onclick") || ""
-                                                });
-                                            }
-                                        });
-                        
-                                    /*
-                                     * SCRIPT INLINE
-                                     */
-                                    document
-                                        .querySelectorAll("script")
-                                        .forEach(function(el, index) {
-                        
-                                            var content =
-                                                el.src
-                                                    ? "SRC=" + el.src
-                                                    : (
-                                                        el.textContent ||
-                                                        el.innerHTML ||
-                                                        ""
-                                                      );
-                        
-                                            if (
-                                                content.indexOf("Continue") !== -1 ||
-                                                content.indexOf("continue") !== -1 ||
-                                                content.indexOf("atob") !== -1 ||
-                                                content.indexOf("maxstream") !== -1 ||
-                                                content.indexOf("Loading") !== -1 ||
-                                                content.indexOf("setTimeout") !== -1 ||
-                                                content.indexOf("location") !== -1
-                                            ) {
-                        
-                                                result.scripts.push({
-                                                    index: index,
-                                                    content:
-                                                        content.substring(
-                                                            0,
-                                                            8000
-                                                        )
-                                                });
-                                            }
-                                        });
-                        
-                                    /*
-                                     * STORAGE
-                                     *
-                                     * Solo nomi delle chiavi, non valori.
-                                     */
-                                    try {
-                        
-                                        for (
-                                            var i = 0;
-                                            i < sessionStorage.length;
-                                            i++
-                                        ) {
-                        
-                                            var key =
-                                                sessionStorage.key(i);
-                        
-                                            result.storage[
-                                                "session:" + key
-                                            ] = "present";
-                                        }
-                        
-                                    } catch(e) {}
-                        
-                                    try {
-                        
-                                        for (
-                                            var j = 0;
-                                            j < localStorage.length;
-                                            j++
-                                        ) {
-                        
-                                            var key2 =
-                                                localStorage.key(j);
-                        
-                                            result.storage[
-                                                "local:" + key2
-                                            ] = "present";
-                                        }
-                        
-                                    } catch(e) {}
-                        
-                                    return JSON.stringify(result);
-                        
-                                } catch(e) {
-                        
-                                    return JSON.stringify({
-                                        error: e.toString()
-                                    });
+                                    var decodedHash =
+                                        "";
+                
+                                    if (hashMatch) {
+                
+                                        decodedHash =
+                                            atob(
+                                                hashMatch[1]
+                                            );
+                                    }
+                
+                                    var finalUrl =
+                                        decodedBase +
+                                        decodedValue;
+                
+                                    if (
+                                        decodedHash
+                                    ) {
+                
+                                        finalUrl +=
+                                            "/" +
+                                            decodedHash;
+                                    }
+                
+                                    if (
+                                        finalUrl.indexOf(
+                                            "https://maxstream.video/"
+                                        ) === 0
+                                    ) {
+                
+                                        return "DIRECT_MAXSTREAM|" + finalUrl;
+                                    }
                                 }
-                        
-                            })();
-                            """.trimIndent()
-                        ) { diagnostic ->
-                        
-                            Log.e(
-                                TAG,
-                                "========== UPROT LOADING DIAGNOSTIC =========="
-                            )
-                        
-                            Log.e(
-                                TAG,
-                                diagnostic
-                                    ?.replace("\\n", " ")
-                                    ?.take(30000)
-                                    ?: "null"
-                            )
-                        
-                            Log.e(
-                                TAG,
-                                "========== FINE DIAGNOSTIC =========="
-                            )
+                
+                                return "NOT_READY";
+                
+                            } catch(e) {
+                
+                                return "ERROR|" + e.toString();
+                            }
+                
+                        })();
+                        """.trimIndent()
+                    ) { directResult ->
+                
+                        if (completed) {
+                            return@evaluateJavascript
                         }
-                    webView.postDelayed(
-                        {
-                            checkPageState(
-                                attempt + 1
+                
+                        val directState =
+                            directResult
+                                ?.trim()
+                                ?.removePrefix("\"")
+                                ?.removeSuffix("\"")
+                                ?.replace("\\/", "/")
+                                ?.replace("\\\"", "\"")
+                                ?: "ERROR|null"
+                
+                        Log.d(
+                            TAG,
+                            "FAST PATH estrazione diretta = $directState"
+                        )
+                
+                        if (
+                            directState.startsWith(
+                                "DIRECT_MAXSTREAM|"
                             )
-                        },
-                        500L
-                    )
+                        ) {
+                
+                            val maxstreamUrl =
+                                directState.substringAfter(
+                                    "DIRECT_MAXSTREAM|"
+                                )
+                
+                            Log.d(
+                                TAG,
+                                "MAXSTREAM ricostruito direttamente = $maxstreamUrl"
+                            )
+                
+                            finish(
+                                maxstreamUrl
+                            )
+                
+                            return@evaluateJavascript
+                        }
+                
+                        /*
+                         * Se lo script non è ancora pronto,
+                         * riproviamo dopo mezzo secondo.
+                         */
+                        webView.postDelayed(
+                            {
+                
+                                if (!completed) {
+                
+                                    checkPageState(
+                                        attempt + 1
+                                    )
+                                }
+                
+                            },
+                            500L
+                        )
+                    }
                 }
-
                 else -> {
 
                     Log.d(
