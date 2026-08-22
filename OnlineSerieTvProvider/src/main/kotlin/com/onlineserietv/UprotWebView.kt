@@ -459,7 +459,15 @@ object UprotWebView {
                             return false
                         }
                     }
-
+                /*
+                 * Verrà valorizzato più avanti solo quando
+                 * esiste già una sessione Uprot.
+                 *
+                 * onPageFinished() lo chiamerà quando il DOM
+                 * è realmente pronto.
+                 */
+                var pageStateChecker: (() -> Unit)? = null
+                
                 webView.webViewClient =
                     object :
                         WebViewClient() {
@@ -732,6 +740,27 @@ object UprotWebView {
                             }
 
                             searchMaxstream()
+                            /*
+                             * Se siamo su una sessione già esistente,
+                             * analizziamo CAPTCHA / CONTINUE / MAXSTREAM
+                             * solo dopo che la pagina è terminata.
+                             */
+                            pageStateChecker?.let { checker ->
+                            
+                                Log.d(
+                                    TAG,
+                                    "PAGE FINISH: avvio controllo stato Uprot"
+                                )
+                            
+                                view?.postDelayed(
+                                    {
+                                        if (!completed) {
+                                            checker()
+                                        }
+                                    },
+                                    250L
+                                )
+                            }
                         }
                     }
 
@@ -860,16 +889,6 @@ if (hasExistingSession) {
         }
     }
 
-    /*
-     * Analizza la pagina corrente.
-     *
-     * Stati possibili:
-     *
-     * MAXSTREAM
-     * CONTINUE
-     * CAPTCHA
-     * WAIT
-     */
     fun checkPageState(
         attempt: Int = 0
     ) {
@@ -879,26 +898,30 @@ if (hasExistingSession) {
         }
 
         /*
-         * Non aspettiamo all'infinito.
+         * Massimo circa 5 secondi.
          *
-         * 10 tentativi x 500ms = circa 5 secondi.
-         *
-         * Se non capiamo cosa sta succedendo,
-         * mostriamo comunque Uprot.
+         * Se non capiamo lo stato,
+         * mostriamo comunque la pagina:
+         * niente caricamenti infiniti.
          */
         if (attempt >= 10) {
 
             Log.d(
                 TAG,
-                "FAST PATH timeout: mostro Uprot per sicurezza"
+                "FAST PATH timeout dopo $attempt tentativi"
             )
 
             showUprotDialog(
-                "timeout fast path"
+                "stato Uprot non riconosciuto"
             )
 
             return
         }
+
+        Log.d(
+            TAG,
+            "FAST PATH controllo tentativo=$attempt url=${webView.url}"
+        )
 
         webView.evaluateJavascript(
             """
@@ -907,7 +930,7 @@ if (hasExistingSession) {
                 try {
 
                     /*
-                     * 1. MAXSTREAM
+                     * MAXSTREAM
                      */
                     var links =
                         document.querySelectorAll(
@@ -942,13 +965,13 @@ if (hasExistingSession) {
                     }
 
                     /*
-                     * 2. CAPTCHA
+                     * CAPTCHA
                      */
                     var captcha =
                         document.querySelector(
                             '#upcaptcha-form, ' +
-                            '.upcaptcha-box, ' +
-                            '#upcaptcha-wrapper'
+                            '#upcaptcha-wrapper, ' +
+                            '.upcaptcha-box'
                         );
 
                     if (captcha) {
@@ -956,26 +979,21 @@ if (hasExistingSession) {
                     }
 
                     /*
-                     * 3. CONTINUE
-                     *
-                     * Uprot può usare:
-                     * button#buttok
-                     * oppure un normale button/link
-                     * contenente CONTINUE.
+                     * CONTINUE
                      */
-                    var buttons =
+                    var elements =
                         document.querySelectorAll(
                             'button, input[type="submit"], a'
                         );
 
                     for (
                         var j = 0;
-                        j < buttons.length;
+                        j < elements.length;
                         j++
                     ) {
 
                         var el =
-                            buttons[j];
+                            elements[j];
 
                         var text =
                             (
@@ -984,28 +1002,56 @@ if (hasExistingSession) {
                                 el.value ||
                                 ""
                             )
+                            .replace(/\s+/g, " ")
                             .trim()
                             .toUpperCase();
 
                         var id =
-                            (el.id || "")
+                            (
+                                el.id ||
+                                ""
+                            )
                             .toLowerCase();
 
                         if (
                             id === "buttok" ||
-                            text.indexOf("CONTINUE") !== -1 ||
-                            text.indexOf("CONTINUA") !== -1
+                            text.indexOf(
+                                "CONTINUE"
+                            ) !== -1 ||
+                            text.indexOf(
+                                "CONTINUA"
+                            ) !== -1
                         ) {
 
                             return "CONTINUE";
                         }
                     }
 
-                    return "WAIT";
+                    /*
+                     * Diagnostica:
+                     * se non riconosciamo nulla,
+                     * restituiamo un pezzo del testo visibile.
+                     */
+                    var body =
+                        document.body
+                            ? (
+                                document.body.innerText ||
+                                document.body.textContent ||
+                                ""
+                              )
+                            : "";
+
+                    body =
+                        body
+                            .replace(/\s+/g, " ")
+                            .trim()
+                            .substring(0, 250);
+
+                    return "WAIT|" + body;
 
                 } catch(e) {
 
-                    return "ERROR";
+                    return "ERROR|" + e.toString();
                 }
 
             })();
@@ -1021,22 +1067,18 @@ if (hasExistingSession) {
                     ?.trim()
                     ?.removePrefix("\"")
                     ?.removeSuffix("\"")
-                    ?.replace(
-                        "\\/",
-                        "/"
-                    )
-                    ?: "ERROR"
+                    ?.replace("\\/", "/")
+                    ?.replace("\\n", " ")
+                    ?.replace("\\\"", "\"")
+                    ?: "ERROR|null"
 
             Log.d(
                 TAG,
-                "FAST PATH tentativo=$attempt stato=$state"
+                "FAST PATH tentativo=$attempt risultato=$state"
             )
 
             when {
 
-                /*
-                 * Link già disponibile.
-                 */
                 state.startsWith(
                     "MAXSTREAM|"
                 ) -> {
@@ -1048,7 +1090,7 @@ if (hasExistingSession) {
 
                     Log.d(
                         TAG,
-                        "FAST PATH MaxStream trovato: $maxstreamUrl"
+                        "FAST PATH MaxStream = $maxstreamUrl"
                     )
 
                     finish(
@@ -1056,14 +1098,11 @@ if (hasExistingSession) {
                     )
                 }
 
-                /*
-                 * Uprot vuole ancora un CAPTCHA.
-                 */
                 state == "CAPTCHA" -> {
 
                     Log.d(
                         TAG,
-                        "FAST PATH: CAPTCHA presente"
+                        "FAST PATH: CAPTCHA rilevato"
                     )
 
                     showUprotDialog(
@@ -1071,20 +1110,11 @@ if (hasExistingSession) {
                     )
                 }
 
-                /*
-                 * È lo stesso comportamento che abbiamo
-                 * visto nella stessa scheda del browser:
-                 *
-                 * CAPTCHA già valido → appare CONTINUE.
-                 *
-                 * Qui clicchiamo semplicemente il normale
-                 * pulsante Continue.
-                 */
                 state == "CONTINUE" -> {
 
                     Log.d(
                         TAG,
-                        "FAST PATH: CONTINUE trovato, clic automatico"
+                        "FAST PATH: CONTINUE rilevato"
                     )
 
                     webView.evaluateJavascript(
@@ -1093,9 +1123,6 @@ if (hasExistingSession) {
 
                             try {
 
-                                /*
-                                 * Prima proviamo #buttok.
-                                 */
                                 var button =
                                     document.querySelector(
                                         '#buttok'
@@ -1103,11 +1130,6 @@ if (hasExistingSession) {
 
                                 if (button) {
 
-                                    /*
-                                     * Se è dentro un link,
-                                     * preferiamo navigare attraverso
-                                     * il link vero.
-                                     */
                                     var parent =
                                         button.closest('a');
 
@@ -1116,20 +1138,20 @@ if (hasExistingSession) {
                                         parent.href
                                     ) {
 
-                                        window.location.href =
+                                        var url =
                                             parent.href;
 
-                                        return "CLICKED_LINK";
+                                        window.location.href =
+                                            url;
+
+                                        return "LINK|" + url;
                                     }
 
                                     button.click();
 
-                                    return "CLICKED_BUTTON";
+                                    return "BUTTON";
                                 }
 
-                                /*
-                                 * Fallback: cerchiamo per testo.
-                                 */
                                 var elements =
                                     document.querySelectorAll(
                                         'button, input[type="submit"], a'
@@ -1151,6 +1173,7 @@ if (hasExistingSession) {
                                             el.value ||
                                             ""
                                         )
+                                        .replace(/\s+/g, " ")
                                         .trim()
                                         .toUpperCase();
 
@@ -1158,7 +1181,6 @@ if (hasExistingSession) {
                                         text.indexOf(
                                             "CONTINUE"
                                         ) !== -1 ||
-
                                         text.indexOf(
                                             "CONTINUA"
                                         ) !== -1
@@ -1169,15 +1191,18 @@ if (hasExistingSession) {
                                             el.href
                                         ) {
 
-                                            window.location.href =
+                                            var url =
                                                 el.href;
 
-                                        } else {
+                                            window.location.href =
+                                                url;
 
-                                            el.click();
+                                            return "LINK|" + url;
                                         }
 
-                                        return "CLICKED";
+                                        el.click();
+
+                                        return "ELEMENT_CLICK";
                                     }
                                 }
 
@@ -1185,7 +1210,7 @@ if (hasExistingSession) {
 
                             } catch(e) {
 
-                                return "ERROR";
+                                return "ERROR|" + e.toString();
                             }
 
                         })();
@@ -1194,15 +1219,15 @@ if (hasExistingSession) {
 
                         Log.d(
                             TAG,
-                            "FAST PATH risultato CONTINUE = $clickResult"
+                            "FAST PATH click CONTINUE = $clickResult"
                         )
 
                         /*
-                         * Dopo il click aspettiamo la navigazione.
+                         * La navigazione dovrebbe causare
+                         * onPageStarted/onPageFinished.
                          *
-                         * onPageFinished/searchMaxstream()
-                         * continueranno comunque a cercare,
-                         * ma facciamo anche un nuovo controllo.
+                         * Manteniamo anche questo controllo
+                         * come fallback.
                          */
                         webView.postDelayed(
                             {
@@ -1210,15 +1235,38 @@ if (hasExistingSession) {
                                     attempt + 1
                                 )
                             },
-                            700L
+                            750L
                         )
                     }
                 }
 
-                /*
-                 * Pagina ancora in caricamento.
-                 */
+                state.startsWith(
+                    "WAIT|"
+                ) -> {
+
+                    Log.d(
+                        TAG,
+                        "FAST PATH pagina non riconosciuta: ${
+                            state.substringAfter("WAIT|")
+                        }"
+                    )
+
+                    webView.postDelayed(
+                        {
+                            checkPageState(
+                                attempt + 1
+                            )
+                        },
+                        500L
+                    )
+                }
+
                 else -> {
+
+                    Log.d(
+                        TAG,
+                        "FAST PATH errore/stato inatteso: $state"
+                    )
 
                     webView.postDelayed(
                         {
@@ -1234,19 +1282,24 @@ if (hasExistingSession) {
     }
 
     /*
-     * Lasciamo alla pagina circa mezzo secondo
-     * per iniziare il caricamento prima del primo check.
+     * NON avviamo più direttamente qui il controllo.
+     *
+     * Lo registriamo e sarà onPageFinished()
+     * ad avviarlo quando il DOM sarà pronto.
      */
-    webView.postDelayed(
-        {
-            checkPageState()
-        },
-        500L
-    )
-}
-            }
-        }
+    pageStateChecker = {
 
+        Log.d(
+            TAG,
+            "Eseguo pageStateChecker"
+        )
+
+        checkPageState(
+            0
+        )
+    }
+}
+}
     /*
      * Funzione opzionale:
      * se in futuro vuoi resettare completamente
