@@ -102,6 +102,14 @@ object UprotWebView {
             cookieManager.setAcceptCookie(true)
             cookieManager.setAcceptThirdPartyCookies(webView, true)
 
+            /*
+             * Manteniamo esplicitamente i cookie persistenti.
+             */
+            try {
+                cookieManager.flush()
+            } catch (_: Exception) {
+            }
+
             val progressBar = ProgressBar(
                 activity,
                 null,
@@ -148,25 +156,33 @@ object UprotWebView {
 
                 if (completed)
                     return
-
+            
                 completed = true
-
+            
                 Log.d(
                     TAG,
                     "Risultato WebView = $result"
                 )
-
+            
                 try {
                     webView.stopLoading()
+                } catch (_: Exception) {
+                }
+            
+                try {
+            
+                    if (dialog.isShowing) {
+                        dialog.dismiss()
+                    }
+            
+                } catch (_: Exception) {
+                }
+            
+                try {
                     webView.destroy()
                 } catch (_: Exception) {
                 }
-
-                try {
-                    dialog.dismiss()
-                } catch (_: Exception) {
-                }
-
+            
                 if (continuation.isActive) {
                     continuation.resume(result)
                 }
@@ -317,6 +333,12 @@ object UprotWebView {
                         val cookies =
                             CookieManager.getInstance()
                                 .getCookie("https://uprot.net")
+                                try {
+                                    CookieManager
+                                        .getInstance()
+                                        .flush()
+                                } catch (_: Exception) {
+                                }
 
                         Log.d(
                             TAG,
@@ -391,28 +413,141 @@ object UprotWebView {
                     }
                 }
 
-            // Siamo FUORI da WebViewClient
-            Log.d(TAG, "Apro WebView: $url")
+           // Siamo FUORI da WebViewClient
+Log.d(TAG, "Apro WebView: $url")
 
-            val existingCookies =
-                CookieManager.getInstance()
-                    .getCookie("https://uprot.net")
+val existingCookies =
+    CookieManager.getInstance()
+        .getCookie("https://uprot.net")
+
+Log.d(
+    TAG,
+    "Cookie Uprot presenti = ${
+        !existingCookies.isNullOrBlank()
+    }"
+)
+
+/*
+ * FAST PATH
+ *
+ * Carichiamo Uprot senza mostrare subito il dialog.
+ *
+ * Se la sessione/cookie già presenti sono ancora validi,
+ * Uprot potrebbe portarci direttamente a MaxStream.
+ *
+ * In quel caso finish() verrà chiamato dal WebViewClient
+ * e l'utente non vedrà nessun CAPTCHA/dialog.
+ */
+webView.loadUrl(
+    url,
+    mapOf(
+        "Referer" to "https://onlineserietv.mom/"
+    )
+)
+
+/*
+ * Aspettiamo un po' prima di mostrare la UI.
+ *
+ * Se entro questo tempo non abbiamo trovato MaxStream,
+ * molto probabilmente Uprot sta aspettando l'interazione
+ * dell'utente/CAPTCHA.
+ */
+webView.postDelayed(
+    {
+
+        if (completed) {
+            Log.d(
+                TAG,
+                "FAST PATH riuscito: MaxStream trovato senza mostrare il dialog"
+            )
+            return@postDelayed
+        }
+
+        val currentUrl =
+            try {
+                webView.url
+            } catch (_: Exception) {
+                null
+            }
+
+        Log.d(
+            TAG,
+            "FAST PATH terminato. URL corrente = $currentUrl"
+        )
+
+        webView.evaluateJavascript(
+            """
+            (function() {
+
+                try {
+
+                    var captcha =
+                        document.querySelector(
+                            '#upcaptcha-form, .upcaptcha-box, [class*="captcha"], [id*="captcha"]'
+                        );
+
+                    return captcha ? "CAPTCHA" : "NO_CAPTCHA";
+
+                } catch(e) {
+                    return "ERROR";
+                }
+
+            })();
+            """.trimIndent()
+        ) { result ->
+
+            val state =
+                result
+                    ?.trim()
+                    ?.removePrefix("\"")
+                    ?.removeSuffix("\"")
 
             Log.d(
                 TAG,
-                "Cookie Uprot presenti = ${
-                    !existingCookies.isNullOrBlank()
-                }"
+                "FAST PATH stato pagina = $state"
             )
 
-            dialog.show()
+            if (completed) {
+                return@evaluateJavascript
+            }
 
-            webView.loadUrl(
-                url,
-                mapOf(
-                    "Referer" to "https://onlineserietv.mom/"
+            if (state == "CAPTCHA") {
+
+                try {
+
+                    if (!dialog.isShowing) {
+
+                        Log.d(
+                            TAG,
+                            "CAPTCHA presente: mostro dialog Uprot"
+                        )
+
+                        dialog.show()
+                    }
+
+                } catch (e: Exception) {
+
+                    Log.e(
+                        TAG,
+                        "Errore apertura dialog Uprot: ${e.message}",
+                        e
+                    )
+
+                    finish(null)
+                }
+
+            } else {
+
+                Log.d(
+                    TAG,
+                    "Nessun CAPTCHA rilevato: continuo fast path"
                 )
-            )
+            }
+        }
+
+    },
+    2500L
+)
         }
     }
 }
