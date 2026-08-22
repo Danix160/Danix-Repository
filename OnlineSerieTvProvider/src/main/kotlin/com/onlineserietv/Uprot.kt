@@ -49,6 +49,76 @@ class Uprot : ExtractorApi() {
 
         else -> url
     }
+    /*
+ * Se esiste già una WebView Uprot persistente,
+ * usiamo direttamente quella.
+ *
+ * Non ci basiamo più sul GET HTTP iniziale,
+ * perché può restituire CAPTCHA anche quando
+ * la sessione WebView riesce a proseguire.
+ */
+if (UprotWebView.hasPersistentSession()) {
+
+    Log.e(
+        TAG,
+        ">>> SESSIONE WEBVIEW GIÀ PRESENTE <<<"
+    )
+
+    Log.e(
+        TAG,
+        ">>> PROVO DIRETTAMENTE UprotWebView.resolve <<<"
+    )
+
+    val webViewResult = try {
+
+        UprotWebView.resolve(
+            mseUrl,
+            USER_AGENT
+        )
+
+    } catch (e: Exception) {
+
+        Log.e(
+            TAG,
+            "ERRORE UprotWebView sessione persistente: ${e.message}",
+            e
+        )
+
+        null
+    }
+
+    Log.e(
+        TAG,
+        ">>> RISULTATO SESSIONE PERSISTENTE: $webViewResult <<<"
+    )
+
+    if (!webViewResult.isNullOrBlank()) {
+
+        Log.e(
+            TAG,
+            ">>> PASSO DIRETTAMENTE A MAXSTREAM <<<"
+        )
+
+        MaxStream().getUrl(
+            webViewResult,
+            mseUrl,
+            subtitleCallback,
+            callback
+        )
+
+        return
+    }
+
+    /*
+     * Se per qualche motivo la WebView persistente
+     * non riesce a risolvere il link,
+     * continuiamo col normale flusso HTTP sotto.
+     */
+    Log.e(
+        TAG,
+        "Sessione WebView non sufficiente, fallback HTTP"
+    )
+}
 
         Log.d(TAG, "URL da richiedere: $mseUrl")
 
