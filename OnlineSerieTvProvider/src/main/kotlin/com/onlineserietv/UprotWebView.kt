@@ -768,23 +768,204 @@ object UprotWebView {
                  * la sessione della stessa WebView, dovrebbe
                  * apparire direttamente CONTINUE.
                  */
-                dialog.show()
-
-                /*
-                 * Cambiamo URL nella STESSA WebView.
-                 */
                 Log.d(
-                    TAG,
-                    "Carico nuova pagina nella WebView persistente: $url"
-                )
+    TAG,
+    "Carico nuova pagina nella WebView persistente: $url"
+)
 
-                webView.loadUrl(
-                    url,
-                    mapOf(
-                        "Referer" to
-                            "https://onlineserietv.mom/"
+webView.loadUrl(
+    url,
+    mapOf(
+        "Referer" to
+            "https://onlineserietv.mom/"
+    )
+)
+
+/*
+ * FAST PATH INVISIBILE
+ *
+ * Se la sessione della WebView persistente è già valida,
+ * lasciamo che Uprot arrivi a MaxStream senza mostrare il dialog.
+ */
+webView.postDelayed(
+    {
+
+        if (completed) {
+            Log.d(
+                TAG,
+                "FAST PATH riuscito: MaxStream trovato senza mostrare Uprot"
+            )
+            return@postDelayed
+        }
+
+        webView.evaluateJavascript(
+            """
+            (function() {
+
+                try {
+
+                    var captcha =
+                        document.querySelector(
+                            '#upcaptcha-form, .upcaptcha-box, #upcaptcha-wrapper'
+                        );
+
+                    var maxLinks =
+                        document.querySelectorAll(
+                            'a[href*="maxstream.video"]'
+                        );
+
+                    if (maxLinks && maxLinks.length > 0) {
+                        return "MAXSTREAM";
+                    }
+
+                    if (captcha) {
+                        return "CAPTCHA";
+                    }
+
+                    return "WAIT";
+
+                } catch(e) {
+                    return "ERROR";
+                }
+
+            })();
+            """.trimIndent()
+        ) { result ->
+
+            if (completed) {
+                return@evaluateJavascript
+            }
+
+            val state =
+                result
+                    ?.trim()
+                    ?.removePrefix("\"")
+                    ?.removeSuffix("\"")
+
+            Log.d(
+                TAG,
+                "FAST PATH stato = $state"
+            )
+
+            when (state) {
+
+                "CAPTCHA" -> {
+
+                    Log.d(
+                        TAG,
+                        "CAPTCHA necessario: mostro Uprot"
                     )
-                )
+
+                    try {
+
+                        if (!dialog.isShowing) {
+                            dialog.show()
+                        }
+
+                    } catch (e: Exception) {
+
+                        Log.e(
+                            TAG,
+                            "Errore apertura dialog: ${e.message}",
+                            e
+                        )
+
+                        finish(null)
+                    }
+                }
+
+                "MAXSTREAM" -> {
+
+                    /*
+                     * searchMaxstream() avviato da onPageFinished
+                     * dovrebbe già intercettarlo.
+                     */
+                    Log.d(
+                        TAG,
+                        "MaxStream già presente nella pagina"
+                    )
+                }
+
+                else -> {
+
+                    /*
+                     * La pagina potrebbe essere ancora in elaborazione.
+                     * Diamo un altro secondo prima di mostrare qualcosa.
+                     */
+                    webView.postDelayed(
+                        {
+
+                            if (completed) {
+                                return@postDelayed
+                            }
+
+                            webView.evaluateJavascript(
+                                """
+                                (function() {
+
+                                    var captcha =
+                                        document.querySelector(
+                                            '#upcaptcha-form, .upcaptcha-box, #upcaptcha-wrapper'
+                                        );
+
+                                    return captcha ? "CAPTCHA" : "NO_CAPTCHA";
+
+                                })();
+                                """.trimIndent()
+                            ) { secondResult ->
+
+                                if (completed) {
+                                    return@evaluateJavascript
+                                }
+
+                                val secondState =
+                                    secondResult
+                                        ?.trim()
+                                        ?.removePrefix("\"")
+                                        ?.removeSuffix("\"")
+
+                                Log.d(
+                                    TAG,
+                                    "FAST PATH secondo controllo = $secondState"
+                                )
+
+                                if (secondState == "CAPTCHA") {
+
+                                    try {
+
+                                        if (!dialog.isShowing) {
+
+                                            Log.d(
+                                                TAG,
+                                                "CAPTCHA confermato: mostro dialog"
+                                            )
+
+                                            dialog.show()
+                                        }
+
+                                    } catch (e: Exception) {
+
+                                        Log.e(
+                                            TAG,
+                                            "Errore apertura dialog: ${e.message}",
+                                            e
+                                        )
+
+                                        finish(null)
+                                    }
+                                }
+                            }
+
+                        },
+                        1000L
+                    )
+                }
+            }
+        }
+
+    },
+    2000L
+)
             }
         }
 
