@@ -1249,7 +1249,189 @@ if (hasExistingSession) {
                             state.substringAfter("WAIT|")
                         }"
                     )
-
+                    
+                        webView.evaluateJavascript(
+                            """
+                            (function() {
+                                try {
+                        
+                                    var result = {
+                                        url: window.location.href,
+                                        title: document.title || "",
+                                        buttons: [],
+                                        links: [],
+                                        scripts: [],
+                                        storage: {}
+                                    };
+                        
+                                    /*
+                                     * BUTTON / INPUT
+                                     */
+                                    document
+                                        .querySelectorAll(
+                                            'button, input[type="submit"], input[type="button"]'
+                                        )
+                                        .forEach(function(el) {
+                        
+                                            result.buttons.push({
+                                                tag: el.tagName,
+                                                id: el.id || "",
+                                                cls: el.className || "",
+                                                text:
+                                                    (
+                                                        el.innerText ||
+                                                        el.textContent ||
+                                                        el.value ||
+                                                        ""
+                                                    ).trim(),
+                                                onclick:
+                                                    el.getAttribute("onclick") || ""
+                                            });
+                                        });
+                        
+                                    /*
+                                     * LINK
+                                     */
+                                    document
+                                        .querySelectorAll('a[href]')
+                                        .forEach(function(el) {
+                        
+                                            var href =
+                                                el.href || "";
+                        
+                                            var text =
+                                                (
+                                                    el.innerText ||
+                                                    el.textContent ||
+                                                    ""
+                                                ).trim();
+                        
+                                            if (
+                                                text ||
+                                                href.indexOf("maxstream") !== -1 ||
+                                                href.indexOf("uprot") !== -1
+                                            ) {
+                        
+                                                result.links.push({
+                                                    text: text,
+                                                    href: href,
+                                                    id: el.id || "",
+                                                    cls: el.className || "",
+                                                    onclick:
+                                                        el.getAttribute("onclick") || ""
+                                                });
+                                            }
+                                        });
+                        
+                                    /*
+                                     * SCRIPT INLINE
+                                     */
+                                    document
+                                        .querySelectorAll("script")
+                                        .forEach(function(el, index) {
+                        
+                                            var content =
+                                                el.src
+                                                    ? "SRC=" + el.src
+                                                    : (
+                                                        el.textContent ||
+                                                        el.innerHTML ||
+                                                        ""
+                                                      );
+                        
+                                            if (
+                                                content.indexOf("Continue") !== -1 ||
+                                                content.indexOf("continue") !== -1 ||
+                                                content.indexOf("atob") !== -1 ||
+                                                content.indexOf("maxstream") !== -1 ||
+                                                content.indexOf("Loading") !== -1 ||
+                                                content.indexOf("setTimeout") !== -1 ||
+                                                content.indexOf("location") !== -1
+                                            ) {
+                        
+                                                result.scripts.push({
+                                                    index: index,
+                                                    content:
+                                                        content.substring(
+                                                            0,
+                                                            8000
+                                                        )
+                                                });
+                                            }
+                                        });
+                        
+                                    /*
+                                     * STORAGE
+                                     *
+                                     * Solo nomi delle chiavi, non valori.
+                                     */
+                                    try {
+                        
+                                        for (
+                                            var i = 0;
+                                            i < sessionStorage.length;
+                                            i++
+                                        ) {
+                        
+                                            var key =
+                                                sessionStorage.key(i);
+                        
+                                            result.storage[
+                                                "session:" + key
+                                            ] = "present";
+                                        }
+                        
+                                    } catch(e) {}
+                        
+                                    try {
+                        
+                                        for (
+                                            var j = 0;
+                                            j < localStorage.length;
+                                            j++
+                                        ) {
+                        
+                                            var key2 =
+                                                localStorage.key(j);
+                        
+                                            result.storage[
+                                                "local:" + key2
+                                            ] = "present";
+                                        }
+                        
+                                    } catch(e) {}
+                        
+                                    return JSON.stringify(result);
+                        
+                                } catch(e) {
+                        
+                                    return JSON.stringify({
+                                        error: e.toString()
+                                    });
+                                }
+                        
+                            })();
+                            """.trimIndent()
+                        ) { diagnostic ->
+                        
+                            Log.e(
+                                TAG,
+                                "========== UPROT LOADING DIAGNOSTIC =========="
+                            )
+                        
+                            Log.e(
+                                TAG,
+                                diagnostic
+                                    ?.replace("\\n", " ")
+                                    ?.take(30000)
+                                    ?: "null"
+                            )
+                        
+                            Log.e(
+                                TAG,
+                                "========== FINE DIAGNOSTIC =========="
+                            )
+                        }
                     webView.postDelayed(
                         {
                             checkPageState(
