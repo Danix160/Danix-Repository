@@ -255,7 +255,7 @@ object UprotWebView {
                         TAG,
                         "Risultato WebView = $result"
                     )
-
+                   
                     /*
                      * Fermiamo solo il caricamento corrente.
                      *
@@ -421,7 +421,172 @@ object UprotWebView {
                     mediaPlaybackRequiresUserGesture =
                         true
                 }
-
+                fun dumpUprotSession(
+                        label: String
+                    ) {
+                    
+                        Log.e(
+                            TAG,
+                            "========== UPROT SESSION [$label] =========="
+                        )
+                    
+                        try {
+                    
+                            val rawCookies =
+                                CookieManager
+                                    .getInstance()
+                                    .getCookie(
+                                        "https://uprot.net"
+                                    )
+                                    .orEmpty()
+                    
+                            /*
+                             * Non stampiamo i token completi:
+                             * per il confronto ci interessano soprattutto
+                             * nomi e presenza dei cookie.
+                             */
+                            val cookieNames =
+                                rawCookies
+                                    .split(";")
+                                    .mapNotNull { part ->
+                    
+                                        part
+                                            .trim()
+                                            .substringBefore("=")
+                                            .takeIf {
+                                                it.isNotBlank()
+                                            }
+                                    }
+                    
+                            Log.e(
+                                TAG,
+                                "SESSION [$label] CookieManager names = $cookieNames"
+                            )
+                    
+                            Log.e(
+                                TAG,
+                                "SESSION [$label] CookieManager count = ${cookieNames.size}"
+                            )
+                    
+                        } catch (e: Exception) {
+                    
+                            Log.e(
+                                TAG,
+                                "SESSION [$label] errore CookieManager: ${e.message}"
+                            )
+                        }
+                    
+                        webView.evaluateJavascript(
+                            """
+                            (function() {
+                    
+                                try {
+                    
+                                    function keys(storage) {
+                    
+                                        var result = [];
+                    
+                                        try {
+                    
+                                            for (
+                                                var i = 0;
+                                                i < storage.length;
+                                                i++
+                                            ) {
+                    
+                                                var key =
+                                                    storage.key(i);
+                    
+                                                if (key) {
+                    
+                                                    var value =
+                                                        storage.getItem(key) || "";
+                    
+                                                    result.push({
+                                                        key: key,
+                                                        length: value.length
+                                                    });
+                                                }
+                                            }
+                    
+                                        } catch(e) {}
+                    
+                                        return result;
+                                    }
+                    
+                                    var documentCookieNames = [];
+                    
+                                    try {
+                    
+                                        if (document.cookie) {
+                    
+                                            document.cookie
+                                                .split(";")
+                                                .forEach(function(part) {
+                    
+                                                    var name =
+                                                        part
+                                                            .trim()
+                                                            .split("=")[0];
+                    
+                                                    if (name) {
+                                                        documentCookieNames.push(name);
+                                                    }
+                                                });
+                                        }
+                    
+                                    } catch(e) {}
+                    
+                                    return JSON.stringify({
+                    
+                                        href:
+                                            window.location.href,
+                    
+                                        origin:
+                                            window.location.origin,
+                    
+                                        referrer:
+                                            document.referrer || "",
+                    
+                                        userAgent:
+                                            navigator.userAgent,
+                    
+                                        cookieEnabled:
+                                            navigator.cookieEnabled,
+                    
+                                        documentCookies:
+                                            documentCookieNames,
+                    
+                                        localStorage:
+                                            keys(localStorage),
+                    
+                                        sessionStorage:
+                                            keys(sessionStorage)
+                    
+                                    });
+                    
+                                } catch(e) {
+                    
+                                    return JSON.stringify({
+                                        error: e.toString()
+                                    });
+                                }
+                    
+                            })();
+                            """.trimIndent()
+                        ) { result ->
+                    
+                            Log.e(
+                                TAG,
+                                "SESSION [$label] WEB = $result"
+                            )
+                    
+                            Log.e(
+                                TAG,
+                                "========== FINE SESSION [$label] =========="
+                            )
+                        }
+                    }
                 webView.webChromeClient =
                     object :
                         WebChromeClient() {
@@ -608,6 +773,9 @@ object UprotWebView {
                                 TAG,
                                 "PAGE FINISH = $url"
                             )
+                            dumpUprotSession(
+                            "PAGE_FINISH_${url?.substringAfterLast("/") ?: "unknown"}"
+                        )
 
                             /*
                              * Manteniamo cookie persistenti.
@@ -837,8 +1005,12 @@ object UprotWebView {
                  * apparire direttamente CONTINUE.
                  */
                 Log.d(
-    TAG,
+                    TAG,
     "Carico nuova pagina nella WebView persistente: $url"
+)
+
+dumpUprotSession(
+    "PRIMA_LOAD_${url.substringAfterLast("/")}"
 )
 
 webView.loadUrl(
