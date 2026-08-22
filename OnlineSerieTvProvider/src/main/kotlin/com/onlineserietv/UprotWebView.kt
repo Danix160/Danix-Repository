@@ -36,6 +36,9 @@ object UprotWebView {
      */
     private var sharedWebView: WebView? = null
 
+    fun hasPersistentSession(): Boolean {
+    return sharedWebView != null
+    }
     /*
      * Evita due resolve contemporanee sulla stessa WebView.
      */
