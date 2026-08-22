@@ -829,189 +829,419 @@ webView.loadUrl(
  */
 if (hasExistingSession) {
 
-    webView.postDelayed(
-        {
+    fun showUprotDialog(
+        reason: String
+    ) {
 
-            if (completed) {
+        if (completed) {
+            return
+        }
 
-                Log.d(
-                    TAG,
-                    "FAST PATH riuscito: MaxStream trovato senza mostrare Uprot"
-                )
+        Log.d(
+            TAG,
+            "Mostro Uprot: $reason"
+        )
 
-                return@postDelayed
+        try {
+
+            if (!dialog.isShowing) {
+                dialog.show()
             }
 
-            webView.evaluateJavascript(
-                """
-                (function() {
+        } catch (e: Exception) {
 
-                    try {
+            Log.e(
+                TAG,
+                "Errore apertura dialog Uprot: ${e.message}",
+                e
+            )
 
-                        var captcha =
-                            document.querySelector(
-                                '#upcaptcha-form, .upcaptcha-box, #upcaptcha-wrapper'
-                            );
+            finish(null)
+        }
+    }
 
-                        var maxLinks =
-                            document.querySelectorAll(
-                                'a[href*="maxstream.video"]'
-                            );
+    /*
+     * Analizza la pagina corrente.
+     *
+     * Stati possibili:
+     *
+     * MAXSTREAM
+     * CONTINUE
+     * CAPTCHA
+     * WAIT
+     */
+    fun checkPageState(
+        attempt: Int = 0
+    ) {
+
+        if (completed) {
+            return
+        }
+
+        /*
+         * Non aspettiamo all'infinito.
+         *
+         * 10 tentativi x 500ms = circa 5 secondi.
+         *
+         * Se non capiamo cosa sta succedendo,
+         * mostriamo comunque Uprot.
+         */
+        if (attempt >= 10) {
+
+            Log.d(
+                TAG,
+                "FAST PATH timeout: mostro Uprot per sicurezza"
+            )
+
+            showUprotDialog(
+                "timeout fast path"
+            )
+
+            return
+        }
+
+        webView.evaluateJavascript(
+            """
+            (function() {
+
+                try {
+
+                    /*
+                     * 1. MAXSTREAM
+                     */
+                    var links =
+                        document.querySelectorAll(
+                            'a[href]'
+                        );
+
+                    for (
+                        var i = 0;
+                        i < links.length;
+                        i++
+                    ) {
+
+                        var href =
+                            links[i].href || "";
 
                         if (
-                            maxLinks &&
-                            maxLinks.length > 0
+                            href.indexOf(
+                                'https://maxstream.video/uprots/'
+                            ) === 0 ||
+
+                            href.indexOf(
+                                'https://maxstream.video/uprotem/'
+                            ) === 0 ||
+
+                            href.indexOf(
+                                'https://maxstream.video/emiuhi/'
+                            ) === 0
                         ) {
-                            return "MAXSTREAM";
+
+                            return "MAXSTREAM|" + href;
                         }
-
-                        if (captcha) {
-                            return "CAPTCHA";
-                        }
-
-                        return "WAIT";
-
-                    } catch(e) {
-
-                        return "ERROR";
                     }
 
-                })();
-                """.trimIndent()
-            ) { result ->
+                    /*
+                     * 2. CAPTCHA
+                     */
+                    var captcha =
+                        document.querySelector(
+                            '#upcaptcha-form, ' +
+                            '.upcaptcha-box, ' +
+                            '#upcaptcha-wrapper'
+                        );
 
-                if (completed) {
-                    return@evaluateJavascript
+                    if (captcha) {
+                        return "CAPTCHA";
+                    }
+
+                    /*
+                     * 3. CONTINUE
+                     *
+                     * Uprot può usare:
+                     * button#buttok
+                     * oppure un normale button/link
+                     * contenente CONTINUE.
+                     */
+                    var buttons =
+                        document.querySelectorAll(
+                            'button, input[type="submit"], a'
+                        );
+
+                    for (
+                        var j = 0;
+                        j < buttons.length;
+                        j++
+                    ) {
+
+                        var el =
+                            buttons[j];
+
+                        var text =
+                            (
+                                el.innerText ||
+                                el.textContent ||
+                                el.value ||
+                                ""
+                            )
+                            .trim()
+                            .toUpperCase();
+
+                        var id =
+                            (el.id || "")
+                            .toLowerCase();
+
+                        if (
+                            id === "buttok" ||
+                            text.indexOf("CONTINUE") !== -1 ||
+                            text.indexOf("CONTINUA") !== -1
+                        ) {
+
+                            return "CONTINUE";
+                        }
+                    }
+
+                    return "WAIT";
+
+                } catch(e) {
+
+                    return "ERROR";
                 }
 
-                val state =
-                    result
-                        ?.trim()
-                        ?.removePrefix("\"")
-                        ?.removeSuffix("\"")
+            })();
+            """.trimIndent()
+        ) { result ->
 
-                Log.d(
-                    TAG,
-                    "FAST PATH stato = $state"
-                )
+            if (completed) {
+                return@evaluateJavascript
+            }
 
-                when (state) {
+            val state =
+                result
+                    ?.trim()
+                    ?.removePrefix("\"")
+                    ?.removeSuffix("\"")
+                    ?.replace(
+                        "\\/",
+                        "/"
+                    )
+                    ?: "ERROR"
 
-                    "CAPTCHA" -> {
+            Log.d(
+                TAG,
+                "FAST PATH tentativo=$attempt stato=$state"
+            )
 
-                        Log.d(
-                            TAG,
-                            "Sessione non sufficiente: mostro CAPTCHA"
+            when {
+
+                /*
+                 * Link già disponibile.
+                 */
+                state.startsWith(
+                    "MAXSTREAM|"
+                ) -> {
+
+                    val maxstreamUrl =
+                        state.substringAfter(
+                            "MAXSTREAM|"
                         )
 
-                        try {
+                    Log.d(
+                        TAG,
+                        "FAST PATH MaxStream trovato: $maxstreamUrl"
+                    )
 
-                            if (!dialog.isShowing) {
-                                dialog.show()
+                    finish(
+                        maxstreamUrl
+                    )
+                }
+
+                /*
+                 * Uprot vuole ancora un CAPTCHA.
+                 */
+                state == "CAPTCHA" -> {
+
+                    Log.d(
+                        TAG,
+                        "FAST PATH: CAPTCHA presente"
+                    )
+
+                    showUprotDialog(
+                        "CAPTCHA necessario"
+                    )
+                }
+
+                /*
+                 * È lo stesso comportamento che abbiamo
+                 * visto nella stessa scheda del browser:
+                 *
+                 * CAPTCHA già valido → appare CONTINUE.
+                 *
+                 * Qui clicchiamo semplicemente il normale
+                 * pulsante Continue.
+                 */
+                state == "CONTINUE" -> {
+
+                    Log.d(
+                        TAG,
+                        "FAST PATH: CONTINUE trovato, clic automatico"
+                    )
+
+                    webView.evaluateJavascript(
+                        """
+                        (function() {
+
+                            try {
+
+                                /*
+                                 * Prima proviamo #buttok.
+                                 */
+                                var button =
+                                    document.querySelector(
+                                        '#buttok'
+                                    );
+
+                                if (button) {
+
+                                    /*
+                                     * Se è dentro un link,
+                                     * preferiamo navigare attraverso
+                                     * il link vero.
+                                     */
+                                    var parent =
+                                        button.closest('a');
+
+                                    if (
+                                        parent &&
+                                        parent.href
+                                    ) {
+
+                                        window.location.href =
+                                            parent.href;
+
+                                        return "CLICKED_LINK";
+                                    }
+
+                                    button.click();
+
+                                    return "CLICKED_BUTTON";
+                                }
+
+                                /*
+                                 * Fallback: cerchiamo per testo.
+                                 */
+                                var elements =
+                                    document.querySelectorAll(
+                                        'button, input[type="submit"], a'
+                                    );
+
+                                for (
+                                    var i = 0;
+                                    i < elements.length;
+                                    i++
+                                ) {
+
+                                    var el =
+                                        elements[i];
+
+                                    var text =
+                                        (
+                                            el.innerText ||
+                                            el.textContent ||
+                                            el.value ||
+                                            ""
+                                        )
+                                        .trim()
+                                        .toUpperCase();
+
+                                    if (
+                                        text.indexOf(
+                                            "CONTINUE"
+                                        ) !== -1 ||
+
+                                        text.indexOf(
+                                            "CONTINUA"
+                                        ) !== -1
+                                    ) {
+
+                                        if (
+                                            el.tagName === "A" &&
+                                            el.href
+                                        ) {
+
+                                            window.location.href =
+                                                el.href;
+
+                                        } else {
+
+                                            el.click();
+                                        }
+
+                                        return "CLICKED";
+                                    }
+                                }
+
+                                return "NOT_FOUND";
+
+                            } catch(e) {
+
+                                return "ERROR";
                             }
 
-                        } catch (e: Exception) {
-
-                            Log.e(
-                                TAG,
-                                "Errore apertura dialog: ${e.message}",
-                                e
-                            )
-
-                            finish(null)
-                        }
-                    }
-
-                    "MAXSTREAM" -> {
+                        })();
+                        """.trimIndent()
+                    ) { clickResult ->
 
                         Log.d(
                             TAG,
-                            "MaxStream già disponibile"
+                            "FAST PATH risultato CONTINUE = $clickResult"
                         )
-                    }
-
-                    else -> {
 
                         /*
-                         * Aspettiamo un altro secondo.
+                         * Dopo il click aspettiamo la navigazione.
+                         *
+                         * onPageFinished/searchMaxstream()
+                         * continueranno comunque a cercare,
+                         * ma facciamo anche un nuovo controllo.
                          */
                         webView.postDelayed(
                             {
-
-                                if (completed) {
-                                    return@postDelayed
-                                }
-
-                                webView.evaluateJavascript(
-                                    """
-                                    (function() {
-
-                                        var captcha =
-                                            document.querySelector(
-                                                '#upcaptcha-form, .upcaptcha-box, #upcaptcha-wrapper'
-                                            );
-
-                                        return captcha
-                                            ? "CAPTCHA"
-                                            : "NO_CAPTCHA";
-
-                                    })();
-                                    """.trimIndent()
-                                ) { secondResult ->
-
-                                    if (completed) {
-                                        return@evaluateJavascript
-                                    }
-
-                                    val secondState =
-                                        secondResult
-                                            ?.trim()
-                                            ?.removePrefix("\"")
-                                            ?.removeSuffix("\"")
-
-                                    Log.d(
-                                        TAG,
-                                        "FAST PATH secondo controllo = $secondState"
-                                    )
-
-                                    if (
-                                        secondState == "CAPTCHA"
-                                    ) {
-
-                                        try {
-
-                                            if (!dialog.isShowing) {
-
-                                                Log.d(
-                                                    TAG,
-                                                    "CAPTCHA confermato: mostro dialog"
-                                                )
-
-                                                dialog.show()
-                                            }
-
-                                        } catch (e: Exception) {
-
-                                            Log.e(
-                                                TAG,
-                                                "Errore apertura dialog: ${e.message}",
-                                                e
-                                            )
-
-                                            finish(null)
-                                        }
-                                    }
-                                }
-
+                                checkPageState(
+                                    attempt + 1
+                                )
                             },
-                            1000L
+                            700L
                         )
                     }
                 }
-            }
 
+                /*
+                 * Pagina ancora in caricamento.
+                 */
+                else -> {
+
+                    webView.postDelayed(
+                        {
+                            checkPageState(
+                                attempt + 1
+                            )
+                        },
+                        500L
+                    )
+                }
+            }
+        }
+    }
+
+    /*
+     * Lasciamo alla pagina circa mezzo secondo
+     * per iniziare il caricamento prima del primo check.
+     */
+    webView.postDelayed(
+        {
+            checkPageState()
         },
-        2000L
+        500L
     )
 }
             }
