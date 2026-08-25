@@ -753,6 +753,42 @@ class Altadefinizione01Source : SourceAdapter {
         return result
     }
 
+        override suspend fun getEpisodeInventory(
+            media: UniversalMedia
+        ): List<ProviderEpisode> {
+        
+            if (media.isMovie) {
+                return emptyList()
+            }
+        
+            Log.d(
+                TAG,
+                "Richiesto inventario episodi AD01: ${media.title}"
+            )
+        
+            val selected =
+                try {
+        
+                    selectBestCandidate(
+                        media
+                    )
+        
+                } catch (e: Exception) {
+        
+                    Log.e(
+                        TAG,
+                        "Errore inventario AD01: ${e.message}"
+                    )
+        
+                    null
+                }
+                    ?: return emptyList()
+        
+            return buildProviderEpisodes(
+                selected.second
+            )
+        }
+
     // ============================================================
     // CONTROLLO CANDIDATO
     // ============================================================
