@@ -1,21 +1,7 @@
 package com.universal
 
 import android.util.Log
-import com.lagradost.cloudstream3.HomePageList
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageData
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.universal.models.UniversalMedia
 import com.universal.sources.Altadefinizione01Source
@@ -850,24 +836,25 @@ class UniversalProvider : MainAPI() {
                 )
 
             result.add(
-                com.lagradost.cloudstream3.Episode(
-                    data =
-                        encodeMedia(
-                            media
-                        ),
-
-                    name =
-                        episodeTitle,
-
-                    season =
-                        seasonNumber,
-
-                    episode =
-                        episodeNumber,
-
-                    posterUrl =
+                newEpisode(
+                    encodeMedia(
+                        media
+                    )
+                ) {
+            
+                    this.name =
+                        episodeTitle
+                            ?: "Episodio $episodeNumber"
+            
+                    this.season =
+                        seasonNumber
+            
+                    this.episode =
+                        episodeNumber
+            
+                    this.posterUrl =
                         still
-                )
+                }
             )
         }
 
