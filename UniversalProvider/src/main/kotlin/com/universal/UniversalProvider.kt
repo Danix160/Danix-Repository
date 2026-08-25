@@ -698,6 +698,73 @@ class UniversalProvider : MainAPI() {
                     episodeCount
             }
         }
+        val seriesMedia =
+            UniversalMedia(
+                title = title,
+                originalTitle = originalTitle,
+                year = year,
+                tmdbId = tmdbId,
+                imdbId = imdbId,
+                isMovie = false
+            )
+        
+        val inventories =
+            mutableListOf<ProviderEpisode>()
+        
+        sources.forEach { source ->
+        
+            try {
+        
+                val providerEpisodes =
+                    source.getEpisodeInventory(
+                        seriesMedia
+                    )
+        
+                Log.d(
+                    TAG,
+                    "INVENTORY ${source.name} = ${providerEpisodes.size}"
+                )
+        
+                inventories.addAll(
+                    providerEpisodes
+                )
+        
+            } catch (e: Exception) {
+        
+                Log.e(
+                    TAG,
+                    "Errore inventory ${source.name}: ${e.message}"
+                )
+            }
+        }
+
+        val filteredEpisodes =
+            if (inventories.isEmpty()) {
+        
+                tmdbEpisodes
+        
+            } else {
+        
+                tmdbEpisodes.filter { episode ->
+        
+                    val media =
+                        decodeMedia(
+                            episode.data
+                        )
+        
+                    if (media == null) {
+        
+                        true
+        
+                    } else {
+        
+                        EpisodeMapper.hasMatch(
+                            media,
+                            inventories
+                        )
+                    }
+                }
+            }
 
         return newTvSeriesLoadResponse(
             title,
@@ -706,7 +773,7 @@ class UniversalProvider : MainAPI() {
                 false
             ),
             TvType.TvSeries,
-            episodes
+            filteredEpisodes
         ) {
 
             this.posterUrl =
