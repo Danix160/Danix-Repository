@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.plugins.Plugin
 import com.universal.extractors.VidxGoExtractor
 import com.universal.extractors.MaxStream
 import com.universal.extractors.Uprot
+import com.universal.extractors.UprotWebView
 
 @CloudstreamPlugin
 class UniversalPlugin : Plugin() {
