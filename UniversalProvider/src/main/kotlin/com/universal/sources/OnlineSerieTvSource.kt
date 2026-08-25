@@ -1231,12 +1231,15 @@ class OnlineSerieTvSource : SourceAdapter {
         ) {
 
             val validRows =
-                rows.filter {
-                    it.select(
-                        "a[href]"
-                    )
-                        .isNotEmpty()
-                }
+                rows
+                    .toList()
+                    .filter { row ->
+            
+                        row.select(
+                            "a[href]"
+                        )
+                            .isNotEmpty()
+                    }
 
             selectedRow =
                 validRows
