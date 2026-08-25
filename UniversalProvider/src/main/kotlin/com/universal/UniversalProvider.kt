@@ -46,7 +46,7 @@ class UniversalProvider : MainAPI() {
          * in un repository pubblico.
          */
         private const val TMDB_API_KEY =
-            "INSERISCI_API_KEY_TMDB"
+            "e541cb159df14ce70fc51ab75703a1a2"
 
         private const val IMAGE_BASE =
             "https://image.tmdb.org/t/p/w500"
