@@ -893,20 +893,24 @@ class OnlineSerieTvSource : SourceAdapter {
         
                 result.add(
                     ProviderEpisode(
+                        source =
+                            "OnlineSerieTV",
+                
                         season =
-                            seasonEpisode?.first,
-        
+                            seasonNumber,
+                
                         episode =
                             episodeNumber,
-        
+                
                         absoluteEpisode =
                             absolute,
-        
+                
                         title =
-                            text,
-        
+                            anchor.text()
+                                .trim(),
+                
                         urls =
-                            links
+                            mirrors
                     )
                 )
             }
