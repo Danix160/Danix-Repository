@@ -738,79 +738,235 @@ class UniversalProvider : MainAPI() {
             }
         }
 
-        val filteredEpisodes =
-            if (inventories.isEmpty()) {
-        
-                tmdbEpisodes
-        
-            } else {
-        
-                tmdbEpisodes.filter { episode ->
-        
-                    val media =
-                        decodeMedia(
-                            episode.data
-                        )
-        
-                    if (media == null) {
-        
-                        Log.d(
-                            TAG,
-                            "Episodio TMDB scartato: " +
-                                "impossibile decodificare i dati"
-                        )
-        
-                        false
-        
-                    } else {
-        
-                        val providerEpisodesForSeason =
-                            inventories.filter {
-                                it.season == media.season
-                            }
-                        
-                        val maxProviderEpisode =
-                            providerEpisodesForSeason
-                                .mapNotNull {
-                                    it.episode
+                    val filteredTmdbEpisodes =
+                if (inventories.isEmpty()) {
+            
+                    /*
+                     * Se per qualche motivo gli inventari
+                     * non vengono caricati, manteniamo TMDB
+                     * come fallback.
+                     */
+                    tmdbEpisodes
+            
+                } else {
+            
+                    tmdbEpisodes.filter { episode ->
+            
+                        val media =
+                            decodeMedia(
+                                episode.data
+                            )
+            
+                        if (media == null) {
+            
+                            false
+            
+                        } else {
+            
+                            val providerEpisodesForSeason =
+                                inventories.filter {
+                                    it.season ==
+                                        media.season
                                 }
-                                .maxOrNull()
-                        
-                        val available =
-                            if (
-                                media.episode != null &&
-                                maxProviderEpisode != null
-                            ) {
-                        
-                                media.episode <=
-                                    maxProviderEpisode
-                        
-                            } else {
-                        
-                                EpisodeMapper.hasMatch(
-                                    media,
-                                    inventories
-                                )
-                            }
-        
-                        Log.d(
-                            TAG,
-                            "UI S${media.season}E${media.episode} " +
-                                "abs=${media.absoluteEpisode} " +
-                                "\"${media.episodeTitle}\" " +
-                                "available=$available"
-                        )
-        
-                        available
+            
+                            val maxProviderEpisode =
+                                providerEpisodesForSeason
+                                    .mapNotNull {
+                                        it.episode
+                                    }
+                                    .maxOrNull()
+            
+                            val available =
+                                if (
+                                    media.episode != null &&
+                                    maxProviderEpisode != null
+                                ) {
+            
+                                    media.episode <=
+                                        maxProviderEpisode
+            
+                                } else {
+            
+                                    EpisodeMapper.hasMatch(
+                                        media,
+                                        inventories
+                                    )
+                                }
+            
+                            Log.d(
+                                TAG,
+                                "TMDB UI " +
+                                    "S${media.season}E${media.episode} " +
+                                    "providerMax=$maxProviderEpisode " +
+                                    "available=$available"
+                            )
+            
+                            available
+                        }
                     }
                 }
-            }
+            
+            
+            /*
+             * ============================================================
+             * EPISODI PRESENTI NEI PROVIDER MA ASSENTI SU TMDB
+             * ============================================================
+             */
+            
+            val tmdbKeys =
+                tmdbEpisodes
+                    .mapNotNull { episode ->
+            
+                        val media =
+                            decodeMedia(
+                                episode.data
+                            )
+                            ?: return@mapNotNull null
+            
+                        val season =
+                            media.season
+                                ?: return@mapNotNull null
+            
+                        val episodeNumber =
+                            media.episode
+                                ?: return@mapNotNull null
+            
+                        season to
+                            episodeNumber
+                    }
+                    .toSet()
+            
+            
+            val providerOnlyEpisodes =
+                inventories
+                    /*
+                     * Un episodio presente sia su AD01 che OSTV
+                     * deve comparire una sola volta.
+                     */
+                    .groupBy {
+                        it.season to
+                            it.episode
+                    }
+                    .mapNotNull { (_, providerVersions) ->
+            
+                        val providerEpisode =
+                            providerVersions
+                                .firstOrNull()
+                                ?: return@mapNotNull null
+            
+                        val season =
+                            providerEpisode.season
+                                ?: return@mapNotNull null
+            
+                        val episodeNumber =
+                            providerEpisode.episode
+                                ?: return@mapNotNull null
+            
+                        /*
+                         * Se TMDB possiede già questo episodio,
+                         * viene utilizzata la versione TMDB.
+                         */
+                        if (
+                            tmdbKeys.contains(
+                                season to
+                                    episodeNumber
+                            )
+                        ) {
+            
+                            return@mapNotNull null
+                        }
+            
+                        /*
+                         * Episodio realmente presente sul provider
+                         * ma sconosciuto a TMDB.
+                         */
+                        val providerMedia =
+                            UniversalMedia(
+                                title =
+                                    title,
+            
+                                originalTitle =
+                                    originalTitle,
+            
+                                year =
+                                    year,
+            
+                                tmdbId =
+                                    tmdbId,
+            
+                                imdbId =
+                                    imdbId,
+            
+                                season =
+                                    season,
+            
+                                episode =
+                                    episodeNumber,
+            
+                                absoluteEpisode =
+                                    providerEpisode.absoluteEpisode,
+            
+                                episodeTitle =
+                                    providerEpisode.title,
+            
+                                isMovie =
+                                    false
+                            )
+            
+                        newEpisode(
+                            encodeMedia(
+                                providerMedia
+                            )
+                        ) {
+            
+                            this.name =
+                                providerEpisode.title
+                                    ?.takeIf {
+                                        it.isNotBlank()
+                                    }
+                                    ?: "Episodio $episodeNumber"
+            
+                            this.season =
+                                season
+            
+                            this.episode =
+                                episodeNumber
+            
+                            /*
+                             * TMDB non possiede una still
+                             * specifica per questo episodio.
+                             *
+                             * Usiamo quindi la copertina
+                             * della serie come anteprima.
+                             */
+                            this.posterUrl =
+                                poster
+                        }
+                    }
+            
+            
+            val filteredEpisodes =
+                (
+                    filteredTmdbEpisodes +
+                        providerOnlyEpisodes
+                )
+                    .sortedWith(
+                        compareBy<Episode> {
+                            it.season ?: 0
+                        }
+                            .thenBy {
+                                it.episode ?: 0
+                            }
+                    )
+            
             
             Log.d(
                 TAG,
                 "UI EPISODI: " +
-                    "${tmdbEpisodes.size} TMDB -> " +
-                    "${filteredEpisodes.size} disponibili"
+                    "${tmdbEpisodes.size} TMDB, " +
+                    "${inventories.size} provider, " +
+                    "${providerOnlyEpisodes.size} extra provider, " +
+                    "${filteredEpisodes.size} finali"
             )
 
         return newTvSeriesLoadResponse(
