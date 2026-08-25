@@ -60,7 +60,8 @@ class OnlineSerieTvSource : SourceAdapter {
     private data class Candidate(
         val title: String,
         val url: String,
-        val isMovie: Boolean,
+        val isTv: Boolean,
+        val year: Int? = null,
         val score: Int
     )
 
@@ -474,17 +475,10 @@ class OnlineSerieTvSource : SourceAdapter {
             )
 
         return Candidate(
-            title =
-                title,
-
-            url =
-                url,
-
-            isMovie =
-                isMovie,
-
-            score =
-                score
+            title = title,
+            url = url,
+            isTv = !isMovie,
+            score = score
         )
     }
 
@@ -745,19 +739,36 @@ class OnlineSerieTvSource : SourceAdapter {
                         media.year != null &&
                         candidateYear != null
                     ) {
-
-                        if (
-                            media.year ==
-                            candidateYear
-                        ) {
-
-                            score +=
-                                25
-
+                    
+                        val yearDifference =
+                            kotlin.math.abs(
+                                media.year - candidateYear
+                            )
+                    
+                        if (yearDifference <= 1) {
+                    
+                            score += 120
+                    
                         } else {
-
-                            score -=
-                                5
+                    
+                            /*
+                             * Serie con stesso titolo ma anno incompatibile:
+                             * è molto probabilmente un'altra serie.
+                             */
+                            if (!media.isMovie) {
+                    
+                                Log.d(
+                                    TAG,
+                                    "SCARTATO per anno incompatibile: " +
+                                        "${candidate.title} " +
+                                        "$candidateYear != ${media.year}"
+                                )
+                    
+                                return@forEach
+                            }
+                    
+                            // Per i film restiamo più permissivi.
+                            score -= 150
                         }
                     }
 
