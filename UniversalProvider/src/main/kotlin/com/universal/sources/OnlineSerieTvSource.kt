@@ -6,6 +6,8 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.universal.models.UniversalMedia
+import com.universal.models.ProviderEpisode
+import com.universal.utils.EpisodeMapper
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -815,6 +817,122 @@ class OnlineSerieTvSource : SourceAdapter {
     // PARSING EPISODE
     // ============================================================
 
+            private fun buildProviderEpisodes(
+            document: Document
+        ): List<ProviderEpisode> {
+        
+            val result =
+                mutableListOf<ProviderEpisode>()
+        
+            val rows =
+                document
+                    .select("table tr")
+                    .toList()
+        
+            var absolute =
+                0
+        
+            rows.forEach { row ->
+        
+                val links =
+                    row
+                        .select("a[href]")
+                        .mapNotNull { element ->
+        
+                            val href =
+                                element
+                                    .attr("href")
+                                    .trim()
+        
+                            if (href.isBlank()) {
+                                null
+                            } else {
+                                fixUrl(href)
+                            }
+                        }
+                        .filter {
+                            it.isNotBlank()
+                        }
+                        .distinct()
+        
+                /*
+                 * Una riga senza link non è un episodio.
+                 * Evitiamo header/tabella ecc.
+                 */
+                if (links.isEmpty()) {
+                    return@forEach
+                }
+        
+                val text =
+                    row.text()
+                        .trim()
+        
+                val seasonEpisode =
+                    parseSeasonAndEpisode(
+                        text
+                    )
+        
+                val episodeNumber =
+                    seasonEpisode?.second
+                        ?: parseEpisodeNumber(
+                            text
+                        )
+        
+                /*
+                 * Consideriamo episodio soltanto una riga
+                 * che abbia una numerazione riconoscibile.
+                 */
+                if (
+                    seasonEpisode == null &&
+                    episodeNumber == null
+                ) {
+                    return@forEach
+                }
+        
+                absolute++
+        
+                result.add(
+                    ProviderEpisode(
+                        season =
+                            seasonEpisode?.first,
+        
+                        episode =
+                            episodeNumber,
+        
+                        absoluteEpisode =
+                            absolute,
+        
+                        title =
+                            text,
+        
+                        urls =
+                            links
+                    )
+                )
+            }
+        
+            Log.d(
+                TAG,
+                "OSTV ProviderEpisodes = ${result.size}"
+            )
+        
+            result
+                .take(10)
+                .forEach {
+        
+                    Log.d(
+                        TAG,
+                        "OSTV MAP " +
+                            "S${it.season}E${it.episode} " +
+                            "ABS=${it.absoluteEpisode} " +
+                            "${it.title}"
+                    )
+                }
+        
+            return result
+        }
+            
+
     private fun parseSeasonAndEpisode(
         text: String
     ): Pair<Int, Int>? {
@@ -1127,282 +1245,108 @@ class OnlineSerieTvSource : SourceAdapter {
         callback:
             (ExtractorLink) -> Unit
     ): Int {
-
-        val wantedSeason =
-            media.season
-                ?: return 0
-
-        val wantedEpisode =
-            media.episode
-                ?: return 0
-
-        val wantedAbsolute =
-            media.absoluteEpisode
-
-        val rows =
-            document.select(
-                "table tr"
-            )
-            
-        Log.d(
-        TAG,
-        "OSTV righe episodi = ${rows.size}"
-    )
     
-    rows
-        .take(20)
-        .forEachIndexed { index, row ->
+        val providerEpisodes =
+            buildProviderEpisodes(
+                document
+            )
+    
+        if (providerEpisodes.isEmpty()) {
     
             Log.d(
                 TAG,
-                "OSTV ROW [$index] = ${row.text().take(300)}"
+                "OSTV: nessun episodio indicizzato"
             )
-        }
-
-        if (
-            rows.isEmpty()
-        ) {
-
-            Log.d(
-                TAG,
-                "OSTV: nessuna riga episodio"
-            )
-
+    
             return 0
         }
-
-        var selectedRow:
-            Element? =
-            null
-
-        /*
-         * ========================================================
-         * PRIMO PASS:
-         * SxxExx esplicito.
-         * ========================================================
-         */
-        rows.forEach { row ->
-
-            if (
-                selectedRow != null
-            ) {
-                return@forEach
-            }
-
-            val text =
-                row.text()
-
-            val se =
-                parseSeasonAndEpisode(
-                    text
-                )
-
-            if (
-                se != null &&
-                se.first ==
-                    wantedSeason &&
-                se.second ==
-                    wantedEpisode
-            ) {
-
-                selectedRow =
-                    row
-            }
-        }
-
-        /*
-         * ========================================================
-         * SECONDO PASS:
-         *
-         * episodio esplicito ma sito che usa
-         * una sola stagione.
-         * ========================================================
-         */
-        if (
-            selectedRow ==
-            null
-        ) {
-
-            rows.forEach { row ->
-
-                if (
-                    selectedRow != null
-                ) {
-                    return@forEach
-                }
-
-                val ep =
-                    parseEpisodeNumber(
-                        row.text()
-                    )
-
-                if (
-                    wantedSeason ==
-                    1 &&
-                    ep ==
-                    wantedEpisode
-                ) {
-
-                    selectedRow =
-                        row
-                }
-            }
-        }
-
-        /*
-         * ========================================================
-         * TERZO PASS:
-         *
-         * FALLBACK ABSOLUTE EPISODE.
-         *
-         * È il caso importante:
-         * OnlineSerieTV ha tutti gli episodi
-         * consecutivi sulla stessa pagina.
-         * ========================================================
-         */
-        if (
-            selectedRow ==
-            null &&
-            wantedAbsolute !=
-                null
-        ) {
-
-            val validRows =
-                rows
-                    .toList()
-                    .filter { row ->
-            
-                        row.select(
-                            "a[href]"
-                        )
-                            .isNotEmpty()
-                    }
-
-            selectedRow =
-                validRows
-                    .getOrNull(
-                        wantedAbsolute -
-                            1
-                    )
-
-            if (
-                selectedRow != null
-            ) {
-
-                Log.d(
-                    TAG,
-                    "OSTV absolute match = $wantedAbsolute"
-                )
-            }
-        }
-
-        val row =
-            selectedRow
+    
+        val selected =
+            EpisodeMapper.findBest(
+                media,
+                providerEpisodes
+            )
                 ?: run {
-
+    
                     Log.d(
                         TAG,
-                        "OSTV episodio non trovato " +
-                            "S${wantedSeason}E${wantedEpisode} " +
-                            "abs=$wantedAbsolute"
+                        "OSTV: nessuna corrispondenza per " +
+                            "TMDB S${media.season}E${media.episode} " +
+                            "ABS=${media.absoluteEpisode}"
                     )
-
+    
                     return 0
                 }
-
+    
         Log.d(
             TAG,
-            "OSTV EPISODIO TROVATO = ${row.text().take(300)}"
+            "OSTV EPISODIO MAPPATO: " +
+                "TMDB S${media.season}E${media.episode} " +
+                "ABS=${media.absoluteEpisode} " +
+                "→ " +
+                "Provider S${selected.season}E${selected.episode} " +
+                "ABS=${selected.absoluteEpisode}"
         )
-
-        val urls =
-        row
-            .select(
-                "a[href]"
-            )
-            .mapNotNull { element ->
     
-                val href =
-                    element
-                        .attr("href")
-                        .trim()
+        if (selected.urls.isEmpty()) {
     
-                if (href.isBlank()) {
-                    null
-                } else {
-                    fixUrl(href)
-                }
-            }
-            .filter {
-                it.isNotBlank()
-            }
-            .distinct()
-
-        if (
-            urls.isEmpty()
-        ) {
-
             Log.d(
                 TAG,
-                "OSTV episodio senza player"
+                "OSTV episodio mappato senza player"
             )
-
+    
             return 0
         }
-
+    
         var linksFound =
             0
-
+    
         val countedCallback:
             (ExtractorLink) -> Unit = {
-
+    
             linksFound++
-
+    
             callback(it)
         }
-
+    
         /*
-         * IMPORTANTE:
+         * Proviamo i player dell'episodio scelto.
          *
-         * appena un host produce un video
-         * possiamo fermarci.
-         *
-         * Evitiamo più CAPTCHA inutili.
+         * Appena uno produce un video ci fermiamo,
+         * evitando CAPTCHA/interazioni aggiuntive.
          */
-        for (playerUrl in urls) {
-
-        try {
+        for (playerUrl in selected.urls) {
     
-            Log.d(
-                TAG,
-                "OSTV EPISODE extractor = $playerUrl"
-            )
+            try {
     
-            loadExtractor(
-                playerUrl,
-                showUrl,
-                subtitleCallback,
-                countedCallback
-            )
+                Log.d(
+                    TAG,
+                    "OSTV MAPPED extractor = $playerUrl"
+                )
     
-            if (
-                linksFound > 0
-            ) {
-                break
+                loadExtractor(
+                    playerUrl,
+                    showUrl,
+                    subtitleCallback,
+                    countedCallback
+                )
+    
+                if (linksFound > 0) {
+                    break
+                }
+    
+            } catch (e: Exception) {
+    
+                Log.e(
+                    TAG,
+                    "OSTV mapped extractor errore: ${e.message}",
+                    e
+                )
             }
-    
-        } catch (e: Exception) {
-    
-            Log.e(
-                TAG,
-                "OSTV episode extractor errore: ${e.message}"
-            )
         }
-    }
-
+    
         return linksFound
     }
-
     // ============================================================
     // UNIVERSAL ENTRY
     // ============================================================
