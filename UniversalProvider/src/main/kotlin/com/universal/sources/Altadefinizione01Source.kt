@@ -6,6 +6,8 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.universal.models.UniversalMedia
+import com.universal.models.ProviderEpisode
+import com.universal.utils.EpisodeMapper
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -617,6 +619,140 @@ class Altadefinizione01Source : SourceAdapter {
         return null
     }
 
+        private fun buildProviderEpisodes(
+        document: Document
+    ): List<ProviderEpisode> {
+    
+        val result =
+            mutableListOf<ProviderEpisode>()
+    
+        var absolute =
+            0
+    
+        /*
+         * Struttura classica:
+         * #season-X
+         */
+        document
+            .select("[id^=season-]")
+            .forEach { seasonPane ->
+    
+                val seasonNumber =
+                    seasonPane
+                        .id()
+                        .substringAfter("season-")
+                        .toIntOrNull()
+    
+                val episodeAnchors =
+                    seasonPane.select(
+                        "ul > li > a[allowfullscreen][data-link]"
+                    )
+    
+                episodeAnchors.forEach { anchor ->
+    
+                    val rawNum =
+                        anchor.attr("data-num")
+    
+                    val episodeNumber =
+                        rawNum
+                            .substringAfter(
+                                'x',
+                                ""
+                            )
+                            .toIntOrNull()
+                            ?: anchor
+                                .text()
+                                .trim()
+                                .toIntOrNull()
+    
+                    if (
+                        episodeNumber == null
+                    ) {
+                        return@forEach
+                    }
+    
+                    val mirrors =
+                        anchor
+                            .parent()
+                            ?.select(
+                                ".mirrors a[data-link]"
+                            )
+                            ?.mapNotNull { mirror ->
+    
+                                var link =
+                                    mirror
+                                        .attr("data-link")
+                                        .trim()
+    
+                                if (
+                                    link.isBlank()
+                                ) {
+                                    return@mapNotNull null
+                                }
+    
+                                if (
+                                    link.startsWith("//")
+                                ) {
+                                    link =
+                                        "https:$link"
+                                }
+    
+                                link
+                            }
+                            ?.filter {
+                                !it.contains(
+                                    "4k",
+                                    ignoreCase = true
+                                )
+                            }
+                            ?.distinct()
+                            ?: emptyList()
+    
+                    absolute++
+    
+                    result.add(
+                        ProviderEpisode(
+                            season =
+                                seasonNumber,
+    
+                            episode =
+                                episodeNumber,
+    
+                            absoluteEpisode =
+                                absolute,
+    
+                            title =
+                                anchor.text()
+                                    .trim(),
+    
+                            urls =
+                                mirrors
+                        )
+                    )
+                }
+            }
+    
+        Log.d(
+            TAG,
+            "AD01 ProviderEpisodes = ${result.size}"
+        )
+    
+        result
+            .take(15)
+            .forEach {
+    
+                Log.d(
+                    TAG,
+                    "AD01 MAP " +
+                        "S${it.season}E${it.episode} " +
+                        "ABS=${it.absoluteEpisode} " +
+                        "TITLE=${it.title}"
+                )
+            }
+    
+        return result
+    }
+
     // ============================================================
     // CONTROLLO CANDIDATO
     // ============================================================
@@ -1030,7 +1166,7 @@ class Altadefinizione01Source : SourceAdapter {
     // SERIE
     // ============================================================
 
-    private suspend fun loadTvLinks(
+       private suspend fun loadTvLinks(
         media: UniversalMedia,
         showUrl: String,
         document: Document,
@@ -1039,187 +1175,162 @@ class Altadefinizione01Source : SourceAdapter {
         callback:
             (ExtractorLink) -> Unit
     ): Int {
-
-        val season =
-            media.season
-                ?: return 0
-
-        val episode =
-            media.episode
-                ?: return 0
-
-        var linksFound =
-            0
-
-        val countedCallback:
-            (ExtractorLink) -> Unit = {
-
-            linksFound++
-
-            callback(it)
-        }
-
+    
+        val providerEpisodes =
+            buildProviderEpisodes(
+                document
+            )
+    
         /*
-         * ========================================================
-         * STRUTTURA CLASSICA
-         * ========================================================
+         * Prima proviamo il nuovo mapper.
          */
-
-        val pane =
-            document.selectFirst(
-                "#season-$season"
-            )
-
-        val episodeAnchor =
-            pane
-                ?.select(
-                    "ul > li > " +
-                        "a[allowfullscreen]" +
-                        "[data-link]"
-                )
-                ?.firstOrNull {
-
-                    val num =
-                        it.attr(
-                            "data-num"
-                        )
-                            .substringAfter(
-                                'x'
-                            )
-                            .toIntOrNull()
-                            ?: it.text()
-                                .trim()
-                                .toIntOrNull()
-
-                    num ==
-                        episode
-                }
-
         if (
-            episodeAnchor != null
+            providerEpisodes.isNotEmpty()
         ) {
-
-            Log.d(
-                TAG,
-                "EPISODIO CLASSICO TROVATO " +
-                    "S${season}E${episode}"
-            )
-
-            val mirrors =
-                episodeAnchor
-                    .parent()
-                    ?.select(
-                        ".mirrors a[data-link]"
-                    )
-                    ?: emptyList()
-
-            mirrors
-                .filterNot {
-
-                    it.text()
-                        .contains(
-                            "4K",
-                            ignoreCase =
-                                true
-                        )
+    
+            val selected =
+                EpisodeMapper.findBest(
+                    media,
+                    providerEpisodes
+                )
+    
+            if (
+                selected != null
+            ) {
+    
+                Log.d(
+                    TAG,
+                    "AD01 EPISODIO MAPPATO: " +
+                        "TMDB S${media.season}E${media.episode} " +
+                        "ABS=${media.absoluteEpisode} " +
+                        "→ " +
+                        "Provider S${selected.season}E${selected.episode} " +
+                        "ABS=${selected.absoluteEpisode}"
+                )
+    
+                var linksFound =
+                    0
+    
+                val countedCallback:
+                    (ExtractorLink) -> Unit = {
+    
+                    linksFound++
+    
+                    callback(it)
                 }
-                .forEach { mirror ->
-
-                    var link =
-                        mirror
-                            .attr(
-                                "data-link"
-                            )
-                            .trim()
-
-                    if (
-                        link.isBlank()
-                    ) {
-
-                        return@forEach
-                    }
-
-                    if (
-                        link.startsWith(
-                            "//"
-                        )
-                    ) {
-
-                        link =
-                            "https:$link"
-                    }
-
-                    Log.d(
-                        TAG,
-                        "TV MIRROR = $link"
-                    )
-
+    
+                for (
+                    playerUrl in selected.urls
+                ) {
+    
                     try {
-
+    
+                        Log.d(
+                            TAG,
+                            "AD01 MAPPED extractor = $playerUrl"
+                        )
+    
                         loadExtractor(
-                            link,
+                            playerUrl,
                             showUrl,
                             subtitleCallback,
                             countedCallback
                         )
-
+    
+                        if (
+                            linksFound > 0
+                        ) {
+                            break
+                        }
+    
                     } catch (
                         e: Exception
                     ) {
-
+    
                         Log.e(
                             TAG,
-                            "Errore TV mirror: ${e.message}"
+                            "Errore AD01 mapped extractor: ${e.message}",
+                            e
                         )
                     }
                 }
+    
+                if (
+                    linksFound > 0
+                ) {
+                    return linksFound
+                }
+            }
         }
-
+    
         /*
          * ========================================================
-         * VIDXGO
+         * FALLBACK VIDXGO
          * ========================================================
+         *
+         * Manteniamo il comportamento precedente,
+         * perché alcune serie non espongono gli episodi
+         * nella struttura classica.
          */
-
+    
+        val season =
+            media.season
+                ?: return 0
+    
+        val episode =
+            media.episode
+                ?: return 0
+    
+        var linksFound =
+            0
+    
+        val countedCallback:
+            (ExtractorLink) -> Unit = {
+    
+            linksFound++
+    
+            callback(it)
+        }
+    
         if (
             document.selectFirst(
                 "iframe#vidxgo-player"
             ) != null
         ) {
-
+    
             val imdb =
                 findVidxGoImdb(
                     document
                 )
-
+    
             if (
                 !imdb.isNullOrBlank()
             ) {
-
+    
                 val vidxUrl =
                     "https://v.vidxgo.co/t/" +
                         "$imdb/" +
                         "$season/" +
                         "$episode"
-
+    
                 Log.d(
                     TAG,
-                    "VIDXGO TV = $vidxUrl"
+                    "VIDXGO TV fallback = $vidxUrl"
                 )
-
+    
                 try {
-
+    
                     loadExtractor(
                         vidxUrl,
                         "$MAIN_URL/",
                         subtitleCallback,
                         countedCallback
                     )
-
+    
                 } catch (
                     e: Exception
                 ) {
-
+    
                     Log.e(
                         TAG,
                         "Errore VidxGo TV: ${e.message}"
@@ -1227,10 +1338,9 @@ class Altadefinizione01Source : SourceAdapter {
                 }
             }
         }
-
+    
         return linksFound
     }
-
     // ============================================================
     // LOAD LINKS UNIVERSAL
     // ============================================================
