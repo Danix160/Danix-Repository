@@ -827,124 +827,257 @@ class OnlineSerieTvSource : SourceAdapter {
     // ============================================================
     // PARSING EPISODE
     // ============================================================
-
-            private fun buildProviderEpisodes(
-            document: Document
-        ): List<ProviderEpisode> {
-        
-            val result =
-                mutableListOf<ProviderEpisode>()
-        
-            val rows =
-                document
-                    .select("table tr")
-                    .toList()
-        
-            var absolute =
-                0
-        
-            rows.forEach { row ->
-        
-                val links =
-                    row
-                        .select("a[href]")
-                        .mapNotNull { element ->
-        
-                            val href =
-                                element
-                                    .attr("href")
-                                    .trim()
-        
-                            if (href.isBlank()) {
-                                null
-                            } else {
-                                fixUrl(href)
-                            }
-                        }
-                        .filter {
+            private data class ParsedEpisodeNumber(
+                val season: Int?,
+                val episode: Int,
+                val part: Int? = null
+            )
+            
+            private fun parseProviderEpisodeNumber(
+                text: String
+            ): ParsedEpisodeNumber? {
+            
+                val value =
+                    text.lowercase()
+            
+                val match =
+                    Regex(
+                        """(\d{1,2})x(\d{1,3})(?:\.(\d+))?"""
+                    )
+                        .find(value)
+                        ?: return null
+            
+                val season =
+                    match
+                        .groupValues[1]
+                        .toIntOrNull()
+            
+                val episode =
+                    match
+                        .groupValues[2]
+                        .toIntOrNull()
+                        ?: return null
+            
+                val part =
+                    match
+                        .groupValues
+                        .getOrNull(3)
+                        ?.takeIf {
                             it.isNotBlank()
                         }
-                        .distinct()
-        
-                /*
-                 * Una riga senza link non è un episodio.
-                 * Evitiamo header/tabella ecc.
-                 */
-                if (links.isEmpty()) {
-                    return@forEach
-                }
-        
-                val text =
-                    row.text()
-                        .trim()
-        
-                val seasonEpisode =
-                    parseSeasonAndEpisode(
-                        text
-                    )
-        
-                val episodeNumber =
-                    seasonEpisode?.second
-                        ?: parseEpisodeNumber(
-                            text
-                        )
-        
-                /*
-                 * Consideriamo episodio soltanto una riga
-                 * che abbia una numerazione riconoscibile.
-                 */
-                if (
-                    seasonEpisode == null &&
-                    episodeNumber == null
-                ) {
-                    return@forEach
-                }
-        
-                absolute++
-        
-                result.add(
-                    ProviderEpisode(
-                        source =
-                            "OnlineSerieTV",
-                
-                        season =
-                            seasonEpisode?.first,
-                
-                        episode =
-                            episodeNumber,
-                
-                        absoluteEpisode =
-                            absolute,
-                
-                        title =
-                            text,
-                
-                        urls =
-                            links
-                    )
+                        ?.toIntOrNull()
+            
+                return ParsedEpisodeNumber(
+                    season = season,
+                    episode = episode,
+                    part = part
                 )
             }
-        
-            Log.d(
-                TAG,
-                "OSTV ProviderEpisodes = ${result.size}"
-            )
-        
-            result
-                .take(10)
-                .forEach {
-        
-                    Log.d(
-                        TAG,
-                        "OSTV MAP " +
-                            "S${it.season}E${it.episode} " +
-                            "ABS=${it.absoluteEpisode} " +
-                            "${it.title}"
+            
+            private fun cleanProviderEpisodeTitle(
+                text: String,
+                mediaTitle: String? = null
+            ): String {
+            
+                var result =
+                    text
+            
+                /*
+                 * Toglie numerazione:
+                 * 01x01
+                 * 1x01.1
+                 * ecc.
+                 */
+                result =
+                    result.replace(
+                        Regex(
+                            """\b\d{1,2}x\d{1,3}(?:\.\d+)?\b""",
+                            RegexOption.IGNORE_CASE
+                        ),
+                        " "
+                    )
+            
+                /*
+                 * Toglie parole dei pulsanti/server.
+                 */
+                result =
+                    result.replace(
+                        Regex(
+                            """\b(?:MaxStream|Uprot|Scarica|Download|Guarda|Play|Mirror|Server)\b""",
+                            RegexOption.IGNORE_CASE
+                        ),
+                        " "
+                    )
+            
+                /*
+                 * Se la riga contiene anche il nome della serie,
+                 * proviamo a rimuoverlo.
+                 */
+                if (
+                    !mediaTitle.isNullOrBlank()
+                ) {
+            
+                    result =
+                        result.replace(
+                            mediaTitle,
+                            "",
+                            ignoreCase = true
+                        )
+                }
+            
+                return result
+                    .replace(
+                        Regex("""\s+"""),
+                        " "
+                    )
+                    .trim()
+            }
+
+            private fun buildProviderEpisodes(
+                document: Document,
+                mediaTitle: String? = null
+            ): List<ProviderEpisode> {
+            
+                val result =
+                    mutableListOf<ProviderEpisode>()
+            
+                val rows =
+                    document
+                        .select("table tr")
+                        .toList()
+            
+                var absolute =
+                    0
+            
+                rows.forEach { row ->
+            
+                    val links =
+                        row
+                            .select("a[href]")
+                            .mapNotNull { element ->
+            
+                                val href =
+                                    element
+                                        .attr("href")
+                                        .trim()
+            
+                                if (href.isBlank()) {
+                                    null
+                                } else {
+                                    fixUrl(href)
+                                }
+                            }
+                            .filter {
+                                it.isNotBlank() &&
+                                    (
+                                        it.contains(
+                                            "uprot.net",
+                                            ignoreCase = true
+                                        ) ||
+                                        it.contains(
+                                            "maxstream.video",
+                                            ignoreCase = true
+                                        )
+                                    )
+                            }
+                            .distinct()
+            
+                    if (links.isEmpty()) {
+                        return@forEach
+                    }
+            
+                    val rawText =
+                        row.text()
+                            .trim()
+            
+                    val parsed =
+                        parseProviderEpisodeNumber(
+                            rawText
+                        )
+            
+                    /*
+                     * Fallback per righe tipo:
+                     * Episodio 5
+                     */
+                    val fallbackEpisode =
+                        if (parsed == null) {
+                            parseEpisodeNumber(
+                                rawText
+                            )
+                        } else {
+                            null
+                        }
+            
+                    if (
+                        parsed == null &&
+                        fallbackEpisode == null
+                    ) {
+                        return@forEach
+                    }
+            
+                    absolute++
+            
+                    val cleanedTitle =
+                        cleanProviderEpisodeTitle(
+                            rawText,
+                            mediaTitle
+                        )
+            
+                    result.add(
+                        ProviderEpisode(
+                            source =
+                                "OnlineSerieTV",
+            
+                            season =
+                                parsed?.season,
+            
+                            episode =
+                                parsed?.episode
+                                    ?: fallbackEpisode,
+            
+                            part =
+                                parsed?.part,
+            
+                            absoluteEpisode =
+                                absolute,
+            
+                            title =
+                                cleanedTitle,
+            
+                            urls =
+                                links
+                        )
                     )
                 }
-        
-            return result
-        }
+            
+                Log.d(
+                    TAG,
+                    "OSTV ProviderEpisodes = ${result.size}"
+                )
+            
+                result
+                    .take(30)
+                    .forEach {
+            
+                        Log.d(
+                            TAG,
+                            "OSTV MAP " +
+                                "S${it.season}" +
+                                "E${it.episode}" +
+                                (
+                                    it.part
+                                        ?.let { part ->
+                                            ".$part"
+                                        }
+                                        ?: ""
+                                ) +
+                                " ABS=${it.absoluteEpisode} " +
+                                "TITLE=${it.title}"
+                        )
+                    }
+            
+                return result
+            }
 
         override suspend fun getEpisodeInventory(
             media: UniversalMedia
@@ -981,7 +1114,8 @@ class OnlineSerieTvSource : SourceAdapter {
                 selected.second
         
             return buildProviderEpisodes(
-                document
+                document,
+                media.title
             )
         }
             
@@ -1299,9 +1433,10 @@ class OnlineSerieTvSource : SourceAdapter {
             (ExtractorLink) -> Unit
     ): Int {
     
-        val providerEpisodes =
+       val providerEpisodes =
             buildProviderEpisodes(
-                document
+                document,
+                media.title
             )
     
         if (providerEpisodes.isEmpty()) {
