@@ -95,7 +95,8 @@ object UprotWebView {
 
     suspend fun resolve(
         url: String,
-        userAgent: String
+        userAgent: String,
+        referer: String? = null
     ): String? =
         suspendCancellableCoroutine { continuation ->
 
@@ -1012,17 +1013,28 @@ object UprotWebView {
     "Carico nuova pagina nella WebView persistente: $url"
 )
 
-dumpUprotSession(
-    "PRIMA_LOAD_${url.substringAfterLast("/")}"
-)
-
-webView.loadUrl(
-    url,
-    mapOf(
-        "Referer" to
-            "https://onlineserietv.mom/"
-    )
-)
+            dumpUprotSession(
+                "PRIMA_LOAD_${url.substringAfterLast("/")}"
+            )
+            
+            val effectiveReferer =
+                referer
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
+                    ?: "https://onlineserietv.mom/"
+            
+            Log.d(
+                TAG,
+                "REFERER WEBVIEW = $effectiveReferer"
+            )
+            
+            webView.loadUrl(
+                url,
+                mapOf(
+                    "Referer" to effectiveReferer
+                )
+            )
 
 /*
  * FAST PATH INVISIBILE
