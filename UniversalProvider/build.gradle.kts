@@ -17,7 +17,7 @@ cloudstream {
     extra["prefix"] = "Universal"
     extra["displayName"] = "Universal"
     
-    version = 9
+    version = 10
     description = "Server Multiplo per Film, Serie TV e Cartoni"
     authors = listOf("Danix")
     
