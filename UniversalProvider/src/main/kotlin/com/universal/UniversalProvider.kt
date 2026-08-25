@@ -731,7 +731,7 @@ class UniversalProvider : MainAPI() {
         originalTitle: String?,
         year: Int?,
         imdbId: String?,
-        seasonNumber: Int
+        seasonNumber: Int,
         absoluteOffset: Int
     ): List<com.lagradost.cloudstream3.Episode> {
 
