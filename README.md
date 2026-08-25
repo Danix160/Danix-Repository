@@ -13,8 +13,10 @@ AGGIORNATO 23/05/2026
 Questi sono i plugin disponibili al momento
 | **Nome**           | **Sito**                                               |            **Categorie**            | **Lingua** | **Funzionante** | **Note**|                                                                                                                  
 |--------------------|--------------------------------------------------------|:-----------------------------------:|:----------:|:---------------:|---------------------------------------------|
+| ALTADEFINIZIONE01  | https://altadefinizione-01.forum                       | Film, TV Series, Cartoni              |    🇮🇹    |        ✅        |
 | CB01               | https://cb01uno.cam/                                   | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         |CAPTCHA DA RISOLVERE, MA PERFETTAMENTE FUNZIONANTE    |
-| OnlineSerieTV      | https://onlineserietv.mom                              | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         | CAPTCHA DA RISOLVERE, MA PERFETTAMENTE FUNZIONANTE                                          |
+| GUARDAPLAY         | https://guardaplay.online                              | Film, Cartoni                         |    🇮🇹    |        X          | PLAYER DEL SITO MOMENTANEAMENTE IN DOWN    | 
+| ONLINESERIETV      | https://onlineserietv.mom                              | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        ✅         | CAPTCHA DA RISOLVERE, MA PERFETTAMENTE FUNZIONANTE                                          |
 | ToonItalia         | https://toonitalia.xyz/                                | Film, TV Series, Cartoni, Anime       |    🇮🇹    |        X          | Struttura del sito diversa per ogni serie o film                     |    
 ---
 
