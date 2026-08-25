@@ -11,6 +11,8 @@ import com.universal.extractors.Uprot
 class UniversalPlugin : Plugin() {
 
     override fun load(context: Context) {
+        
+        UprotWebView.setContext(context)
 
         registerMainAPI(
             UniversalProvider()
