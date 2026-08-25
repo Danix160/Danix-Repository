@@ -8,6 +8,8 @@ import com.universal.sources.Altadefinizione01Source
 import com.universal.sources.Cb01Source
 import com.universal.sources.OnlineSerieTvSource
 import com.universal.sources.SourceAdapter
+import com.universal.models.ProviderEpisode
+import com.universal.utils.EpisodeMapper
 import org.json.JSONObject
 import java.net.URLEncoder
 
