@@ -10,14 +10,20 @@ class UniversalPlugin : Plugin() {
 
     override fun load(context: Context) {
 
-        // Provider principale
         registerMainAPI(
             UniversalProvider()
         )
-
-        // Extractor VidxGo usato da Altadefinizione01
+        
         registerExtractorAPI(
             VidxGoExtractor()
+        )
+        
+        registerExtractorAPI(
+            Uprot()
+        )
+        
+        registerExtractorAPI(
+            MaxStream()
         )
     }
 }
