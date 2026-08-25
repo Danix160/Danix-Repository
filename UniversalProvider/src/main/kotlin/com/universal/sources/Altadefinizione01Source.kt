@@ -712,19 +712,22 @@ class Altadefinizione01Source : SourceAdapter {
     
                     result.add(
                         ProviderEpisode(
+                            source =
+                                "Altadefinizione01",
+                    
                             season =
                                 seasonNumber,
-    
+                    
                             episode =
                                 episodeNumber,
-    
+                    
                             absoluteEpisode =
                                 absolute,
-    
+                    
                             title =
                                 anchor.text()
                                     .trim(),
-    
+                    
                             urls =
                                 mirrors
                         )
