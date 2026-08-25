@@ -792,7 +792,7 @@ class OnlineSerieTvSource : SourceAdapter {
 
         if (
             bestScore <
-            40
+            20
         ) {
 
             Log.d(
@@ -1043,11 +1043,33 @@ class OnlineSerieTvSource : SourceAdapter {
                         }
                     }
             }
+            
+            Log.d(
+            TAG,
+            "OSTV FILM URL = $pageUrl"
+        )
+        
+        Log.d(
+            TAG,
+            "OSTV FILM TITLE = ${document.title()}"
+        )
+        
+        Log.d(
+            TAG,
+            "OSTV FILM HTML LENGTH = ${document.html().length}"
+        )
 
         Log.d(
             TAG,
             "OSTV FILM player = ${playerUrls.size}"
         )
+        
+        playerUrls.forEach {
+        Log.d(
+            TAG,
+            "OSTV FILM PLAYER = $it"
+        )
+    }
 
         var linksFound =
             0
@@ -1121,6 +1143,21 @@ class OnlineSerieTvSource : SourceAdapter {
             document.select(
                 "table tr"
             )
+            
+        Log.d(
+        TAG,
+        "OSTV righe episodi = ${rows.size}"
+    )
+    
+    rows
+        .take(20)
+        .forEachIndexed { index, row ->
+    
+            Log.d(
+                TAG,
+                "OSTV ROW [$index] = ${row.text().take(300)}"
+            )
+        }
 
         if (
             rows.isEmpty()
@@ -1279,43 +1316,27 @@ class OnlineSerieTvSource : SourceAdapter {
         )
 
         val urls =
-            row
-                .select(
-                    "a[href]"
-                )
-                .mapNotNull {
-
-                    val href =
-                        it.attr(
-                            "href"
-                        )
-                            .trim()
-
-                    if (
-                        href.isBlank()
-                    ) {
-
-                        null
-
-                    } else {
-
-                        fixUrl(
-                            href
-                        )
-                    }
+        row
+            .select(
+                "a[href]"
+            )
+            .mapNotNull { element ->
+    
+                val href =
+                    element
+                        .attr("href")
+                        .trim()
+    
+                if (href.isBlank()) {
+                    null
+                } else {
+                    fixUrl(href)
                 }
-                .filter {
-
-                    it.contains(
-                        "uprot.net",
-                        ignoreCase = true
-                    ) ||
-                        it.contains(
-                            "maxstream.video",
-                            ignoreCase = true
-                        )
-                }
-                .distinct()
+            }
+            .filter {
+                it.isNotBlank()
+            }
+            .distinct()
 
         if (
             urls.isEmpty()
@@ -1348,42 +1369,36 @@ class OnlineSerieTvSource : SourceAdapter {
          *
          * Evitiamo più CAPTCHA inutili.
          */
-        for (
-            playerUrl in urls
-        ) {
+        for (playerUrl in urls) {
 
-            try {
-
-                Log.d(
-                    TAG,
-                    "OSTV EPISODE extractor = $playerUrl"
-                )
-
-                loadExtractor(
-                    playerUrl,
-                    showUrl,
-                    subtitleCallback,
-                    countedCallback
-                )
-
-                if (
-                    linksFound >
-                    0
-                ) {
-
-                    break
-                }
-
-            } catch (
-                e: Exception
+        try {
+    
+            Log.d(
+                TAG,
+                "OSTV EPISODE extractor = $playerUrl"
+            )
+    
+            loadExtractor(
+                playerUrl,
+                showUrl,
+                subtitleCallback,
+                countedCallback
+            )
+    
+            if (
+                linksFound > 0
             ) {
-
-                Log.e(
-                    TAG,
-                    "OSTV episode extractor errore: ${e.message}"
-                )
+                break
             }
+    
+        } catch (e: Exception) {
+    
+            Log.e(
+                TAG,
+                "OSTV episode extractor errore: ${e.message}"
+            )
         }
+    }
 
         return linksFound
     }
