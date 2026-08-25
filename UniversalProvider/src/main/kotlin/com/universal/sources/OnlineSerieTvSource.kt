@@ -931,6 +931,45 @@ class OnlineSerieTvSource : SourceAdapter {
         
             return result
         }
+
+        override suspend fun getEpisodeInventory(
+            media: UniversalMedia
+        ): List<ProviderEpisode> {
+        
+            if (media.isMovie) {
+                return emptyList()
+            }
+        
+            Log.d(
+                TAG,
+                "Richiesto inventario episodi OSTV: ${media.title}"
+            )
+        
+            val selected =
+                try {
+        
+                    selectBestCandidate(
+                        media
+                    )
+        
+                } catch (e: Exception) {
+        
+                    Log.e(
+                        TAG,
+                        "Errore inventario OSTV: ${e.message}"
+                    )
+        
+                    null
+                }
+                    ?: return emptyList()
+        
+            val document =
+                selected.second
+        
+            return buildProviderEpisodes(
+                document
+            )
+        }
             
 
     private fun parseSeasonAndEpisode(
