@@ -89,6 +89,15 @@ class VidxGoExtractor : ExtractorApi() {
                 TAG,
                 "BODY LENGTH = ${body.length}"
             )
+            
+            Log.e(
+    TAG,
+    "BODY 403 = ${
+        response.text
+            .replace("\n", " ")
+            .take(3000)
+    }"
+)
 
             // ====================================================
             // SERIE TV
