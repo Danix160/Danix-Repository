@@ -764,11 +764,34 @@ class UniversalProvider : MainAPI() {
         
                     } else {
         
+                        val providerEpisodesForSeason =
+                            inventories.filter {
+                                it.season == media.season
+                            }
+                        
+                        val maxProviderEpisode =
+                            providerEpisodesForSeason
+                                .mapNotNull {
+                                    it.episode
+                                }
+                                .maxOrNull()
+                        
                         val available =
-                            EpisodeMapper.hasMatch(
-                                media,
-                                inventories
-                            )
+                            if (
+                                media.episode != null &&
+                                maxProviderEpisode != null
+                            ) {
+                        
+                                media.episode <=
+                                    maxProviderEpisode
+                        
+                            } else {
+                        
+                                EpisodeMapper.hasMatch(
+                                    media,
+                                    inventories
+                                )
+                            }
         
                         Log.d(
                             TAG,
