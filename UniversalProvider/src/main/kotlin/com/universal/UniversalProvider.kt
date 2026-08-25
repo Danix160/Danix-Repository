@@ -641,57 +641,63 @@ class UniversalProvider : MainAPI() {
             mutableListOf<
                 com.lagradost.cloudstream3.Episode
             >()
-
+        var absoluteOffset = 0
+        
         if (seasons != null) {
 
             for (
-                i in 0 until
-                    seasons.length()
+                i in 0 until seasons.length()
             ) {
-
+        
                 val season =
-                    seasons.optJSONObject(
-                        i
-                    )
+                    seasons.optJSONObject(i)
                         ?: continue
-
+        
                 val seasonNumber =
                     season.optInt(
                         "season_number",
                         -1
                     )
-
-                /*
-                 * Evitiamo Speciali (S00)
-                 * per la prima versione.
-                 */
+        
                 if (
                     seasonNumber <= 0
                 ) {
                     continue
                 }
-
+        
+                val episodeCount =
+                    season.optInt(
+                        "episode_count",
+                        0
+                    )
+        
                 episodes.addAll(
                     loadSeasonEpisodes(
                         tmdbId =
                             tmdbId,
-
+        
                         title =
                             title,
-
+        
                         originalTitle =
                             originalTitle,
-
+        
                         year =
                             year,
-
+        
                         imdbId =
                             imdbId,
-
+        
                         seasonNumber =
-                            seasonNumber
+                            seasonNumber,
+        
+                        absoluteOffset =
+                            absoluteOffset
                     )
                 )
+        
+                absoluteOffset +=
+                    episodeCount
             }
         }
 
@@ -726,6 +732,7 @@ class UniversalProvider : MainAPI() {
         year: Int?,
         imdbId: String?,
         seasonNumber: Int
+        absoluteOffset: Int
     ): List<com.lagradost.cloudstream3.Episode> {
 
         val url =
@@ -809,28 +816,32 @@ class UniversalProvider : MainAPI() {
                 UniversalMedia(
                     title =
                         title,
-
+            
                     originalTitle =
                         originalTitle,
-
+            
                     year =
                         year,
-
+            
                     tmdbId =
                         tmdbId,
-
+            
                     imdbId =
                         imdbId,
-
+            
                     season =
                         seasonNumber,
-
+            
                     episode =
                         episodeNumber,
-
+            
+                    absoluteEpisode =
+                        absoluteOffset +
+                            episodeNumber,
+            
                     episodeTitle =
                         episodeTitle,
-
+            
                     isMovie =
                         false
                 )
@@ -1053,6 +1064,10 @@ class UniversalProvider : MainAPI() {
                 media.episode
             )
             .put(
+                "absoluteEpisode",
+                media.absoluteEpisode
+            )
+            .put(
                 "episodeTitle",
                 media.episodeTitle
             )
@@ -1134,6 +1149,16 @@ class UniversalProvider : MainAPI() {
                     json
                         .optInt(
                             "episode",
+                            0
+                        )
+                        .takeIf {
+                            it > 0
+                        },
+
+                absoluteEpisode =
+                    json
+                        .optInt(
+                            "absoluteEpisode",
                             0
                         )
                         .takeIf {
