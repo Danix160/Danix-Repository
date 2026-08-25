@@ -5,7 +5,6 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.universal.models.UniversalMedia
 import com.universal.sources.Altadefinizione01Source
-import com.universal.sources.Cb01Source
 import com.universal.sources.OnlineSerieTvSource
 import com.universal.sources.SourceAdapter
 import com.universal.models.ProviderEpisode
@@ -65,15 +64,14 @@ class UniversalProvider : MainAPI() {
      * 3 CB01
      */
     private val sources:
-        List<SourceAdapter> =
-        listOf(
-            Altadefinizione01Source(),
-            OnlineSerieTvSource(),
-            Cb01Source()
-        )
-            .sortedBy {
-                it.priority
-            }
+    List<SourceAdapter> =
+    listOf(
+        Altadefinizione01Source(),
+        OnlineSerieTvSource()
+    )
+        .sortedBy {
+            it.priority
+        }
 
     override val mainPage =
         mainPageOf(
@@ -741,32 +739,62 @@ class UniversalProvider : MainAPI() {
         }
 
         val filteredEpisodes =
-            if (inventories.isEmpty()) {
-        
-                tmdbEpisodes
-        
+    if (inventories.isEmpty()) {
+
+        Log.d(
+            TAG,
+            "Nessun inventario provider: " +
+                "non mostro episodi per ${title}"
+        )
+
+        emptyList()
+
+    } else {
+
+        tmdbEpisodes.filter { episode ->
+
+            val media =
+                decodeMedia(
+                    episode.data
+                )
+
+            if (media == null) {
+
+                Log.d(
+                    TAG,
+                    "Episodio TMDB scartato: " +
+                        "impossibile decodificare i dati"
+                )
+
+                false
+
             } else {
-        
-                tmdbEpisodes.filter { episode ->
-        
-                    val media =
-                        decodeMedia(
-                            episode.data
-                        )
-        
-                    if (media == null) {
-        
-                        true
-        
-                    } else {
-        
-                        EpisodeMapper.hasMatch(
-                            media,
-                            inventories
-                        )
+
+                val available =
+                                EpisodeMapper.hasMatch(
+                                    media,
+                                    inventories
+                                )
+            
+                            Log.d(
+                                TAG,
+                                "UI S${media.season}E${media.episode} " +
+                                    "abs=${media.absoluteEpisode} " +
+                                    "\"${media.episodeTitle}\" " +
+                                    "available=$available"
+                            )
+            
+                            available
+                        }
                     }
                 }
-            }
+            
+            Log.d(
+                TAG,
+                "UI EPISODI: " +
+                    "${tmdbEpisodes.size} TMDB -> " +
+                    "${filteredEpisodes.size} disponibili"
+            )
 
         return newTvSeriesLoadResponse(
             title,
