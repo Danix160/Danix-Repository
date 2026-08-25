@@ -46,53 +46,61 @@ object EpisodeMapper {
             )
             .trim()
     }
-    
-        private fun hasUsefulTitle(
-            title: String?
-        ): Boolean {
-        
-            val normalized =
-                normalize(title)
-        
-            if (normalized.isBlank()) {
-                return false
-            }
-        
-            /*
-             * Titoli che in realtà non sono titoli episodio.
-             */
-            if (
-                normalized.matches(
-                    Regex(
-                        """(?:episodio|episode|ep)\s*\d+"""
-                    )
-                )
-            ) {
-                return false
-            }
-        
-            if (
-                normalized.matches(
-                    Regex(
-                        """\d+\s*x\s*\d+"""
-                    )
-                )
-            ) {
-                return false
-            }
-        
-            return normalized.length >= 4
+
+    /*
+     * Permette anche questo caso:
+     *
+     * TMDB:
+     * "Il ritorno del Goblin"
+     *
+     * Provider:
+     * "1x01 Il ragno colpisce / Il ritorno del Goblin"
+     *
+     * Quindi una singola voce provider può corrispondere
+     * a più episodi/segmenti TMDB.
+     */
+    private fun titleContained(
+        wanted: String?,
+        provider: String?
+    ): Boolean {
+
+        val wantedNormalized =
+            normalize(
+                wanted
+            )
+
+        val providerNormalized =
+            normalize(
+                provider
+            )
+
+        if (
+            wantedNormalized.isBlank() ||
+            providerNormalized.isBlank()
+        ) {
+            return false
         }
+
+        return providerNormalized
+            .contains(
+                wantedNormalized
+            )
+    }
+
     private fun titleSimilarity(
         first: String?,
         second: String?
     ): Int {
 
         val a =
-            normalize(first)
+            normalize(
+                first
+            )
 
         val b =
-            normalize(second)
+            normalize(
+                second
+            )
 
         if (
             a.isBlank() ||
@@ -104,33 +112,40 @@ object EpisodeMapper {
         /*
          * Titolo identico.
          */
-        if (a == b) {
-            return 500
+        if (
+            a ==
+            b
+        ) {
+            return 400
         }
 
         /*
-         * Caso episodio accorpato.
+         * Fondamentale per gli episodi doppi.
          *
-         * TMDB:
-         * "Titolo B"
+         * Es:
          *
-         * Provider:
-         * "Titolo A / Titolo B"
+         * TMDB = "Titolo B"
+         * provider = "Titolo A / Titolo B"
          */
         if (
-            b.contains(a)
+            titleContained(
+                first,
+                second
+            )
         ) {
-            return 450
+            return 350
         }
 
         /*
-         * Caso contrario:
-         * provider con titolo più corto.
+         * Manteniamo anche il contrario
+         * per titoli provider più corti.
          */
         if (
-            a.contains(b)
+            a.contains(
+                b
+            )
         ) {
-            return 220
+            return 180
         }
 
         val aWords =
@@ -155,11 +170,13 @@ object EpisodeMapper {
         }
 
         val common =
-            aWords.intersect(
-                bWords
-            ).size
+            aWords
+                .intersect(
+                    bWords
+                )
+                .size
 
-        val maxSize =
+        val max =
             maxOf(
                 aWords.size,
                 bWords.size
@@ -167,17 +184,14 @@ object EpisodeMapper {
 
         val ratio =
             common.toDouble() /
-                maxSize.toDouble()
+                max.toDouble()
 
         return when {
 
-            ratio >= 0.85 ->
-                180
+            ratio >= 0.80 ->
+                140
 
-            ratio >= 0.70 ->
-                130
-
-            ratio >= 0.55 ->
+            ratio >= 0.60 ->
                 90
 
             ratio >= 0.40 ->
@@ -203,24 +217,16 @@ object EpisodeMapper {
             )
 
         /*
-         * Il titolo è il criterio principale.
+         * Il titolo è ora il criterio principale.
          */
         score +=
             titleScore
 
         /*
-         * Se il titolo è forte,
-         * premiamo ancora.
-         */
-        if (
-            titleScore >= 400
-        ) {
-            score += 250
-        }
-
-        /*
-         * Stagione + episodio:
-         * solo supporto.
+         * Stagione + episodio identici.
+         *
+         * Utile per provider con numerazione normale,
+         * ma non deve battere un titolo corretto.
          */
         if (
             media.season != null &&
@@ -230,194 +236,123 @@ object EpisodeMapper {
             candidate.episode ==
             media.episode
         ) {
-            score += 80
+
+            score +=
+                120
         }
 
         /*
-         * Numero assoluto:
-         * supporto debole.
+         * Numero assoluto.
          *
-         * Non deve mai essere sufficiente
-         * da solo per far sopravvivere
-         * un episodio TMDB sbagliato.
+         * Ora è solo un supporto.
+         *
+         * Dopo episodi doppi/spezzati può non coincidere
+         * più perfettamente tra TMDB e provider.
          */
         if (
             media.absoluteEpisode != null &&
             candidate.absoluteEpisode ==
             media.absoluteEpisode
         ) {
-            score += 40
+
+            score +=
+                80
         }
 
         /*
-         * Se titolo completamente diverso,
-         * i numeri non devono salvare il match.
+         * Se il titolo è già molto forte,
+         * diamo un ulteriore bonus.
          */
         if (
-            titleScore == 0
+            titleScore >=
+            300
         ) {
 
-            score -= 120
+            score +=
+                200
         }
 
         return score
     }
 
     fun findBest(
-    media: UniversalMedia,
-    episodes: List<ProviderEpisode>
-): ProviderEpisode? {
-
-    if (episodes.isEmpty()) {
-        return null
-    }
-
-    val scored =
-        episodes
-            .map { episode ->
-
-                episode to
-                    score(
-                        media,
-                        episode
-                    )
-            }
-            .sortedByDescending {
-                it.second
-            }
-
-    val best =
-        scored.firstOrNull()
-            ?: return null
-
-    val bestTitleScore =
-        titleSimilarity(
-            media.episodeTitle,
-            best.first.title
-        )
-
-    val providerHasUsefulTitle =
-        hasUsefulTitle(
-            best.first.title
-        )
-
-    Log.d(
-        TAG,
-        "TMDB " +
-            "S${media.season}" +
-            "E${media.episode} " +
-            "abs=${media.absoluteEpisode} " +
-            "title=${media.episodeTitle}"
-    )
-
-    Log.d(
-        TAG,
-        "BEST PROVIDER " +
-            "${best.first.source} " +
-            "S${best.first.season}" +
-            "E${best.first.episode}" +
-            (
-                best.first.part
-                    ?.let {
-                        ".$it"
-                    }
-                    ?: ""
-            ) +
-            " abs=${best.first.absoluteEpisode} " +
-            "title=${best.first.title} " +
-            "titleScore=$bestTitleScore " +
-            "usefulTitle=$providerHasUsefulTitle " +
-            "score=${best.second}"
-    )
-
-    /*
-     * CASO 1
-     *
-     * Abbiamo veri titoli episodio.
-     * Usiamo il titolo come criterio principale.
-     *
-     * Permette anche:
-     *
-     * TMDB E1 = Titolo A
-     * TMDB E2 = Titolo B
-     *
-     * Provider E1 = Titolo A / Titolo B
-     */
-    if (
-        providerHasUsefulTitle &&
-        !media.episodeTitle.isNullOrBlank()
-    ) {
+        media: UniversalMedia,
+        episodes: List<ProviderEpisode>
+    ): ProviderEpisode? {
 
         if (
-            bestTitleScore >= 130
+            episodes.isEmpty()
         ) {
-
-            return best.first
+            return null
         }
 
-        Log.d(
-            TAG,
-            "Match rifiutato: " +
-                "titolo provider presente ma incompatibile"
-        )
+        val scored =
+            episodes
+                .map { episode ->
 
-        return null
-    }
+                    episode to
+                        score(
+                            media,
+                            episode
+                        )
+                }
+                .sortedByDescending {
+                    it.second
+                }
 
-    /*
-     * CASO 2
-     *
-     * Il provider NON espone veri titoli.
-     *
-     * Allora possiamo usare stagione/episodio,
-     * perché altrimenti elimineremmo tutta la serie.
-     */
-    val sameSeasonEpisode =
-        media.season != null &&
-            media.episode != null &&
-            best.first.season ==
-                media.season &&
-            best.first.episode ==
-                media.episode
-
-    if (sameSeasonEpisode) {
+        val best =
+            scored
+                .firstOrNull()
+                ?: return null
 
         Log.d(
             TAG,
-            "Match numerico accettato: " +
-                "provider senza titolo utile"
+            "TMDB " +
+                "S${media.season}" +
+                "E${media.episode} " +
+                "abs=${media.absoluteEpisode} " +
+                "title=${media.episodeTitle}"
         )
+
+        Log.d(
+            TAG,
+            "BEST PROVIDER " +
+                "${best.first.source} " +
+                "S${best.first.season}" +
+                "E${best.first.episode}" +
+                (
+                    best.first.part
+                        ?.let {
+                            ".$it"
+                        }
+                        ?: ""
+                ) +
+                " abs=${best.first.absoluteEpisode} " +
+                "title=${best.first.title} " +
+                "score=${best.second}"
+        )
+
+        /*
+         * Una corrispondenza debole basata
+         * soltanto sui numeri non è sufficiente.
+         */
+        if (
+            best.second <
+            120
+        ) {
+
+            Log.d(
+                TAG,
+                "Match episodio rifiutato: " +
+                    "score troppo basso"
+            )
+
+            return null
+        }
 
         return best.first
     }
 
-    /*
-     * Fallback assoluto solo quando non
-     * abbiamo titoli utili.
-     */
-    val sameAbsolute =
-        media.absoluteEpisode != null &&
-            best.first.absoluteEpisode ==
-                media.absoluteEpisode
-
-    if (sameAbsolute) {
-
-        Log.d(
-            TAG,
-            "Match assoluto accettato: " +
-                "provider senza titolo utile"
-        )
-
-        return best.first
-    }
-
-    Log.d(
-        TAG,
-        "Nessuna corrispondenza episodio"
-    )
-
-    return null
-}
     fun hasMatch(
         media: UniversalMedia,
         episodes: List<ProviderEpisode>
