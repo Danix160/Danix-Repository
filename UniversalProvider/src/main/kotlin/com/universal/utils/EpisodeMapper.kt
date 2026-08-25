@@ -38,6 +38,21 @@ object EpisodeMapper {
             .trim()
     }
 
+    fun hasMatch(
+        media: UniversalMedia,
+        episodes: List<ProviderEpisode>
+    ): Boolean {
+    
+        if (episodes.isEmpty()) {
+            return false
+        }
+    
+        return findBest(
+            media,
+            episodes
+        ) != null
+    }
+
     private fun titleSimilarity(
         first: String?,
         second: String?
@@ -110,41 +125,35 @@ object EpisodeMapper {
         media: UniversalMedia,
         candidate: ProviderEpisode
     ): Int {
-
+    
         var score = 0
-
-        /*
-         * Titolo episodio.
-         *
-         * È molto importante quando TMDB e provider
-         * dividono le stagioni diversamente.
-         */
-        score +=
+    
+        val titleScore =
             titleSimilarity(
                 media.episodeTitle,
                 candidate.title
             )
-
+    
+        score +=
+            titleScore
+    
         /*
-         * Numero assoluto.
-         *
-         * Es:
-         *
-         * TMDB S03E01 = episodio assoluto 26
-         * Provider S02E09 = episodio assoluto 26
+         * Numero assoluto:
+         * utile, ma non deve prevalere
+         * su un titolo chiaramente diverso.
          */
         if (
             media.absoluteEpisode != null &&
             candidate.absoluteEpisode ==
             media.absoluteEpisode
         ) {
-            score += 200
+    
+            score +=
+                150
         }
-
+    
         /*
-         * Stagione + episodio esatti.
-         *
-         * Molto affidabile quando le strutture coincidono.
+         * Stagione + episodio identici.
          */
         if (
             media.season != null &&
@@ -154,21 +163,23 @@ object EpisodeMapper {
             candidate.episode ==
             media.episode
         ) {
-            score += 180
+    
+            score +=
+                120
         }
-
+    
         /*
-         * Solo episodio uguale.
-         * Peso basso perché può ripetersi tra stagioni.
+         * Titolo episodio esatto/molto simile
+         * deve essere il segnale più forte.
          */
         if (
-            media.episode != null &&
-            candidate.episode ==
-            media.episode
+            titleScore >= 150
         ) {
-            score += 20
+    
+            score +=
+                150
         }
-
+    
         return score
     }
 
@@ -218,7 +229,7 @@ object EpisodeMapper {
         /*
          * Evitiamo match casuali.
          */
-        if (best.second < 100) {
+        if (best.second < 120) {
 
             Log.d(
                 TAG,
