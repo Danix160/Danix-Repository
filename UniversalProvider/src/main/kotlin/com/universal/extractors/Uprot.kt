@@ -73,7 +73,8 @@ if (UprotWebView.hasPersistentSession()) {
 
         UprotWebView.resolve(
             mseUrl,
-            USER_AGENT
+            USER_AGENT,
+            referer
         )
 
     } catch (e: Exception) {
@@ -122,13 +123,22 @@ if (UprotWebView.hasPersistentSession()) {
 
         Log.d(TAG, "URL da richiedere: $mseUrl")
 
-        val headers = mapOf(
-            "User-Agent" to USER_AGENT,
-            "Accept" to
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language" to "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Referer" to (referer ?: "https://onlineserietv.mom/")
-        )
+        val effectiveReferer =
+            referer
+                ?.takeIf {
+                    it.isNotBlank()
+                }
+                ?: "https://onlineserietv.mom/"
+        
+        val headers =
+            mapOf(
+                "User-Agent" to USER_AGENT,
+                "Accept" to
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to
+                    "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer" to effectiveReferer
+            )
 
         try {
 
@@ -344,7 +354,8 @@ if (isCaptchaPage) {
     val webViewResult = try {
         UprotWebView.resolve(
             mseUrl,
-            USER_AGENT
+            USER_AGENT,
+            referer
         )
     } catch (e: Exception) {
         Log.e(
