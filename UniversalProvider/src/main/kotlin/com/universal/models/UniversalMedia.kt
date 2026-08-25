@@ -16,6 +16,8 @@ data class UniversalMedia(
 
     val episode: Int? = null,
 
+    val absoluteEpisode: Int? = null,
+
     val episodeTitle: String? = null,
 
     val isMovie: Boolean = false
