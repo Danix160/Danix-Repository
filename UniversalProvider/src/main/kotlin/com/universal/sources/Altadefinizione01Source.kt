@@ -611,143 +611,296 @@ class Altadefinizione01Source : SourceAdapter {
 
         return null
     }
-
-        private fun buildProviderEpisodes(
-        document: Document
-    ): List<ProviderEpisode> {
+    private data class ParsedEpisodeNumber(
+        val season: Int?,
+        val episode: Int,
+        val part: Int? = null
+    )
     
-        val result =
-            mutableListOf<ProviderEpisode>()
+    private fun parseProviderEpisodeNumber(
+        raw: String,
+        fallbackSeason: Int?
+    ): ParsedEpisodeNumber? {
     
-        var absolute =
-            0
+        val value =
+            raw.trim()
+                .lowercase()
     
         /*
-         * Struttura classica:
-         * #season-X
+         * Supporta:
+         *
+         * 1x01
+         * 01x01
+         * 1x01.1
+         * 1x01.2
          */
-        document
-            .select("[id^=season-]")
-            .forEach { seasonPane ->
+        val fullMatch =
+            Regex(
+                """(\d{1,2})x(\d{1,3})(?:\.(\d+))?"""
+            )
+                .find(value)
     
-                val seasonNumber =
-                    seasonPane
-                        .id()
-                        .substringAfter("season-")
-                        .toIntOrNull()
+        if (fullMatch != null) {
     
-                val episodeAnchors =
-                    seasonPane.select(
-                        "ul > li > a[allowfullscreen][data-link]"
-                    )
+            val season =
+                fullMatch
+                    .groupValues[1]
+                    .toIntOrNull()
     
-                episodeAnchors.forEach { anchor ->
+            val episode =
+                fullMatch
+                    .groupValues[2]
+                    .toIntOrNull()
+                    ?: return null
     
-                    val rawNum =
-                        anchor.attr("data-num")
-    
-                    val episodeNumber =
-                        rawNum
-                            .substringAfter(
-                                'x',
-                                ""
-                            )
-                            .toIntOrNull()
-                            ?: anchor
-                                .text()
-                                .trim()
-                                .toIntOrNull()
-    
-                    if (
-                        episodeNumber == null
-                    ) {
-                        return@forEach
+            val part =
+                fullMatch
+                    .groupValues
+                    .getOrNull(3)
+                    ?.takeIf {
+                        it.isNotBlank()
                     }
+                    ?.toIntOrNull()
     
-                    val mirrors =
+            return ParsedEpisodeNumber(
+                season = season ?: fallbackSeason,
+                episode = episode,
+                part = part
+            )
+        }
+    
+        /*
+         * Fallback:
+         * data-num potrebbe contenere solamente "5".
+         */
+        val simpleEpisode =
+            Regex("""\d{1,3}""")
+                .find(value)
+                ?.value
+                ?.toIntOrNull()
+                ?: return null
+    
+        return ParsedEpisodeNumber(
+            season = fallbackSeason,
+            episode = simpleEpisode,
+            part = null
+        )
+    }
+    
+    private fun cleanProviderEpisodeTitle(
+        text: String,
+        rawNumber: String
+    ): String {
+    
+        return text
+            .replace(
+                rawNumber,
+                "",
+                ignoreCase = true
+            )
+            .replace(
+                Regex(
+                    """\b(?:Guarda|Play|Mirror|Server|Download|Scarica|4K|FullHD|HD)\b""",
+                    RegexOption.IGNORE_CASE
+                ),
+                " "
+            )
+            .replace(
+                Regex("""\s+"""),
+                " "
+            )
+            .trim()
+    }
+
+        private fun buildProviderEpisodes(
+            document: Document
+        ): List<ProviderEpisode> {
+        
+            val result =
+                mutableListOf<ProviderEpisode>()
+        
+            var absolute =
+                0
+        
+            document
+                .select("[id^=season-]")
+                .forEach { seasonPane ->
+        
+                    val seasonNumber =
+                        seasonPane
+                            .id()
+                            .substringAfter("season-")
+                            .toIntOrNull()
+        
+                    val episodeAnchors =
+                        seasonPane.select(
+                            "ul > li > a[allowfullscreen][data-link]"
+                        )
+        
+                    episodeAnchors.forEach { anchor ->
+        
+                        val rawNum =
+                            anchor
+                                .attr("data-num")
+                                .trim()
+        
+                        val parsed =
+                            parseProviderEpisodeNumber(
+                                raw = rawNum,
+                                fallbackSeason = seasonNumber
+                            )
+                                ?: return@forEach
+        
+                        val playerUrls =
+                            mutableListOf<String>()
+                        
+                        /*
+                         * Player principale dell'episodio.
+                         */
+                        var mainLink =
+                            anchor
+                                .attr("data-link")
+                                .trim()
+                        
+                        if (mainLink.isNotBlank()) {
+                        
+                            if (mainLink.startsWith("//")) {
+                                mainLink =
+                                    "https:$mainLink"
+                            }
+                        
+                            if (
+                                !mainLink.contains(
+                                    "4k",
+                                    ignoreCase = true
+                                )
+                            ) {
+                                playerUrls.add(
+                                    mainLink
+                                )
+                            }
+                        }
+                        
+                        /*
+                         * Eventuali mirror aggiuntivi.
+                         */
                         anchor
                             .parent()
                             ?.select(
                                 ".mirrors a[data-link]"
                             )
-                            ?.mapNotNull { mirror ->
-    
+                            ?.forEach { mirror ->
+                        
                                 var link =
                                     mirror
                                         .attr("data-link")
                                         .trim()
-    
-                                if (
-                                    link.isBlank()
-                                ) {
-                                    return@mapNotNull null
+                        
+                                if (link.isBlank()) {
+                                    return@forEach
                                 }
-    
-                                if (
-                                    link.startsWith("//")
-                                ) {
+                        
+                                if (link.startsWith("//")) {
                                     link =
                                         "https:$link"
                                 }
-    
-                                link
+                        
+                                if (
+                                    !link.contains(
+                                        "4k",
+                                        ignoreCase = true
+                                    )
+                                ) {
+                                    playerUrls.add(
+                                        link
+                                    )
+                                }
                             }
-                            ?.filter {
-                                !it.contains(
-                                    "4k",
-                                    ignoreCase = true
-                                )
-                            }
-                            ?.distinct()
-                            ?: emptyList()
-    
-                    absolute++
-    
-                    result.add(
-                        ProviderEpisode(
-                            source =
-                                "Altadefinizione01",
-                    
-                            season =
-                                seasonNumber,
-                    
-                            episode =
-                                episodeNumber,
-                    
-                            absoluteEpisode =
-                                absolute,
-                    
-                            title =
-                                anchor.text()
-                                    .trim(),
-                    
-                            urls =
-                                mirrors
+                        
+                        val mirrors =
+                            playerUrls.distinct()
+        
+                        /*
+                         * Prendiamo il testo dell'intera riga.
+                         *
+                         * Questo è importante se Altadefinizione
+                         * rappresenta due segmenti italiani nella
+                         * stessa voce.
+                         */
+                        val rawTitle =
+                            anchor
+                                .parent()
+                                ?.text()
+                                ?.trim()
+                                .orEmpty()
+                                .ifBlank {
+                                    anchor.text()
+                                        .trim()
+                                }
+        
+                        val cleanedTitle =
+                            cleanProviderEpisodeTitle(
+                                rawTitle,
+                                rawNum
+                            )
+        
+                        absolute++
+        
+                        result.add(
+                            ProviderEpisode(
+                                source =
+                                    "Altadefinizione01",
+        
+                                season =
+                                    parsed.season,
+        
+                                episode =
+                                    parsed.episode,
+        
+                                part =
+                                    parsed.part,
+        
+                                absoluteEpisode =
+                                    absolute,
+        
+                                title =
+                                    cleanedTitle,
+        
+                                urls =
+                                    mirrors
+                            )
                         )
+                    }
+                }
+        
+            Log.d(
+                TAG,
+                "AD01 ProviderEpisodes = ${result.size}"
+            )
+        
+            result
+                .take(30)
+                .forEach {
+        
+                    Log.d(
+                        TAG,
+                        "AD01 MAP " +
+                            "S${it.season}" +
+                            "E${it.episode}" +
+                            (
+                                it.part
+                                    ?.let { part ->
+                                        ".$part"
+                                    }
+                                    ?: ""
+                            ) +
+                            " ABS=${it.absoluteEpisode} " +
+                            "TITLE=${it.title}"
                     )
                 }
-            }
-    
-        Log.d(
-            TAG,
-            "AD01 ProviderEpisodes = ${result.size}"
-        )
-    
-        result
-            .take(15)
-            .forEach {
-    
-                Log.d(
-                    TAG,
-                    "AD01 MAP " +
-                        "S${it.season}E${it.episode} " +
-                        "ABS=${it.absoluteEpisode} " +
-                        "TITLE=${it.title}"
-                )
-            }
-    
-        return result
-    }
+        
+            return result
+        }
 
         override suspend fun getEpisodeInventory(
             media: UniversalMedia
