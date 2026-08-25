@@ -897,7 +897,7 @@ class OnlineSerieTvSource : SourceAdapter {
                             "OnlineSerieTV",
                 
                         season =
-                            seasonNumber,
+                            seasonEpisode?.first,
                 
                         episode =
                             episodeNumber,
@@ -906,11 +906,10 @@ class OnlineSerieTvSource : SourceAdapter {
                             absolute,
                 
                         title =
-                            anchor.text()
-                                .trim(),
+                            text,
                 
                         urls =
-                            mirrors
+                            links
                     )
                 )
             }
