@@ -740,14 +740,8 @@ class UniversalProvider : MainAPI() {
 
         val filteredEpisodes =
     if (inventories.isEmpty()) {
-
-        Log.d(
-            TAG,
-            "Nessun inventario provider: " +
-                "non mostro episodi per ${title}"
-        )
-
-        emptyList()
+        tmdbEpisodes
+    }    
 
     } else {
 
