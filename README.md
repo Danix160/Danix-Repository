@@ -1,5 +1,4 @@
-**⚠️ IL MIO PRIMO PLUGIN DI CLOUDSTREAM**
-AGGIORNATO 23/05/2026
+PLUGIN CLOUDSTREAM ITA
 ### Clicca su Gumball per installare la repo
 <p align="center">
   <a href="https://danix160.github.io/Danix-Repository/install.html">
