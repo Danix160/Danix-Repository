@@ -739,49 +739,49 @@ class UniversalProvider : MainAPI() {
         }
 
         val filteredEpisodes =
-    if (inventories.isEmpty()) {
-        tmdbEpisodes
-    }    
-
-    } else {
-
-        tmdbEpisodes.filter { episode ->
-
-            val media =
-                decodeMedia(
-                    episode.data
-                )
-
-            if (media == null) {
-
-                Log.d(
-                    TAG,
-                    "Episodio TMDB scartato: " +
-                        "impossibile decodificare i dati"
-                )
-
-                false
-
+            if (inventories.isEmpty()) {
+        
+                tmdbEpisodes
+        
             } else {
-
-                val available =
-                                EpisodeMapper.hasMatch(
-                                    media,
-                                    inventories
-                                )
-            
-                            Log.d(
-                                TAG,
-                                "UI S${media.season}E${media.episode} " +
-                                    "abs=${media.absoluteEpisode} " +
-                                    "\"${media.episodeTitle}\" " +
-                                    "available=$available"
+        
+                tmdbEpisodes.filter { episode ->
+        
+                    val media =
+                        decodeMedia(
+                            episode.data
+                        )
+        
+                    if (media == null) {
+        
+                        Log.d(
+                            TAG,
+                            "Episodio TMDB scartato: " +
+                                "impossibile decodificare i dati"
+                        )
+        
+                        false
+        
+                    } else {
+        
+                        val available =
+                            EpisodeMapper.hasMatch(
+                                media,
+                                inventories
                             )
-            
-                            available
-                        }
+        
+                        Log.d(
+                            TAG,
+                            "UI S${media.season}E${media.episode} " +
+                                "abs=${media.absoluteEpisode} " +
+                                "\"${media.episodeTitle}\" " +
+                                "available=$available"
+                        )
+        
+                        available
                     }
                 }
+            }
             
             Log.d(
                 TAG,
