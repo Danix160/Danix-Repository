@@ -637,10 +637,8 @@ class UniversalProvider : MainAPI() {
                 "seasons"
             )
 
-        val episodes =
-            mutableListOf<
-                com.lagradost.cloudstream3.Episode
-            >()
+        val tmdbEpisodes =
+        mutableListOf<Episode>()
         var absoluteOffset = 0
         
         if (seasons != null) {
@@ -671,26 +669,26 @@ class UniversalProvider : MainAPI() {
                         0
                     )
         
-                episodes.addAll(
+                tmdbEpisodes.addAll(
                     loadSeasonEpisodes(
                         tmdbId =
                             tmdbId,
-        
+                
                         title =
                             title,
-        
+                
                         originalTitle =
                             originalTitle,
-        
+                
                         year =
                             year,
-        
+                
                         imdbId =
                             imdbId,
-        
+                
                         seasonNumber =
                             seasonNumber,
-        
+                
                         absoluteOffset =
                             absoluteOffset
                     )
