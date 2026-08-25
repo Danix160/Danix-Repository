@@ -1172,45 +1172,51 @@ class UniversalProvider : MainAPI() {
         tmdbId: Int,
         isMovie: Boolean
     ): String {
-
-        return "universal://${
+    
+        val type =
             if (isMovie) {
                 "movie"
             } else {
                 "tv"
             }
-        }/$tmdbId"
+    
+        return "https://universal.local/$type/$tmdbId"
     }
 
     private fun parseLoadData(
         data: String
     ): Pair<Int, Boolean>? {
-
+    
         if (
             !data.startsWith(
-                "universal://"
+                "https://universal.local/"
             )
         ) {
             return null
         }
-
+    
+        val clean =
+            data.substringAfter(
+                "https://universal.local/"
+            )
+    
         val type =
-            data
-                .substringAfter(
-                    "universal://"
-                )
-                .substringBefore(
-                    "/"
-                )
-
+            clean.substringBefore("/")
+    
         val id =
-            data
-                .substringAfterLast(
-                    "/"
-                )
+            clean
+                .substringAfter("/")
+                .substringBefore("?")
                 .toIntOrNull()
                 ?: return null
-
+    
+        if (
+            type != "movie" &&
+            type != "tv"
+        ) {
+            return null
+        }
+    
         return Pair(
             id,
             type == "movie"
