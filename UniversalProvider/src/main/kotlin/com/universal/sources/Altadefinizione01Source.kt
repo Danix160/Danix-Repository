@@ -57,6 +57,7 @@ class Altadefinizione01Source : SourceAdapter {
         val title: String,
         val url: String,
         val isTv: Boolean,
+        val year: Int? = null,
         val score: Int
     )
 
@@ -360,20 +361,12 @@ class Altadefinizione01Source : SourceAdapter {
             score -=
                 50
         }
-
         return Candidate(
-            title =
-                title,
-
-            url =
-                url,
-
-            isTv =
-                isTv,
-
-            score =
-                score
-        )
+            title = title,
+            url = url,
+            isTv = isTv,
+            score = score
+)
     }
 
     // ============================================================
@@ -875,25 +868,35 @@ class Altadefinizione01Source : SourceAdapter {
                         media.year != null &&
                         candidateYear != null
                     ) {
+                    
+                        val yearDifference =
+                            kotlin.math.abs(
+                                media.year - candidateYear
+                            )
+                    
+                        if (yearDifference <= 1) {
 
-                        /*
-                         * Nei film l'anno è molto utile.
-                         *
-                         * Per le serie TMDB dà l'anno
-                         * della prima trasmissione.
-                         */
-                        if (
-                            media.year ==
-                            candidateYear
-                        ) {
-
-                            score +=
-                                30
-
+                            score += 120
+                        
                         } else {
-
-                            score -=
-                                10
+                        
+                            /*
+                             * Serie omonima ma di un'altra epoca.
+                             * Non deve essere utilizzata come fallback.
+                             */
+                            if (!media.isMovie) {
+                        
+                                Log.d(
+                                    TAG,
+                                    "SCARTATO per anno incompatibile: " +
+                                        "${candidate.title} " +
+                                        "$candidateYear != ${media.year}"
+                                )
+                        
+                                return@forEach
+                            }
+                        
+                            score -= 150
                         }
                     }
 
@@ -914,29 +917,32 @@ class Altadefinizione01Source : SourceAdapter {
 
                     if (
                         !media.imdbId.isNullOrBlank() &&
-                        !pageImdb.isNullOrBlank()
+                        !pageImdb.isNullOrBlank() &&
+                        !media.imdbId.equals(
+                            pageImdb,
+                            ignoreCase = true
+                        )
                     ) {
+                    
+                        Log.d(
+                            TAG,
+                            "SCARTATO per IMDb diverso: " +
+                                "${candidate.title} " +
+                                "$pageImdb != ${media.imdbId}"
+                        )
+                    
+                        return@forEach
+                    }
 
-                        if (
-                            media.imdbId.equals(
-                                pageImdb,
-                                ignoreCase = true
-                            )
-                        ) {
-
-                            score +=
-                                200
-
-                        } else {
-
-                            /*
-                             * IMDb diverso:
-                             * probabilmente non è
-                             * il contenuto corretto.
-                             */
-                            score -=
-                                100
-                        }
+                    if (
+                        !media.imdbId.isNullOrBlank() &&
+                        !pageImdb.isNullOrBlank() &&
+                        media.imdbId.equals(
+                            pageImdb,
+                            ignoreCase = true
+                        )
+                    ) {
+                        score += 500
                     }
 
                     Log.d(
