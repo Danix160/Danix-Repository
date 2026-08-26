@@ -352,68 +352,105 @@ object MaxStreamWebView {
                                     }
 
                                     val script =
-                                        """
-                                        (function() {
-                                            try {
-                                                const video =
-                                                    document.querySelector('video');
-
-                                                const iframe =
-                                                    document.querySelector(
-                                                        'iframe[src], iframe[data-src]'
-                                                    );
-
-                                                const player =
-                                                    document.querySelector(
-                                                        '[id*="player"], ' +
-                                                        '[class*="player"], ' +
-                                                        '[id*="video"], ' +
-                                                        '[class*="video"]'
-                                                    );
-
-                                                const result = {
-                                                    title:
-                                                        document.title || '',
-
-                                                    hasVideo:
-                                                        !!video,
-
-                                                    hasIframe:
-                                                        !!iframe,
-
-                                                    hasPlayer:
-                                                        !!player,
-
-                                                    videoReady:
-                                                        video
-                                                            ? video.readyState
-                                                            : -1,
-
-                                                    videoPaused:
-                                                        video
-                                                            ? video.paused
-                                                            : true,
-
-                                                    videoDuration:
-                                                        (
-                                                            video &&
-                                                            Number.isFinite(video.duration)
-                                                        )
-                                                            ? Math.round(video.duration)
-                                                            : -1
-                                                };
-
-                                                return JSON.stringify(result);
-
-                                            } catch (e) {
-
-                                                return JSON.stringify({
-                                                    error:
-                                                        String(e)
-                                                });
+                                """
+                                (function() {
+                                    try {
+                                        const video =
+                                            document.querySelector('video');
+                            
+                                        const iframe =
+                                            document.querySelector(
+                                                'iframe[src], iframe[data-src]'
+                                            );
+                            
+                                        const player =
+                                            document.querySelector(
+                                                '[id*="player"], ' +
+                                                '[class*="player"], ' +
+                                                '[id*="video"], ' +
+                                                '[class*="video"]'
+                                            );
+                            
+                                        let iframeSrc = '';
+                                        let iframeDataSrc = '';
+                                        let iframeHost = '';
+                            
+                                        if (iframe) {
+                            
+                                            iframeSrc =
+                                                iframe.getAttribute('src') || '';
+                            
+                                            iframeDataSrc =
+                                                iframe.getAttribute('data-src') || '';
+                            
+                                            const candidate =
+                                                iframeSrc || iframeDataSrc;
+                            
+                                            if (candidate) {
+                                                try {
+                                                    iframeHost =
+                                                        new URL(
+                                                            candidate,
+                                                            window.location.href
+                                                        ).hostname;
+                                                } catch (e) {
+                                                    iframeHost = '';
+                                                }
                                             }
-                                        })();
-                                        """.trimIndent()
+                                        }
+                            
+                                        const result = {
+                                            title:
+                                                document.title || '',
+                            
+                                            hasVideo:
+                                                !!video,
+                            
+                                            hasIframe:
+                                                !!iframe,
+                            
+                                            hasPlayer:
+                                                !!player,
+                            
+                                            iframeSrc:
+                                                iframeSrc,
+                            
+                                            iframeDataSrc:
+                                                iframeDataSrc,
+                            
+                                            iframeHost:
+                                                iframeHost,
+                            
+                                            videoReady:
+                                                video
+                                                    ? video.readyState
+                                                    : -1,
+                            
+                                            videoPaused:
+                                                video
+                                                    ? video.paused
+                                                    : true,
+                            
+                                            videoDuration:
+                                                (
+                                                    video &&
+                                                    Number.isFinite(video.duration)
+                                                )
+                                                    ? Math.round(video.duration)
+                                                    : -1
+                                        };
+                            
+                                        return JSON.stringify(result);
+                            
+                                    } catch (e) {
+                            
+                                        return JSON.stringify({
+                                            error:
+                                                String(e)
+                                        });
+                                    }
+                                })();
+                                """.trimIndent()
 
                                     view.evaluateJavascript(
                                         script
