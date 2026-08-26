@@ -397,10 +397,9 @@ currentUrl =
         } catch (e: Exception) {
     
             Log.e(
-                "CB01:UprotFolder",
-                "Errore parsing Uprot folder: ${e.message}",
-                e
-            )
+            "CB01:UprotFolder",
+            "Errore parsing Uprot folder: ${e.message}"
+        )
     
             emptyList()
         }
@@ -806,6 +805,7 @@ document
                     }
                 }
             }
+        }
 
         // ============================
         //  SERIE TV — STRUTTURA season-list
