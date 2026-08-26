@@ -22,6 +22,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class MaxStreamWebViewStatus {
+    PLAYER_PAGE_READY,
     PLAYER_FOUND,
     CANCELLED,
     TIMEOUT
@@ -32,6 +33,8 @@ data class MaxStreamWebViewResult(
     val finalUrl: String? = null,
     val playerUrl: String? = null,
     val playerHost: String? = null,
+    val playerPageUrl: String? = null,
+    val playerPageTitle: String? = null,
     val iframeCount: Int = 0,
     val videoCount: Int = 0,
     val sourceCount: Int = 0
@@ -312,6 +315,12 @@ object MaxStreamWebView {
 
                                 private var readySequenceStarted =
                                     false
+
+                                private var playerPageLoading =
+                                    false
+
+                                private var detectedPlayerUrl: String? =
+                                    null
 
                                 private fun isAllowedUrl(
                                     targetUrl: String?
@@ -678,30 +687,42 @@ object MaxStreamWebView {
                                                         }
                                                     }
 
-                                            complete(
-                                                MaxStreamWebViewResult(
-                                                    status =
-                                                        MaxStreamWebViewStatus.PLAYER_FOUND,
+                                            if (
+                                                !playerUrl.isNullOrBlank() &&
+                                                !playerPageLoading
+                                            ) {
 
-                                                    finalUrl =
-                                                        view.url,
+                                                detectedPlayerUrl =
+                                                    playerUrl
 
-                                                    playerUrl =
-                                                        playerUrl,
+                                                playerPageLoading =
+                                                    true
 
-                                                    playerHost =
-                                                        playerHost,
-
-                                                    iframeCount =
-                                                        iframeCount,
-
-                                                    videoCount =
-                                                        videoCount,
-
-                                                    sourceCount =
-                                                        sourceCount
+                                                Log.d(
+                                                    TAG,
+                                                    ">>> CARICO PAGINA PLAYER PER DIAGNOSTICA DOM: $playerUrl <<<"
                                                 )
-                                            )
+
+                                                view.loadUrl(
+                                                    playerUrl,
+                                                    mapOf(
+                                                        "Referer" to
+                                                            (
+                                                                view.url
+                                                                    ?: url
+                                                            )
+                                                    )
+                                                )
+
+                                            } else if (
+                                                playerPageLoading
+                                            ) {
+
+                                                Log.d(
+                                                    TAG,
+                                                    "Player già in fase di caricamento"
+                                                )
+                                            }
                                         } else {
 
                                             Log.d(
@@ -793,6 +814,77 @@ object MaxStreamWebView {
                                             )
 
                                             if (
+                                                playerPageLoading &&
+                                                !detectedPlayerUrl.isNullOrBlank()
+                                            ) {
+
+                                                Log.d(
+                                                    TAG,
+                                                    ">>> PAGINA PLAYER CARICATA <<<"
+                                                )
+
+                                                Log.d(
+                                                    TAG,
+                                                    "PLAYER PAGE URL = ${view.url}"
+                                                )
+
+                                                Log.d(
+                                                    TAG,
+                                                    "PLAYER PAGE TITLE = $title"
+                                                )
+
+                                                inspectPlayer(
+                                                    view
+                                                )
+
+                                                view.postDelayed(
+                                                    {
+                                                        inspectPlayer(
+                                                            view
+                                                        )
+                                                    },
+                                                    1500
+                                                )
+
+                                                view.postDelayed(
+                                                    {
+                                                        inspectPlayer(
+                                                            view
+                                                        )
+
+                                                        complete(
+                                                            MaxStreamWebViewResult(
+                                                                status =
+                                                                    MaxStreamWebViewStatus.PLAYER_PAGE_READY,
+
+                                                                finalUrl =
+                                                                    finishedUrl,
+
+                                                                playerUrl =
+                                                                    detectedPlayerUrl,
+
+                                                                playerHost =
+                                                                    try {
+                                                                        android.net.Uri
+                                                                            .parse(detectedPlayerUrl)
+                                                                            .host
+                                                                    } catch (_: Exception) {
+                                                                        null
+                                                                    },
+
+                                                                playerPageUrl =
+                                                                    view.url,
+
+                                                                playerPageTitle =
+                                                                    title
+                                                                        .trim('"')
+                                                            )
+                                                        )
+                                                    },
+                                                    3500
+                                                )
+
+                                            } else if (
                                                 title.contains(
                                                     "MaxStream Streaming Video Service",
                                                     ignoreCase = true
@@ -815,11 +907,6 @@ object MaxStreamWebView {
                                                     readySequenceStarted =
                                                         true
 
-                                                    /*
-                                                     * Continuiamo a osservare il DOM:
-                                                     * non restituiamo READY solo perché
-                                                     * esiste un iframe placeholder.
-                                                     */
                                                     inspectPlayer(
                                                         view
                                                     )
