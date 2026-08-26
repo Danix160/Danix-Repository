@@ -365,7 +365,8 @@ object MaxStreamWebView {
                                 }
 
                                 private fun inspectPlayer(
-                                    view: WebView?
+                                    view: WebView?,
+                                    onResult: ((String) -> Unit)? = null
                                 ) {
 
                                     if (view == null) {
@@ -555,6 +556,15 @@ object MaxStreamWebView {
                                                     playerElementCount:
                                                         players.length,
 
+                                                    documentReadyState:
+                                                        document.readyState || '',
+
+                                                    mediaSourceSupported:
+                                                        typeof window.MediaSource !== 'undefined',
+
+                                                    videoJsPresent:
+                                                        typeof window.videojs !== 'undefined',
+
                                                     iframes:
                                                         iframeInfo,
 
@@ -587,6 +597,10 @@ object MaxStreamWebView {
                                         Log.d(
                                             TAG,
                                             "PLAYER CHECK = $playerResult"
+                                        )
+
+                                        onResult?.invoke(
+                                            playerResult
                                         )
 
                                         val hasRealVideo =
@@ -850,36 +864,82 @@ object MaxStreamWebView {
                                                     {
                                                         inspectPlayer(
                                                             view
-                                                        )
+                                                        ) { playerResult ->
 
-                                                        complete(
-                                                            MaxStreamWebViewResult(
-                                                                status =
-                                                                    MaxStreamWebViewStatus.PLAYER_PAGE_READY,
+                                                            val iframeCount =
+                                                                Regex(
+                                                                    """\\\"iframeCount\\\":([0-9]+)"""
+                                                                )
+                                                                    .find(playerResult)
+                                                                    ?.groupValues
+                                                                    ?.getOrNull(1)
+                                                                    ?.toIntOrNull()
+                                                                    ?: 0
 
-                                                                finalUrl =
-                                                                    finishedUrl,
+                                                            val videoCount =
+                                                                Regex(
+                                                                    """\\\"videoCount\\\":([0-9]+)"""
+                                                                )
+                                                                    .find(playerResult)
+                                                                    ?.groupValues
+                                                                    ?.getOrNull(1)
+                                                                    ?.toIntOrNull()
+                                                                    ?: 0
 
-                                                                playerUrl =
-                                                                    detectedPlayerUrl,
+                                                            val sourceCount =
+                                                                Regex(
+                                                                    """\\\"sourceCount\\\":([0-9]+)"""
+                                                                )
+                                                                    .find(playerResult)
+                                                                    ?.groupValues
+                                                                    ?.getOrNull(1)
+                                                                    ?.toIntOrNull()
+                                                                    ?: 0
 
-                                                                playerHost =
-                                                                    try {
-                                                                        android.net.Uri
-                                                                            .parse(detectedPlayerUrl)
-                                                                            .host
-                                                                    } catch (_: Exception) {
-                                                                        null
-                                                                    },
-
-                                                                playerPageUrl =
-                                                                    view.url,
-
-                                                                playerPageTitle =
-                                                                    title
-                                                                        .trim('"')
+                                                            Log.d(
+                                                                TAG,
+                                                                "PLAYER PAGE SNAPSHOT iframe=$iframeCount " +
+                                                                    "video=$videoCount source=$sourceCount"
                                                             )
-                                                        )
+
+                                                            complete(
+                                                                MaxStreamWebViewResult(
+                                                                    status =
+                                                                        MaxStreamWebViewStatus.PLAYER_PAGE_READY,
+
+                                                                    finalUrl =
+                                                                        finishedUrl,
+
+                                                                    playerUrl =
+                                                                        detectedPlayerUrl,
+
+                                                                    playerHost =
+                                                                        try {
+                                                                            android.net.Uri
+                                                                                .parse(detectedPlayerUrl)
+                                                                                .host
+                                                                        } catch (_: Exception) {
+                                                                            null
+                                                                        },
+
+                                                                    playerPageUrl =
+                                                                        view.url,
+
+                                                                    playerPageTitle =
+                                                                        title
+                                                                            .trim('"'),
+
+                                                                    iframeCount =
+                                                                        iframeCount,
+
+                                                                    videoCount =
+                                                                        videoCount,
+
+                                                                    sourceCount =
+                                                                        sourceCount
+                                                                )
+                                                            )
+                                                        }
                                                     },
                                                     3500
                                                 )
