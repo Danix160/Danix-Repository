@@ -352,105 +352,209 @@ object MaxStreamWebView {
                                     }
 
                                     val script =
-                                """
-                                (function() {
-                                    try {
-                                        const video =
-                                            document.querySelector('video');
-                            
-                                        const iframe =
-                                            document.querySelector(
-                                                'iframe[src], iframe[data-src]'
-                                            );
-                            
-                                        const player =
-                                            document.querySelector(
-                                                '[id*="player"], ' +
-                                                '[class*="player"], ' +
-                                                '[id*="video"], ' +
-                                                '[class*="video"]'
-                                            );
-                            
-                                        let iframeSrc = '';
-                                        let iframeDataSrc = '';
-                                        let iframeHost = '';
-                            
-                                        if (iframe) {
-                            
-                                            iframeSrc =
-                                                iframe.getAttribute('src') || '';
-                            
-                                            iframeDataSrc =
-                                                iframe.getAttribute('data-src') || '';
-                            
-                                            const candidate =
-                                                iframeSrc || iframeDataSrc;
-                            
-                                            if (candidate) {
-                                                try {
-                                                    iframeHost =
-                                                        new URL(
-                                                            candidate,
-                                                            window.location.href
-                                                        ).hostname;
-                                                } catch (e) {
-                                                    iframeHost = '';
-                                                }
+                                        """
+                                        (function() {
+                                            try {
+
+                                                const videos =
+                                                    Array.from(
+                                                        document.querySelectorAll('video')
+                                                    );
+
+                                                const sources =
+                                                    Array.from(
+                                                        document.querySelectorAll('source')
+                                                    );
+
+                                                const iframes =
+                                                    Array.from(
+                                                        document.querySelectorAll('iframe')
+                                                    );
+
+                                                const players =
+                                                    Array.from(
+                                                        document.querySelectorAll(
+                                                            '[id*="player"], ' +
+                                                            '[class*="player"], ' +
+                                                            '[id*="video"], ' +
+                                                            '[class*="video"]'
+                                                        )
+                                                    );
+
+                                                const iframeInfo =
+                                                    iframes.map(function(frame) {
+
+                                                        const src =
+                                                            frame.getAttribute('src') || '';
+
+                                                        const dataSrc =
+                                                            frame.getAttribute('data-src') || '';
+
+                                                        const candidate =
+                                                            src || dataSrc;
+
+                                                        let host = '';
+
+                                                        if (
+                                                            candidate &&
+                                                            candidate !== 'javascript:false' &&
+                                                            candidate !== 'about:blank'
+                                                        ) {
+
+                                                            try {
+                                                                host =
+                                                                    new URL(
+                                                                        candidate,
+                                                                        window.location.href
+                                                                    ).hostname;
+                                                            } catch (e) {
+                                                                host = '';
+                                                            }
+                                                        }
+
+                                                        return {
+                                                            src: src,
+                                                            dataSrc: dataSrc,
+                                                            host: host,
+                                                            id:
+                                                                frame.id || '',
+                                                            name:
+                                                                frame.getAttribute('name') || '',
+                                                            className:
+                                                                frame.className || '',
+                                                            hidden:
+                                                                (
+                                                                    frame.hidden ||
+                                                                    frame.style.display === 'none' ||
+                                                                    frame.style.visibility === 'hidden'
+                                                                ),
+                                                            outerHTML:
+                                                                frame.outerHTML
+                                                                    ? frame.outerHTML.substring(0, 1200)
+                                                                    : ''
+                                                        };
+                                                    });
+
+                                                const videoInfo =
+                                                    videos.map(function(video) {
+
+                                                        return {
+                                                            currentSrc:
+                                                                video.currentSrc || '',
+
+                                                            src:
+                                                                video.getAttribute('src') || '',
+
+                                                            readyState:
+                                                                video.readyState,
+
+                                                            paused:
+                                                                video.paused,
+
+                                                            duration:
+                                                                Number.isFinite(video.duration)
+                                                                    ? Math.round(video.duration)
+                                                                    : -1,
+
+                                                            id:
+                                                                video.id || '',
+
+                                                            className:
+                                                                video.className || '',
+
+                                                            outerHTML:
+                                                                video.outerHTML
+                                                                    ? video.outerHTML.substring(0, 1200)
+                                                                    : ''
+                                                        };
+                                                    });
+
+                                                const sourceInfo =
+                                                    sources.map(function(source) {
+
+                                                        return {
+                                                            src:
+                                                                source.getAttribute('src') || '',
+
+                                                            type:
+                                                                source.getAttribute('type') || '',
+
+                                                            outerHTML:
+                                                                source.outerHTML
+                                                                    ? source.outerHTML.substring(0, 800)
+                                                                    : ''
+                                                        };
+                                                    });
+
+                                                const realIframes =
+                                                    iframeInfo.filter(function(frame) {
+
+                                                        const candidate =
+                                                            frame.src || frame.dataSrc;
+
+                                                        if (!candidate) {
+                                                            return false;
+                                                        }
+
+                                                        if (
+                                                            candidate === 'javascript:false' ||
+                                                            candidate === 'about:blank'
+                                                        ) {
+                                                            return false;
+                                                        }
+
+                                                        if (
+                                                            candidate.startsWith('javascript:')
+                                                        ) {
+                                                            return false;
+                                                        }
+
+                                                        return true;
+                                                    });
+
+                                                const result = {
+                                                    title:
+                                                        document.title || '',
+
+                                                    location:
+                                                        window.location.href,
+
+                                                    iframeCount:
+                                                        iframeInfo.length,
+
+                                                    realIframeCount:
+                                                        realIframes.length,
+
+                                                    videoCount:
+                                                        videoInfo.length,
+
+                                                    sourceCount:
+                                                        sourceInfo.length,
+
+                                                    playerElementCount:
+                                                        players.length,
+
+                                                    iframes:
+                                                        iframeInfo,
+
+                                                    videos:
+                                                        videoInfo,
+
+                                                    sources:
+                                                        sourceInfo
+                                                };
+
+                                                return JSON.stringify(result);
+
+                                            } catch (e) {
+
+                                                return JSON.stringify({
+                                                    error:
+                                                        String(e)
+                                                });
                                             }
-                                        }
-                            
-                                        const result = {
-                                            title:
-                                                document.title || '',
-                            
-                                            hasVideo:
-                                                !!video,
-                            
-                                            hasIframe:
-                                                !!iframe,
-                            
-                                            hasPlayer:
-                                                !!player,
-                            
-                                            iframeSrc:
-                                                iframeSrc,
-                            
-                                            iframeDataSrc:
-                                                iframeDataSrc,
-                            
-                                            iframeHost:
-                                                iframeHost,
-                            
-                                            videoReady:
-                                                video
-                                                    ? video.readyState
-                                                    : -1,
-                            
-                                            videoPaused:
-                                                video
-                                                    ? video.paused
-                                                    : true,
-                            
-                                            videoDuration:
-                                                (
-                                                    video &&
-                                                    Number.isFinite(video.duration)
-                                                )
-                                                    ? Math.round(video.duration)
-                                                    : -1
-                                        };
-                            
-                                        return JSON.stringify(result);
-                            
-                                    } catch (e) {
-                            
-                                        return JSON.stringify({
-                                            error:
-                                                String(e)
-                                        });
-                                    }
-                                })();
-                                """.trimIndent()
+                                        })();
+                                        """.trimIndent()
 
                                     view.evaluateJavascript(
                                         script
@@ -461,22 +565,49 @@ object MaxStreamWebView {
                                             "PLAYER CHECK = $playerResult"
                                         )
 
-                                        val detected =
+                                        val hasRealVideo =
                                             playerResult.contains(
-                                                "\\\"hasVideo\\\":true"
+                                                "\\\"videoCount\\\":1"
                                             ) ||
-                                                playerResult.contains(
-                                                    "\\\"hasIframe\\\":true"
-                                                ) ||
-                                                playerResult.contains(
-                                                    "\\\"hasPlayer\\\":true"
+                                                Regex(
+                                                    """\\\"videoCount\\\":([1-9][0-9]*)"""
+                                                )
+                                                    .containsMatchIn(
+                                                        playerResult
+                                                    )
+
+                                        val hasRealIframe =
+                                            Regex(
+                                                """\\\"realIframeCount\\\":([1-9][0-9]*)"""
+                                            )
+                                                .containsMatchIn(
+                                                    playerResult
                                                 )
 
-                                        if (detected) {
+                                        val hasSource =
+                                            Regex(
+                                                """\\\"sourceCount\\\":([1-9][0-9]*)"""
+                                            )
+                                                .containsMatchIn(
+                                                    playerResult
+                                                )
+
+                                        if (
+                                            hasRealVideo ||
+                                            hasRealIframe ||
+                                            hasSource
+                                        ) {
 
                                             Log.d(
                                                 TAG,
-                                                ">>> PLAYER/VIDEO RILEVATO NELLA PAGINA <<<"
+                                                ">>> ELEMENTO PLAYER REALE RILEVATO NEL DOM <<<"
+                                            )
+
+                                        } else {
+
+                                            Log.d(
+                                                TAG,
+                                                "Nessun player reale: ignorati iframe placeholder/javascript:false"
                                             )
                                         }
                                     }
@@ -585,6 +716,15 @@ object MaxStreamWebView {
                                                     readySequenceStarted =
                                                         true
 
+                                                    /*
+                                                     * Continuiamo a osservare il DOM:
+                                                     * non restituiamo READY solo perché
+                                                     * esiste un iframe placeholder.
+                                                     */
+                                                    inspectPlayer(
+                                                        view
+                                                    )
+
                                                     view.postDelayed(
                                                         {
                                                             inspectPlayer(
@@ -599,12 +739,17 @@ object MaxStreamWebView {
                                                             inspectPlayer(
                                                                 view
                                                             )
-
-                                                            complete(
-                                                                MaxStreamWebViewResult.READY
-                                                            )
                                                         },
                                                         3500
+                                                    )
+
+                                                    view.postDelayed(
+                                                        {
+                                                            inspectPlayer(
+                                                                view
+                                                            )
+                                                        },
+                                                        7000
                                                     )
                                                 }
                                             }
