@@ -58,23 +58,31 @@ class MaxStream : ExtractorApi() {
             )
         }
 
-        val response =
-            app.get(
-                url,
-                headers = headers
-            )
-
+        val response = app.get(
+            url,
+            headers = headers
+        )
+        
         var html = response.text
-
-        Log.e(
-            "MAXSTREAM_DEBUG",
-            "STATUS = ${response.code}"
-        )
-
-        Log.e(
-            "MAXSTREAM_DEBUG",
-            "HTML LENGTH = ${html.length}"
-        )
+        
+        Log.d("MAXSTREAM_DEBUG", "STATUS = ${response.code}")
+        Log.d("MAXSTREAM_DEBUG", "FINAL URL = ${response.url}")
+        Log.d("MAXSTREAM_DEBUG", "HTML LENGTH = ${html.length}")
+        
+        val initialDoc = Jsoup.parse(html)
+        
+        val cloudflareBlocked =
+            response.code == 403 ||
+            initialDoc.title().contains("Just a moment", ignoreCase = true) ||
+            html.contains("/cdn-cgi/challenge-platform/", ignoreCase = true)
+        
+        if (cloudflareBlocked) {
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "Cloudflare challenge rilevato su ${response.url}; parsing interrotto"
+            )
+            return
+        }
 
         val maxDoc =
             Jsoup.parse(html)
