@@ -29,75 +29,76 @@ class VidxGoExtractor : ExtractorApi() {
             "Chrome/120.0.0.0 Safari/537.36"
     }
 
-    override suspend fun getUrl(
+        override suspend fun getUrl(
         url: String,
         referer: String?,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-
+    
         Log.d(TAG, "==============================")
         Log.d(TAG, "URL = $url")
-        Log.d(TAG, "REFERER = $referer")
-
+        Log.d(TAG, "REFERER RICEVUTO = $referer")
+    
         try {
-
-            val vidxReferer =
-                "$mainUrl/"
-
+    
+            val pageReferer =
+                referer
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "https://altadefinizione-01.fun/"
+    
+            val origin =
+                Regex("""^(https?://[^/]+)""")
+                    .find(pageReferer)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?: "https://altadefinizione-01.fun"
+    
             val headers =
                 mutableMapOf(
                     "User-Agent" to USER_AGENT,
-                    "Referer" to vidxReferer
+                    "Accept" to
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language" to
+                        "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Referer" to pageReferer,
+                    "Origin" to origin,
+                    "Sec-Fetch-Site" to "cross-site",
+                    "Sec-Fetch-Mode" to "navigate",
+                    "Sec-Fetch-Dest" to
+                        if (url.contains("/t/")) "empty" else "iframe",
+                    "Upgrade-Insecure-Requests" to "1"
                 )
-
-            /*
-             * Per i film VidxGo viene caricato
-             * normalmente come iframe.
-             *
-             * Per /t/... invece il server restituisce
-             * direttamente i dati del video.
-             */
-            if (!url.contains("/t/")) {
-                headers["sec-fetch-dest"] =
-                    "iframe"
-            } else {
-                headers["sec-fetch-dest"] =
-                    "empty"
-            }
-
+    
+            Log.d(TAG, "REQUEST REFERER = $pageReferer")
+            Log.d(TAG, "REQUEST ORIGIN = $origin")
+    
             val response =
                 app.get(
                     url,
                     headers = headers
                 )
-
+    
             val body =
                 response.text
-
-            Log.d(
-                TAG,
-                "STATUS = ${response.code}"
-            )
-
-            Log.d(
-                TAG,
-                "FINAL URL = ${response.url}"
-            )
-
-            Log.d(
-                TAG,
-                "BODY LENGTH = ${body.length}"
-            )
-            
-            Log.e(
-    TAG,
-    "BODY 403 = ${
-        response.text
-            .replace("\n", " ")
-            .take(3000)
-    }"
-)
+    
+            Log.d(TAG, "STATUS = ${response.code}")
+            Log.d(TAG, "FINAL URL = ${response.url}")
+            Log.d(TAG, "BODY LENGTH = ${body.length}")
+    
+            if (response.code == 403) {
+    
+                Log.e(
+                    TAG,
+                    "VIDXGO 403 = ${
+                        body
+                            .replace("\n", " ")
+                            .take(3000)
+                    }"
+                )
+    
+                return
+            }
 
             // ====================================================
             // SERIE TV
