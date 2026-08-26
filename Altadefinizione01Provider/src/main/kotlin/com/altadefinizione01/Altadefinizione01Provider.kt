@@ -239,41 +239,6 @@ class Altadefinizione01Provider : MainAPI() {
                     headers = headers
                 ).document
 
-            document.select("script").forEachIndexed { index, script ->
-
-            val content =
-                script.data()
-                    .ifBlank {
-                        script.html()
-                    }
-        
-            if (
-                content.contains("vidx", ignoreCase = true) ||
-                content.contains("vidxgo-player-film", ignoreCase = true) ||
-                content.contains("22084616") ||
-                content.contains("imdb", ignoreCase = true)
-            ) {
-        
-                Log.d(
-                    TAG,
-                    "===== SCRIPT VIDX $index =====\n$content"
-                )
-            }
-        }
-
-            val debugIframe =
-                document.selectFirst(
-                    "iframe#vidxgo-player-film"
-                )
-            
-            if (debugIframe != null) {
-            
-                Log.d(
-                    TAG,
-                    "VIDX IFRAME ATTRIBUTES = ${debugIframe.attributes()}"
-                )
-            }
-
             val results =
                 mutableListOf<SearchResponse>()
 
@@ -1205,6 +1170,70 @@ val parts =
                         pageUrl,
                         headers = headers
                     ).document
+
+                /*
+                 * DEBUG COMPLETO SCRIPT / IFRAME VIDXGO
+                 *
+                 * Serve a capire quale JavaScript della pagina
+                 * valorizza dinamicamente iframe#vidxgo-player-film.
+                 */
+                Log.d(
+                    TAG,
+                    "========== SCRIPT AD01 MOVIE =========="
+                )
+
+                document
+                    .select("script")
+                    .forEachIndexed { index, script ->
+
+                        val src =
+                            script.attr("src")
+                                .trim()
+
+                        val content =
+                            script.data()
+                                .ifBlank {
+                                    script.html()
+                                }
+                                .trim()
+
+                        Log.d(
+                            TAG,
+                            "SCRIPT [$index] SRC = $src"
+                        )
+
+                        if (content.isNotBlank()) {
+
+                            Log.d(
+                                TAG,
+                                "SCRIPT [$index] INLINE = ${
+                                    content
+                                        .replace("\n", " ")
+                                        .take(5000)
+                                }"
+                            )
+                        }
+                    }
+
+                Log.d(
+                    TAG,
+                    "========== FINE SCRIPT AD01 MOVIE =========="
+                )
+
+                val debugVidxIframe =
+                    document.selectFirst(
+                        "iframe#vidxgo-player-film"
+                    )
+
+                Log.d(
+                    TAG,
+                    "VIDX IFRAME = ${debugVidxIframe?.outerHtml()}"
+                )
+
+                Log.d(
+                    TAG,
+                    "VIDX IFRAME ATTR = ${debugVidxIframe?.attributes()}"
+                )
 
                 /*
                  * GUARDAHD
