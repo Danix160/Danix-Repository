@@ -13,11 +13,17 @@ import org.jsoup.Jsoup
 
 class MaxStream : ExtractorApi() {
 
-    override val name = "MaxStream"
-    override val mainUrl = "https://maxstream.video"
-    override val requiresReferer = true
+    override val name =
+        "MaxStream"
+
+    override val mainUrl =
+        "https://maxstream.video"
+
+    override val requiresReferer =
+        true
 
     companion object {
+
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 10; K) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -33,7 +39,9 @@ class MaxStream : ExtractorApi() {
 
         val sessionUserAgent =
             UprotSession.userAgent
-                .takeIf { it.isNotBlank() }
+                .takeIf {
+                    it.isNotBlank()
+                }
                 ?: USER_AGENT
 
         val sessionCookies =
@@ -41,16 +49,28 @@ class MaxStream : ExtractorApi() {
 
         val headers =
             mutableMapOf(
-                "User-Agent" to sessionUserAgent,
-                "Referer" to (referer ?: mainUrl),
+                "User-Agent" to
+                    sessionUserAgent,
+
+                "Referer" to
+                    (
+                        referer
+                            ?: mainUrl
+                        ),
+
                 "Accept" to
                     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+
                 "Accept-Language" to
                     "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
             )
 
-        if (sessionCookies.isNotBlank()) {
-            headers["Cookie"] = sessionCookies
+        if (
+            sessionCookies.isNotBlank()
+        ) {
+
+            headers["Cookie"] =
+                sessionCookies
 
             Log.d(
                 "MAXSTREAM_DEBUG",
@@ -86,52 +106,108 @@ class MaxStream : ExtractorApi() {
         )
 
         val initialDoc =
-            Jsoup.parse(html)
+            Jsoup.parse(
+                html
+            )
 
         val cloudflareBlocked =
             response.code == 403 ||
-            initialDoc.title()
-                .contains(
-                    "Just a moment",
+                initialDoc.title()
+                    .contains(
+                        "Just a moment",
+                        ignoreCase = true
+                    ) ||
+                html.contains(
+                    "/cdn-cgi/challenge-platform/",
                     ignoreCase = true
-                ) ||
-            html.contains(
-                "/cdn-cgi/challenge-platform/",
-                ignoreCase = true
-            )
+                )
 
-        if (cloudflareBlocked) {
+        if (
+            cloudflareBlocked
+        ) {
 
             Log.e(
                 "MAXSTREAM_DEBUG",
                 "Browser challenge rilevata su ${response.url}"
             )
 
-            /*
-             * Apriamo una WebView solo per diagnosi/ispezione manuale.
-             * Non automatizziamo il superamento della protezione.
-             */
-            MaxStreamWebView.openForInspection(
-                url = response.url,
-                userAgent = sessionUserAgent,
-                referer = referer
+            val webViewResult =
+                MaxStreamWebView.openForInspection(
+                    url = response.url,
+                    userAgent = sessionUserAgent,
+                    referer = referer
+                )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
+                "RISULTATO WEBVIEW = $webViewResult"
             )
 
-            return
+            when (
+                webViewResult
+            ) {
+
+                MaxStreamWebViewResult.READY -> {
+
+                    Log.d(
+                        "MAXSTREAM_DEBUG",
+                        "Pagina MaxStream reale caricata correttamente nella WebView"
+                    )
+
+                    /*
+                     * La WebView diagnostica ha confermato che
+                     * la pagina reale è stata raggiunta.
+                     *
+                     * Non estraiamo né intercettiamo lo stream
+                     * dalla pagina protetta.
+                     */
+                    return
+                }
+
+                MaxStreamWebViewResult.CANCELLED -> {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "WebView MaxStream chiusa prima del completamento"
+                    )
+
+                    return
+                }
+
+                MaxStreamWebViewResult.TIMEOUT -> {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "Timeout WebView MaxStream"
+                    )
+
+                    return
+                }
+            }
         }
 
         val maxDoc =
-            Jsoup.parse(html)
+            Jsoup.parse(
+                html
+            )
 
         val isCaptcha =
-            maxDoc.selectFirst("#upcaptcha-form") != null ||
-            maxDoc.selectFirst(".upcaptcha-box") != null
+            maxDoc.selectFirst(
+                "#upcaptcha-form"
+            ) != null ||
+                maxDoc.selectFirst(
+                    ".upcaptcha-box"
+                ) != null
 
-        if (isCaptcha) {
+        if (
+            isCaptcha
+        ) {
+
             Log.e(
                 "MAXSTREAM_DEBUG",
                 "MaxStream richiede ancora UPCaptcha nonostante la sessione WebView"
             )
+
             return
         }
 
@@ -139,17 +215,25 @@ class MaxStream : ExtractorApi() {
             Regex(
                 """decodedBaseUrl\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
             )
-                .find(html)
+                .find(
+                    html
+                )
                 ?.groupValues
-                ?.getOrNull(1)
+                ?.getOrNull(
+                    1
+                )
 
         val iframeCodeBase64 =
             Regex(
                 """decodedFileCode\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
             )
-                .find(html)
+                .find(
+                    html
+                )
                 ?.groupValues
-                ?.getOrNull(1)
+                ?.getOrNull(
+                    1
+                )
 
         if (
             !iframeBase64.isNullOrBlank() &&
@@ -177,7 +261,8 @@ class MaxStream : ExtractorApi() {
                     )
 
                 val iframeUrl =
-                    decodedBase + decodedCode
+                    decodedBase +
+                        decodedCode
 
                 Log.e(
                     "MAXSTREAM_DEBUG",
@@ -185,10 +270,13 @@ class MaxStream : ExtractorApi() {
                 )
 
                 val iframeHeaders =
-                    headers.toMutableMap().apply {
-                        this["Referer"] =
-                            response.url
-                    }
+                    headers
+                        .toMutableMap()
+                        .apply {
+
+                            this["Referer"] =
+                                response.url
+                        }
 
                 val iframeResponse =
                     app.get(
@@ -220,7 +308,9 @@ class MaxStream : ExtractorApi() {
                 playerReferer =
                     iframeResponse.url
 
-            } catch (e: Exception) {
+            } catch (
+                e: Exception
+            ) {
 
                 Log.e(
                     "MAXSTREAM_DEBUG",
@@ -247,20 +337,30 @@ class MaxStream : ExtractorApi() {
         )
 
         val document =
-            Jsoup.parse(html)
+            Jsoup.parse(
+                html
+            )
 
         Log.e(
             "MAXSTREAM_DEBUG",
             "PLAYER TITLE = ${document.title()}"
         )
 
-        document.select("script")
+        document
+            .select(
+                "script"
+            )
             .forEachIndexed { index, script ->
 
                 val src =
-                    script.attr("src")
+                    script.attr(
+                        "src"
+                    )
 
-                if (src.isNotBlank()) {
+                if (
+                    src.isNotBlank()
+                ) {
+
                     Log.e(
                         "MAXSTREAM_DEBUG",
                         "PLAYER SCRIPT SRC [$index] = $src"
@@ -273,13 +373,21 @@ class MaxStream : ExtractorApi() {
                             script.html()
                         }
 
-                if (content.isNotBlank()) {
+                if (
+                    content.isNotBlank()
+                ) {
+
                     Log.e(
                         "MAXSTREAM_DEBUG",
                         "PLAYER SCRIPT [$index] = ${
                             content
-                                .replace("\n", " ")
-                                .take(5000)
+                                .replace(
+                                    "\n",
+                                    " "
+                                )
+                                .take(
+                                    5000
+                                )
                         }"
                     )
                 }
@@ -293,10 +401,15 @@ class MaxStream : ExtractorApi() {
 
         val matches =
             streamUrlRegex
-                .findAll(html)
+                .findAll(
+                    html
+                )
                 .map {
                     it.value
-                        .replace("\\/", "/")
+                        .replace(
+                            "\\/",
+                            "/"
+                        )
                 }
                 .distinct()
                 .toList()
@@ -306,7 +419,9 @@ class MaxStream : ExtractorApi() {
             "Stream diretti trovati = ${matches.size}"
         )
 
-        for (streamUrl in matches) {
+        for (
+            streamUrl in matches
+        ) {
 
             Log.e(
                 "MAXSTREAM_DEBUG",
@@ -320,12 +435,17 @@ class MaxStream : ExtractorApi() {
                 )
 
             val streamHeaders =
-                headers.toMutableMap().apply {
-                    this["Referer"] =
-                        playerReferer
-                }
+                headers
+                    .toMutableMap()
+                    .apply {
 
-            if (isM3u8) {
+                        this["Referer"] =
+                            playerReferer
+                    }
+
+            if (
+                isM3u8
+            ) {
 
                 val m3u8Links =
                     M3u8Helper.generateM3u8(
@@ -335,9 +455,14 @@ class MaxStream : ExtractorApi() {
                         headers = streamHeaders
                     )
 
-                if (m3u8Links.isNotEmpty()) {
+                if (
+                    m3u8Links.isNotEmpty()
+                ) {
 
-                    m3u8Links.forEach(callback)
+                    m3u8Links
+                        .forEach(
+                            callback
+                        )
 
                 } else {
 
@@ -349,6 +474,7 @@ class MaxStream : ExtractorApi() {
                             type =
                                 ExtractorLinkType.M3U8
                         ) {
+
                             this.referer =
                                 playerReferer
 
@@ -371,6 +497,7 @@ class MaxStream : ExtractorApi() {
                         type =
                             ExtractorLinkType.VIDEO
                     ) {
+
                         this.referer =
                             playerReferer
 
