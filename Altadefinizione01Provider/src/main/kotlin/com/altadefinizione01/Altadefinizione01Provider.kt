@@ -925,7 +925,8 @@ class Altadefinizione01Provider : MainAPI() {
                                                     "VIDX|" +
                                                         "$imdbId|" +
                                                         "$seasonNumber|" +
-                                                        "$episodeNumber"
+                                                        "$episodeNumber|" +
+                                                        "$url"
                                                 ) {
 
                                                     this.season =
@@ -1044,7 +1045,8 @@ class Altadefinizione01Provider : MainAPI() {
                                             "VIDX|" +
                                                 "$imdbId|" +
                                                 "$seasonNumber|" +
-                                                "$episodeNumber"
+                                                "$episodeNumber|" +
+                                                "$url"
                                         ) {
 
                                             this.season =
@@ -1549,9 +1551,14 @@ val parts =
                             "VIDXGO TV = $vidxUrl"
                         )
 
+                        Log.d(
+                            TAG,
+                            "VIDXGO TV REFERER = $showUrl"
+                        )
+
                         loadExtractor(
                             vidxUrl,
-                            "$mainUrl/",
+                            showUrl,
                             subtitleCallback,
                             callback
                         )
@@ -1580,6 +1587,23 @@ val parts =
                 val episode =
                     parts[3]
 
+                /*
+                 * URL originale della pagina Altadefinizione01.
+                 *
+                 * I nuovi episodi VIDX lo contengono in parts[4].
+                 * Manteniamo il fallback al mainUrl per episodi
+                 * eventualmente già presenti nella cache.
+                 */
+                val showUrl =
+                    parts.getOrNull(4)
+                        ?.takeIf {
+                            it.startsWith(
+                                "http",
+                                ignoreCase = true
+                            )
+                        }
+                        ?: "$mainUrl/"
+
                 val vidxUrl =
                     "https://v.vidxgo.co/t/" +
                         "$imdb/" +
@@ -1591,9 +1615,14 @@ val parts =
                     "VIDX DIRECT = $vidxUrl"
                 )
 
+                Log.d(
+                    TAG,
+                    "VIDX SERIE REFERER = $showUrl"
+                )
+
                 loadExtractor(
                     vidxUrl,
-                    "$mainUrl/",
+                    showUrl,
                     subtitleCallback,
                     callback
                 )
