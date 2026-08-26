@@ -160,6 +160,16 @@ class MaxStream : ExtractorApi() {
 
             Log.d(
                 "MAXSTREAM_DEBUG",
+                "PLAYER PAGE URL = ${webViewResult.playerPageUrl}"
+            )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
+                "PLAYER PAGE TITLE = ${webViewResult.playerPageTitle}"
+            )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
                 "DOM COUNTS iframe=${webViewResult.iframeCount} " +
                     "video=${webViewResult.videoCount} " +
                     "source=${webViewResult.sourceCount}"
@@ -168,6 +178,21 @@ class MaxStream : ExtractorApi() {
             when (
                 webViewResult.status
             ) {
+
+                MaxStreamWebViewStatus.PLAYER_PAGE_READY -> {
+
+                    Log.d(
+                        "MAXSTREAM_DEBUG",
+                        "Pagina interna del player caricata correttamente"
+                    )
+
+                    /*
+                     * Diagnostica completata.
+                     * Non intercettiamo né estraiamo URL multimediali
+                     * dalla pagina protetta.
+                     */
+                    return
+                }
 
                 MaxStreamWebViewStatus.PLAYER_FOUND -> {
 
