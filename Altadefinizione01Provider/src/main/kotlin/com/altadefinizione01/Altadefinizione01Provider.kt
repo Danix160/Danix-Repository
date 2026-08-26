@@ -881,27 +881,6 @@ class Altadefinizione01Provider : MainAPI() {
                                                 )
                                         )
 
-                                    Log.d(
-                                        TAG,
-                                        "========== AD01_VIDX_TV SEASONS =========="
-                                    )
-                                    Log.d(
-                                        TAG,
-                                        "AD01_VIDX_TV: seasons.php URL = ${jsonResponse.url}"
-                                    )
-                                    Log.d(
-                                        TAG,
-                                        "AD01_VIDX_TV: seasons.php STATUS = ${jsonResponse.code}"
-                                    )
-                                    Log.d(
-                                        TAG,
-                                        "AD01_VIDX_TV: seasons.php BODY = ${
-                                            jsonResponse.text
-                                                .replace("\n", " ")
-                                                .take(12000)
-                                        }"
-                                    )
-
                                     val json =
                                         JSONObject(
                                             jsonResponse.text
@@ -934,39 +913,6 @@ class Altadefinizione01Provider : MainAPI() {
                                                 ep.optInt(
                                                     "number"
                                                 )
-
-                                            Log.d(
-                                                TAG,
-                                                "AD01_VIDX_TV: EPISODIO JSON S${seasonNumber}E${episodeNumber} = ${
-                                                    ep.toString().take(5000)
-                                                }"
-                                            )
-
-                                            ep.keys().forEach { key ->
-                                                val value =
-                                                    ep.opt(key)?.toString().orEmpty()
-
-                                                Log.d(
-                                                    TAG,
-                                                    "AD01_VIDX_TV: S${seasonNumber}E${episodeNumber} FIELD $key = ${
-                                                        value.take(3000)
-                                                    }"
-                                                )
-
-                                                if (
-                                                    value.contains("vidx", ignoreCase = true) ||
-                                                    value.contains("http", ignoreCase = true) ||
-                                                    value.contains("/t/", ignoreCase = true) ||
-                                                    value.contains("iframe", ignoreCase = true)
-                                                ) {
-                                                    Log.d(
-                                                        TAG,
-                                                        "AD01_VIDX_TV: VIDX CANDIDATE S${seasonNumber}E${episodeNumber} $key = ${
-                                                            value.take(3000)
-                                                        }"
-                                                    )
-                                                }
-                                            }
 
                                             if (
                                                 episodeNumber <= 0
@@ -1044,46 +990,10 @@ class Altadefinizione01Provider : MainAPI() {
                                 )
                                 .forEach { ep ->
 
-                                    Log.d(
-                                        TAG,
-                                        "AD01_VIDX_TV: EPISODE HTML = ${
-                                            ep.outerHtml()
-                                                .replace("\n", " ")
-                                                .take(5000)
-                                        }"
-                                    )
-
-                                    ep.attributes().forEach { attr ->
-                                        Log.d(
-                                            TAG,
-                                            "AD01_VIDX_TV: EP ATTR ${attr.key} = ${
-                                                attr.value.take(3000)
-                                            }"
-                                        )
-
-                                        if (
-                                            attr.value.contains("vidx", ignoreCase = true) ||
-                                            attr.value.contains("http", ignoreCase = true) ||
-                                            attr.value.contains("/t/", ignoreCase = true)
-                                        ) {
-                                            Log.d(
-                                                TAG,
-                                                "AD01_VIDX_TV: VIDX CANDIDATE ATTR ${attr.key} = ${
-                                                    attr.value.take(3000)
-                                                }"
-                                            )
-                                        }
-                                    }
-
                                     val href =
                                         ep.attr(
                                             "href"
                                         )
-
-                                    Log.d(
-                                        TAG,
-                                        "AD01_VIDX_TV: EP HREF = $href"
-                                    )
 
                                     val parts =
                                         href
@@ -1205,6 +1115,296 @@ class Altadefinizione01Provider : MainAPI() {
                 }
             }
         }
+
+
+    // ============================================================
+    // DEBUG VIDXGO SERIE
+    // ============================================================
+
+    private fun debugVidxGoTvPage(
+        document: org.jsoup.nodes.Document,
+        showUrl: String,
+        season: Int,
+        episode: Int
+    ) {
+
+        Log.d(
+            TAG,
+            "========== AD01 VIDXGO TV DEBUG =========="
+        )
+
+        Log.d(
+            TAG,
+            "SHOW URL = $showUrl"
+        )
+
+        Log.d(
+            TAG,
+            "EPISODIO RICHIESTO = S${season}E${episode}"
+        )
+
+        val iframe =
+            document.selectFirst(
+                "iframe#vidxgo-player"
+            )
+
+        Log.d(
+            TAG,
+            "VIDX TV IFRAME HTML = ${iframe?.outerHtml()}"
+        )
+
+        Log.d(
+            TAG,
+            "VIDX TV IFRAME ATTR = ${iframe?.attributes()}"
+        )
+
+        iframe?.attributes()?.forEach { attr ->
+
+            Log.d(
+                TAG,
+                "VIDX TV IFRAME ${attr.key} = ${attr.value}"
+            )
+        }
+
+        /*
+         * Cerchiamo qualsiasi elemento della pagina
+         * che abbia riferimenti a VidxGo / stagione / episodio.
+         */
+        document
+            .select(
+                "[src*=vidx], " +
+                    "[href*=vidx], " +
+                    "[data-src*=vidx], " +
+                    "[data-link*=vidx], " +
+                    "[data-url*=vidx], " +
+                    "[onclick*=vidx]"
+            )
+            .forEachIndexed { index, element ->
+
+                Log.d(
+                    TAG,
+                    "VIDX TV ELEMENT [$index] = ${
+                        element.outerHtml()
+                            .replace("\n", " ")
+                            .take(5000)
+                    }"
+                )
+            }
+
+        /*
+         * Log mirato degli elementi episodio.
+         */
+        document
+            .select(
+                "[data-num], [data-episode], [data-season], " +
+                    ".ep-item, .episode, .episodes li, #episodesList a"
+            )
+            .forEachIndexed { index, element ->
+
+                val textValue =
+                    element.text()
+                        .trim()
+
+                val dataNum =
+                    element.attr(
+                        "data-num"
+                    )
+
+                val dataEpisode =
+                    element.attr(
+                        "data-episode"
+                    )
+
+                val dataSeason =
+                    element.attr(
+                        "data-season"
+                    )
+
+                val href =
+                    element.attr(
+                        "href"
+                    )
+
+                val dataLink =
+                    element.attr(
+                        "data-link"
+                    )
+
+                val dataUrl =
+                    element.attr(
+                        "data-url"
+                    )
+
+                val onclick =
+                    element.attr(
+                        "onclick"
+                    )
+
+                val interesting =
+                    dataNum.contains(
+                        "${season}x${episode}",
+                        ignoreCase = true
+                    ) ||
+                        dataEpisode == episode.toString() ||
+                        (
+                            dataSeason == season.toString() &&
+                                (
+                                    textValue.contains(
+                                        episode.toString()
+                                    ) ||
+                                        href.contains(
+                                            "/$season/$episode"
+                                        )
+                                    )
+                            ) ||
+                        href.contains(
+                            "/$season/$episode"
+                        ) ||
+                        dataLink.contains(
+                            "/$season/$episode"
+                        ) ||
+                        dataUrl.contains(
+                            "/$season/$episode"
+                        ) ||
+                        onclick.contains(
+                            "/$season/$episode"
+                        )
+
+                if (interesting) {
+
+                    Log.d(
+                        TAG,
+                        "VIDX TV EP ELEMENT [$index] = ${
+                            element.outerHtml()
+                                .replace("\n", " ")
+                                .take(7000)
+                        }"
+                    )
+
+                    element.attributes()
+                        .forEach { attr ->
+
+                            Log.d(
+                                TAG,
+                                "VIDX TV EP ATTR ${attr.key} = ${
+                                    attr.value.take(4000)
+                                }"
+                            )
+                        }
+                }
+            }
+
+        /*
+         * JavaScript della pagina.
+         * Cerchiamo soprattutto codice che modifica
+         * iframe#vidxgo-player o costruisce URL /t/.
+         */
+        document
+            .select(
+                "script"
+            )
+            .forEachIndexed {
+                    index,
+                    script ->
+
+                val src =
+                    script.attr(
+                        "src"
+                    )
+                        .trim()
+
+                val content =
+                    script.data()
+                        .ifBlank {
+                            script.html()
+                        }
+                        .trim()
+
+                val interesting =
+                    content.contains(
+                        "vidxgo-player",
+                        ignoreCase = true
+                    ) ||
+                        content.contains(
+                            "vidxgo",
+                            ignoreCase = true
+                        ) ||
+                        content.contains(
+                            "/t/",
+                            ignoreCase = true
+                        ) ||
+                        content.contains(
+                            "season",
+                            ignoreCase = true
+                        ) &&
+                        content.contains(
+                            "episode",
+                            ignoreCase = true
+                        )
+
+                if (
+                    src.contains(
+                        "vidx",
+                        ignoreCase = true
+                    ) ||
+                    interesting
+                ) {
+
+                    Log.d(
+                        TAG,
+                        "VIDX TV SCRIPT [$index] SRC = $src"
+                    )
+
+                    if (
+                        content.isNotBlank()
+                    ) {
+
+                        Log.d(
+                            TAG,
+                            "VIDX TV SCRIPT [$index] INLINE = ${
+                                content
+                                    .replace("\n", " ")
+                                    .take(12000)
+                            }"
+                        )
+                    }
+                }
+            }
+
+        /*
+         * Ultimo tentativo diagnostico:
+         * cerchiamo URL VidxGo letterali nell'HTML.
+         */
+        val html =
+            document.html()
+
+        Regex(
+            """https?://v\.vidxgo\.co/[^\s"'<>\\]+"""
+        )
+            .findAll(
+                html
+            )
+            .map {
+                it.value
+                    .replace(
+                        "\\/",
+                        "/"
+                    )
+            }
+            .distinct()
+            .forEach {
+
+                Log.d(
+                    TAG,
+                    "VIDX TV CANDIDATE URL = $it"
+                )
+            }
+
+        Log.d(
+            TAG,
+            "========== FINE AD01 VIDXGO TV DEBUG =========="
+        )
+    }
 
     // ============================================================
     // LOAD LINKS
@@ -1529,6 +1729,13 @@ val parts =
                         headers = headers
                     ).document
 
+                debugVidxGoTvPage(
+                    document = document,
+                    showUrl = showUrl,
+                    season = season,
+                    episode = episode
+                )
+
                 val pane =
                     document.selectFirst(
                         "#season-$season"
@@ -1694,18 +1901,30 @@ val parts =
                         }
                         ?: "$mainUrl/"
 
-                Log.d(
-                    TAG,
-                    "========== AD01_VIDX_TV LOADLINKS =========="
-                )
-                Log.d(
-                    TAG,
-                    "AD01_VIDX_TV: imdb=$imdb season=$season episode=$episode"
-                )
-                Log.d(
-                    TAG,
-                    "AD01_VIDX_TV: showUrl=$showUrl"
-                )
+                try {
+
+                    val showDocument =
+                        app.get(
+                            showUrl,
+                            headers = headers
+                        ).document
+
+                    debugVidxGoTvPage(
+                        document = showDocument,
+                        showUrl = showUrl,
+                        season = season.toIntOrNull() ?: 0,
+                        episode = episode.toIntOrNull() ?: 0
+                    )
+
+                } catch (
+                    e: Exception
+                ) {
+
+                    Log.e(
+                        TAG,
+                        "Errore debug pagina serie: ${e.message}"
+                    )
+                }
 
                 val vidxUrl =
                     "https://v.vidxgo.co/t/" +
