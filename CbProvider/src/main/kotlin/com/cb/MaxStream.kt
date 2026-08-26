@@ -147,22 +147,15 @@ class MaxStream : ExtractorApi() {
                 webViewResult
             ) {
 
-                MaxStreamWebViewResult.READY -> {
+                MaxStreamWebViewResult.PLAYER_FOUND -> {
 
-                    Log.d(
-                        "MAXSTREAM_DEBUG",
-                        "Pagina MaxStream reale caricata correttamente nella WebView"
-                    )
-
-                    /*
-                     * La WebView diagnostica ha confermato che
-                     * la pagina reale è stata raggiunta.
-                     *
-                     * Non estraiamo né intercettiamo lo stream
-                     * dalla pagina protetta.
-                     */
-                    return
-                }
+                Log.d(
+                    "MAXSTREAM_DEBUG",
+                    "Player MaxStream reale rilevato nella WebView"
+                )
+            
+                return
+            }
 
                 MaxStreamWebViewResult.CANCELLED -> {
 
