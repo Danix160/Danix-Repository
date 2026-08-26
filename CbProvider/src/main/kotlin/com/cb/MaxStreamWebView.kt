@@ -159,18 +159,15 @@ object MaxStreamWebView {
 
             webView.webViewClient =
                 object : WebViewClient() {
-            
+
                     private fun isAllowedUrl(
                         url: String?
                     ): Boolean {
-            
+
                         if (url.isNullOrBlank()) {
                             return false
                         }
-            
-                        /*
-                         * URL interni utilizzati dal browser/player.
-                         */
+
                         if (
                             url.startsWith("data:") ||
                             url.startsWith("blob:") ||
@@ -178,60 +175,47 @@ object MaxStreamWebView {
                         ) {
                             return true
                         }
-            
+
                         return try {
-            
+
                             val host =
                                 android.net.Uri
                                     .parse(url)
                                     .host
                                     ?.lowercase()
                                     .orEmpty()
-            
-                            /*
-                             * Domini realmente necessari
-                             * alla catena MaxStream.
-                             */
+
                             host == "maxstream.video" ||
                                 host.endsWith(".maxstream.video") ||
                                 host == "maxwe241.site" ||
                                 host.endsWith(".maxwe241.site")
-            
-                        } catch (e: Exception) {
-            
+
+                        } catch (_: Exception) {
+
                             false
                         }
                     }
-            
+
                     private fun inspectPlayer(
                         view: WebView?
                     ) {
-            
+
                         if (view == null) {
                             return
                         }
-            
-                        /*
-                         * Non recuperiamo l'URL del video.
-                         *
-                         * Controlliamo soltanto se nella pagina
-                         * esiste un elemento video/player e
-                         * se sembra pronto alla riproduzione.
-                         */
+
                         val script =
                             """
                             (function() {
-            
                                 try {
-            
                                     const video =
                                         document.querySelector('video');
-            
+
                                     const iframe =
                                         document.querySelector(
                                             'iframe[src], iframe[data-src]'
                                         );
-            
+
                                     const player =
                                         document.querySelector(
                                             '[id*="player"], ' +
@@ -239,30 +223,30 @@ object MaxStreamWebView {
                                             '[id*="video"], ' +
                                             '[class*="video"]'
                                         );
-            
-                                    let result = {
+
+                                    const result = {
                                         title:
                                             document.title || '',
-            
+
                                         hasVideo:
                                             !!video,
-            
+
                                         hasIframe:
                                             !!iframe,
-            
+
                                         hasPlayer:
                                             !!player,
-            
+
                                         videoReady:
                                             video
                                                 ? video.readyState
                                                 : -1,
-            
+
                                         videoPaused:
                                             video
                                                 ? video.paused
                                                 : true,
-            
+
                                         videoDuration:
                                             (
                                                 video &&
@@ -271,32 +255,28 @@ object MaxStreamWebView {
                                                 ? Math.round(video.duration)
                                                 : -1
                                     };
-            
+
                                     return JSON.stringify(result);
-            
+
                                 } catch (e) {
-            
+
                                     return JSON.stringify({
                                         error:
                                             String(e)
                                     });
                                 }
-            
                             })();
                             """.trimIndent()
-            
+
                         view.evaluateJavascript(
                             script
                         ) { result ->
-            
+
                             Log.d(
                                 TAG,
                                 "PLAYER CHECK = $result"
                             )
-            
-                            /*
-                             * Segnale semplice nel log.
-                             */
+
                             val detected =
                                 result.contains(
                                     "\\\"hasVideo\\\":true"
@@ -307,9 +287,9 @@ object MaxStreamWebView {
                                 result.contains(
                                     "\\\"hasPlayer\\\":true"
                                 )
-            
+
                             if (detected) {
-            
+
                                 Log.d(
                                     TAG,
                                     ">>> PLAYER/VIDEO RILEVATO NELLA PAGINA <<<"
@@ -317,111 +297,103 @@ object MaxStreamWebView {
                             }
                         }
                     }
-            
+
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         request: WebResourceRequest?
                     ): Boolean {
-            
+
                         val target =
                             request
                                 ?.url
                                 ?.toString()
-            
+
                         Log.d(
                             TAG,
                             "NAV = $target"
                         )
-            
+
                         if (
                             !isAllowedUrl(
                                 target
                             )
                         ) {
-            
+
                             Log.d(
                                 TAG,
                                 "NAV ESTERNA BLOCCATA = $target"
                             )
-            
+
                             return true
                         }
-            
+
                         return false
                     }
-            
+
                     @Suppress("DEPRECATION")
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         url: String?
                     ): Boolean {
-            
+
                         Log.d(
                             TAG,
                             "NAV = $url"
                         )
-            
+
                         if (
                             !isAllowedUrl(
                                 url
                             )
                         ) {
-            
+
                             Log.d(
                                 TAG,
                                 "NAV ESTERNA BLOCCATA = $url"
                             )
-            
+
                             return true
                         }
-            
+
                         return false
                     }
-            
+
                     override fun onPageFinished(
                         view: WebView?,
                         url: String?
                     ) {
-            
+
                         Log.d(
                             TAG,
                             "PAGE FINISH = $url"
                         )
-            
+
                         view?.evaluateJavascript(
                             "document.title"
                         ) { title ->
-            
+
                             Log.d(
                                 TAG,
                                 "TITLE = $title"
                             )
-            
-                            /*
-                             * Quando il browser-check è terminato,
-                             * controlliamo la presenza del player.
-                             */
+
                             if (
                                 title.contains(
                                     "MaxStream Streaming Video Service",
                                     ignoreCase = true
                                 )
                             ) {
-            
+
                                 Log.d(
                                     TAG,
                                     ">>> PAGINA MAXSTREAM REALE RAGGIUNTA <<<"
                                 )
-            
+
                                 inspectPlayer(
                                     view
                                 )
-            
-                                /*
-                                 * Alcuni player vengono creati
-                                 * qualche istante dopo il DOM iniziale.
-                                 */
-                                view?.postDelayed(
+
+                                view.postDelayed(
                                     {
                                         inspectPlayer(
                                             view
@@ -429,8 +401,8 @@ object MaxStreamWebView {
                                     },
                                     1500
                                 )
-            
-                                view?.postDelayed(
+
+                                view.postDelayed(
                                     {
                                         inspectPlayer(
                                             view
@@ -442,4 +414,37 @@ object MaxStreamWebView {
                         }
                     }
                 }
+
+            dialog.setOnDismissListener {
+                try {
+                    webView.stopLoading()
+                } catch (_: Exception) {
+                }
+
+                try {
+                    webView.destroy()
+                } catch (_: Exception) {
+                }
+            }
+
+            dialog.show()
+
+            val extraHeaders =
+                mutableMapOf<String, String>()
+
+            if (!referer.isNullOrBlank()) {
+                extraHeaders["Referer"] = referer
+            }
+
+            Log.d(
+                TAG,
+                "Apro pagina diagnostica: $url"
+            )
+
+            webView.loadUrl(
+                url,
+                extraHeaders
+            )
         }
+    }
+}
