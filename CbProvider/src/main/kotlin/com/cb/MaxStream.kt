@@ -150,6 +150,11 @@ class MaxStream : ExtractorApi() {
 
             Log.d(
                 "MAXSTREAM_DEBUG",
+                "PLAYER URL = ${webViewResult.playerUrl}"
+            )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
                 "PLAYER HOST = ${webViewResult.playerHost}"
             )
 
@@ -171,11 +176,15 @@ class MaxStream : ExtractorApi() {
                         "Player MaxStream reale rilevato nella WebView"
                     )
 
+                    Log.d(
+                        "MAXSTREAM_DEBUG",
+                        "PLAYER IFRAME DIAGNOSTICO = ${webViewResult.playerUrl}"
+                    )
+
                     /*
                      * Risultato diagnostico:
-                     * la pagina reale e il player sono stati rilevati.
-                     *
-                     * Questa classe non estrae automaticamente
+                     * restituiamo al chiamante l'URL dell'iframe reale
+                     * individuato nel DOM, ma non estraiamo automaticamente
                      * lo stream dalla pagina protetta.
                      */
                     return
