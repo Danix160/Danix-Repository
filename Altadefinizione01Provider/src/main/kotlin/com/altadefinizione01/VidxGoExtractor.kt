@@ -85,9 +85,160 @@ class VidxGoExtractor : ExtractorApi() {
             Log.d(TAG, "STATUS = ${response.code}")
             Log.d(TAG, "FINAL URL = ${response.url}")
             Log.d(TAG, "BODY LENGTH = ${body.length}")
+
+            if (!url.contains("/t/")) {
+                val diagnosticDocument = Jsoup.parse(body)
+
+                Log.d(TAG, "========== VIDX ROOT DIAGNOSTIC ==========")
+                Log.d(TAG, "ROOT TITLE = ${diagnosticDocument.title()}")
+
+                diagnosticDocument.select("script").forEachIndexed { index, script ->
+                    val src = script.attr("src").trim()
+                    val content = script.data().ifBlank { script.html() }.trim()
+                    if (src.isNotBlank()) {
+                        Log.d(TAG, "ROOT SCRIPT SRC [$index] = $src")
+                    }
+                    if (content.isNotBlank()) {
+                        val interesting =
+                            content.contains("episode", true) ||
+                            content.contains("season", true) ||
+                            content.contains("fetch(", true) ||
+                            content.contains("XMLHttpRequest", true) ||
+                            content.contains("ajax", true) ||
+                            content.contains("/t/", true) ||
+                            content.contains("currentSrc", true) ||
+                            content.contains("m3u8", true) ||
+                            content.contains(".mp4", true)
+                        if (interesting) {
+                            Log.d(TAG, "ROOT SCRIPT [$index] = ${content.replace("\n", " ").take(12000)}")
+                        }
+                    }
+                }
+
+                diagnosticDocument.select("a, button, option, [data-season], [data-episode], [data-src], [data-url], [data-link]")
+                    .forEachIndexed { index, element ->
+                        val html = element.outerHtml().replace("\n", " ")
+                        if (
+                            html.contains("season", true) ||
+                            html.contains("episode", true) ||
+                            html.contains("data-src", true) ||
+                            html.contains("data-url", true) ||
+                            html.contains("data-link", true)
+                        ) {
+                            Log.d(TAG, "ROOT ELEMENT [$index] = ${html.take(6000)}")
+                        }
+                    }
+
+                Regex("""https?://[^\s\"'<>\\]+""")
+                    .findAll(body)
+                    .map { it.value.replace("\\/", "/") }
+                    .filter { candidate ->
+                        candidate.contains("vidx", true) ||
+                        candidate.contains("m3u8", true) ||
+                        candidate.contains(".mp4", true)
+                    }
+                    .distinct()
+                    .forEach { Log.d(TAG, "ROOT CANDIDATE URL = $it") }
+
+                Log.d(TAG, "========== FINE VIDX ROOT DIAGNOSTIC ==========")
+            }
     
+            // ====================================================
+            // SERIE TV
+            // ====================================================
+
+            if (url.contains("/t/")) {
+
+                /*
+                 * Primo tentativo: risposta HTTP diretta.
+                 */
+                val videoUrlRaw =
+                    if (
+                        response.code in 200..299
+                    ) {
+                        Regex(
+                            """"url"\s*:\s*"([^"]+)""""
+                        )
+                            .find(body)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                    } else {
+                        null
+                    }
+
+                if (
+                    !videoUrlRaw.isNullOrBlank()
+                ) {
+
+                    val videoUrl =
+                        videoUrlRaw
+                            .replace("\\/", "/")
+                            .replace("\\u0026", "&")
+
+                    Log.d(
+                        TAG,
+                        "SERIE VIDEO URL HTTP = $videoUrl"
+                    )
+
+                    emitVideo(
+                        videoUrl = videoUrl,
+                        callback = callback
+                    )
+
+                    return
+                }
+
+                Log.e(
+                    TAG,
+                    "SERIE HTTP non risolta. STATUS=${response.code}"
+                )
+
+                Log.e(
+                    TAG,
+                    "SERIE BODY = ${
+                        body
+                            .replace("\n", " ")
+                            .take(3000)
+                    }"
+                )
+
+                val webViewVideo =
+                    VidxGoWebView.resolve(
+                        url = url,
+                        referer = pageReferer,
+                        userAgent = USER_AGENT
+                    )
+
+                if (
+                    !webViewVideo.isNullOrBlank()
+                ) {
+
+                    Log.d(
+                        TAG,
+                        "SERIE VIDEO URL WEBVIEW = $webViewVideo"
+                    )
+
+                    emitVideo(
+                        videoUrl = webViewVideo,
+                        callback = callback
+                    )
+
+                } else {
+
+                    Log.e(
+                        TAG,
+                        "SERIE: WebView terminata senza URL video"
+                    )
+                }
+
+                return
+            }
+
+            /*
+             * Film: manteniamo il comportamento attuale.
+             */
             if (response.code == 403) {
-    
+
                 Log.e(
                     TAG,
                     "VIDXGO 403 = ${
@@ -95,55 +246,6 @@ class VidxGoExtractor : ExtractorApi() {
                             .replace("\n", " ")
                             .take(3000)
                     }"
-                )
-    
-                return
-            }
-
-            // ====================================================
-            // SERIE TV
-            // ====================================================
-
-            if (url.contains("/t/")) {
-
-                val videoUrlRaw =
-                    Regex(
-                        """"url"\s*:\s*"([^"]+)""""
-                    )
-                        .find(body)
-                        ?.groupValues
-                        ?.getOrNull(1)
-
-                if (
-                    videoUrlRaw.isNullOrBlank()
-                ) {
-
-                    Log.e(
-                        TAG,
-                        "SERIE: campo url non trovato"
-                    )
-
-                    Log.e(
-                        TAG,
-                        "BODY = ${body.take(3000)}"
-                    )
-
-                    return
-                }
-
-                val videoUrl =
-                    videoUrlRaw
-                        .replace("\\/", "/")
-                        .replace("\\u0026", "&")
-
-                Log.d(
-                    TAG,
-                    "SERIE VIDEO URL = $videoUrl"
-                )
-
-                emitVideo(
-                    videoUrl = videoUrl,
-                    callback = callback
                 )
 
                 return
