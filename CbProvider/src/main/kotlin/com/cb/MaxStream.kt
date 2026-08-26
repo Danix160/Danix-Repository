@@ -58,29 +58,63 @@ class MaxStream : ExtractorApi() {
             )
         }
 
-        val response = app.get(
-            url,
-            headers = headers
+        val response =
+            app.get(
+                url,
+                headers = headers
+            )
+
+        var html =
+            response.text
+
+        var playerReferer =
+            response.url
+
+        Log.d(
+            "MAXSTREAM_DEBUG",
+            "STATUS = ${response.code}"
         )
-        
-        var html = response.text
-        
-        Log.d("MAXSTREAM_DEBUG", "STATUS = ${response.code}")
-        Log.d("MAXSTREAM_DEBUG", "FINAL URL = ${response.url}")
-        Log.d("MAXSTREAM_DEBUG", "HTML LENGTH = ${html.length}")
-        
-        val initialDoc = Jsoup.parse(html)
-        
+
+        Log.d(
+            "MAXSTREAM_DEBUG",
+            "FINAL URL = ${response.url}"
+        )
+
+        Log.d(
+            "MAXSTREAM_DEBUG",
+            "HTML LENGTH = ${html.length}"
+        )
+
+        val initialDoc =
+            Jsoup.parse(html)
+
         val cloudflareBlocked =
             response.code == 403 ||
-            initialDoc.title().contains("Just a moment", ignoreCase = true) ||
-            html.contains("/cdn-cgi/challenge-platform/", ignoreCase = true)
-        
+            initialDoc.title()
+                .contains(
+                    "Just a moment",
+                    ignoreCase = true
+                ) ||
+            html.contains(
+                "/cdn-cgi/challenge-platform/",
+                ignoreCase = true
+            )
+
         if (cloudflareBlocked) {
 
             Log.e(
                 "MAXSTREAM_DEBUG",
-                "Cloudflare challenge rilevato su ${response.url}; parsing interrotto"
+                "Browser challenge rilevata su ${response.url}"
+            )
+
+            /*
+             * Apriamo una WebView solo per diagnosi/ispezione manuale.
+             * Non automatizziamo il superamento della protezione.
+             */
+            MaxStreamWebView.openForInspection(
+                url = response.url,
+                userAgent = sessionUserAgent,
+                referer = referer
             )
 
             return
@@ -101,15 +135,6 @@ class MaxStream : ExtractorApi() {
             return
         }
 
-        /*
-         * Il player principale crea dinamicamente un iframe:
-         *
-         * decodedBaseUrl = atob(...)
-         * decodedFileCode = atob(...)
-         *
-         * Esempio finale:
-         * https://maxstream.video/emiuhi/xxxxxxxx
-         */
         val iframeBase64 =
             Regex(
                 """decodedBaseUrl\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
@@ -125,8 +150,6 @@ class MaxStream : ExtractorApi() {
                 .find(html)
                 ?.groupValues
                 ?.getOrNull(1)
-
-        var playerReferer = response.url
 
         if (
             !iframeBase64.isNullOrBlank() &&
@@ -191,8 +214,11 @@ class MaxStream : ExtractorApi() {
                     "IFRAME HTML LENGTH = ${iframeHtml.length}"
                 )
 
-                html = iframeHtml
-                playerReferer = iframeResponse.url
+                html =
+                    iframeHtml
+
+                playerReferer =
+                    iframeResponse.url
 
             } catch (e: Exception) {
 
@@ -201,6 +227,7 @@ class MaxStream : ExtractorApi() {
                     "Errore caricamento iframe /emiuhi/: ${e.message}"
                 )
             }
+
         } else {
 
             Log.e(
@@ -234,7 +261,6 @@ class MaxStream : ExtractorApi() {
                     script.attr("src")
 
                 if (src.isNotBlank()) {
-
                     Log.e(
                         "MAXSTREAM_DEBUG",
                         "PLAYER SCRIPT SRC [$index] = $src"
@@ -248,7 +274,6 @@ class MaxStream : ExtractorApi() {
                         }
 
                 if (content.isNotBlank()) {
-
                     Log.e(
                         "MAXSTREAM_DEBUG",
                         "PLAYER SCRIPT [$index] = ${
@@ -260,10 +285,6 @@ class MaxStream : ExtractorApi() {
                 }
             }
 
-        /*
-         * Primo tentativo:
-         * URL espliciti .m3u8 / .mp4
-         */
         val streamUrlRegex =
             """https?://[^\s"'<>\\]+\.(?:m3u8|mp4)[^\s"'<>\\]*"""
                 .toRegex(
