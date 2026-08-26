@@ -679,8 +679,6 @@ object MaxStreamWebView {
                                                         sourceCount
                                                 )
                                             )
-                                        }
-
                                         } else {
 
                                             Log.d(
