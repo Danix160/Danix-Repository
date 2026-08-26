@@ -22,7 +22,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class MaxStreamWebViewResult {
-    READY,
+    PLAYER_FOUND,
     CANCELLED,
     TIMEOUT
 }
@@ -597,10 +597,14 @@ object MaxStreamWebView {
                                             hasRealIframe ||
                                             hasSource
                                         ) {
-
+                                        
                                             Log.d(
                                                 TAG,
                                                 ">>> ELEMENTO PLAYER REALE RILEVATO NEL DOM <<<"
+                                            )
+                                        
+                                            complete(
+                                                MaxStreamWebViewResult.PLAYER_FOUND
                                             )
 
                                         } else {
