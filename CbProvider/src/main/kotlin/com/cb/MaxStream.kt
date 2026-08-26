@@ -140,24 +140,48 @@ class MaxStream : ExtractorApi() {
 
             Log.d(
                 "MAXSTREAM_DEBUG",
-                "RISULTATO WEBVIEW = $webViewResult"
+                "WEBVIEW STATUS = ${webViewResult.status}"
+            )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
+                "WEBVIEW FINAL URL = ${webViewResult.finalUrl}"
+            )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
+                "PLAYER HOST = ${webViewResult.playerHost}"
+            )
+
+            Log.d(
+                "MAXSTREAM_DEBUG",
+                "DOM COUNTS iframe=${webViewResult.iframeCount} " +
+                    "video=${webViewResult.videoCount} " +
+                    "source=${webViewResult.sourceCount}"
             )
 
             when (
-                webViewResult
+                webViewResult.status
             ) {
 
-                MaxStreamWebViewResult.PLAYER_FOUND -> {
+                MaxStreamWebViewStatus.PLAYER_FOUND -> {
 
-                Log.d(
-                    "MAXSTREAM_DEBUG",
-                    "Player MaxStream reale rilevato nella WebView"
-                )
-            
-                return
-            }
+                    Log.d(
+                        "MAXSTREAM_DEBUG",
+                        "Player MaxStream reale rilevato nella WebView"
+                    )
 
-                MaxStreamWebViewResult.CANCELLED -> {
+                    /*
+                     * Risultato diagnostico:
+                     * la pagina reale e il player sono stati rilevati.
+                     *
+                     * Questa classe non estrae automaticamente
+                     * lo stream dalla pagina protetta.
+                     */
+                    return
+                }
+
+                MaxStreamWebViewStatus.CANCELLED -> {
 
                     Log.e(
                         "MAXSTREAM_DEBUG",
@@ -167,7 +191,7 @@ class MaxStream : ExtractorApi() {
                     return
                 }
 
-                MaxStreamWebViewResult.TIMEOUT -> {
+                MaxStreamWebViewStatus.TIMEOUT -> {
 
                     Log.e(
                         "MAXSTREAM_DEBUG",
