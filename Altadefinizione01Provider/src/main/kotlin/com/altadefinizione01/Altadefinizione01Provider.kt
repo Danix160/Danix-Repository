@@ -704,9 +704,15 @@ class Altadefinizione01Provider : MainAPI() {
 
                     val seasonNumber =
                         seasonAnchor
-                            .text()
-                            .trim()
+                            .attr("href")
+                            .substringAfter("season-")
                             .toIntOrNull()
+                            ?: Regex("""\d+""")
+                                .find(
+                                    seasonAnchor.text()
+                                )
+                                ?.value
+                                ?.toIntOrNull()
                             ?: return@forEach
 
                     val pane =
