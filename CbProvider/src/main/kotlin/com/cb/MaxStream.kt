@@ -77,12 +77,35 @@ class MaxStream : ExtractorApi() {
             html.contains("/cdn-cgi/challenge-platform/", ignoreCase = true)
         
         if (cloudflareBlocked) {
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "Cloudflare challenge rilevato: provo MaxStreamWebView"
+        )
+    
+        val result =
+            MaxStreamWebView.resolve(
+                url = response.url,
+                userAgent = sessionUserAgent,
+                referer = referer
+            )
+    
+        if (result == null) {
             Log.e(
                 "MAXSTREAM_DEBUG",
-                "Cloudflare challenge rilevato su ${response.url}; parsing interrotto"
+                "MaxStreamWebView non ha risolto la pagina"
             )
             return
         }
+    
+        html = result.html
+        playerReferer = result.finalUrl
+    
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "MaxStream sbloccato via WebView: ${result.finalUrl}"
+        )
+    }
 
         val maxDoc =
             Jsoup.parse(html)
