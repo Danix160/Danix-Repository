@@ -442,3 +442,4 @@ object MaxStreamWebView {
                         }
                     }
                 }
+        }
