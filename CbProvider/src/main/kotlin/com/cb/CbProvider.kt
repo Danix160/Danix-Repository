@@ -180,206 +180,231 @@ currentUrl =
         return results.distinctBy { it.url }
     }
 
-   private suspend fun parseUprotFolder(
-    url: String,
-    cloudSeason: Int
-): List<Episode> {
-
-    Log.d(
-        "CB01:UprotFolder",
-        "Parsing Uprot folder: $url - stagione CloudStream: $cloudSeason"
-    )
-
-    data class FolderEpisode(
-        val originalSeason: Int,
-        val originalEpisode: Int,
-        val fileName: String,
-        val url: String
-    )
-
-    return try {
-
-        val response = app.get(
-            url,
-            headers = commonHeaders
-        ).text
-
-        val doc = Jsoup.parse(response, url)
-
-        val rows = doc.select("table tr")
-
-        if (rows.isEmpty()) {
-            Log.d(
-                "CB01:UprotFolder",
-                "Nessuna riga trovata nella cartella"
-            )
-            return emptyList()
-        }
-
-        val parsedEpisodes =
-            rows.mapIndexedNotNull { index, row ->
-
-                val fileName =
-                    row.selectFirst("td")
-                        ?.text()
-                        ?.trim()
-                        .orEmpty()
-
-                if (fileName.isBlank()) {
-                    return@mapIndexedNotNull null
-                }
-
-                val linkElement =
-                    row.selectFirst(
-                        "a[href*='/msfi/'], " +
-                        "a[href*='/mse/'], " +
-                        "a[href*='/msf/']"
-                    )
-                        ?: row.selectFirst("a[href]")
-
-                val watchUrl =
-                    linkElement
-                        ?.attr("abs:href")
-                        ?.ifBlank {
-                            linkElement.attr("href")
-                        }
-                        .orEmpty()
-
-                if (watchUrl.isBlank()) {
-                    return@mapIndexedNotNull null
-                }
-
-                /*
-                 * Formati principali:
-                 *
-                 * S01E01
-                 * S1E1
-                 * S02E15
-                 */
-                val seasonEpisodeMatch =
-                    Regex(
-                        """(?i)S(\d{1,2})E(\d{1,3})"""
-                    ).find(fileName)
-
-                val originalSeason =
-                    seasonEpisodeMatch
-                        ?.groupValues
-                        ?.getOrNull(1)
-                        ?.toIntOrNull()
-                        ?: 1
-
-                val originalEpisode =
-                    seasonEpisodeMatch
-                        ?.groupValues
-                        ?.getOrNull(2)
-                        ?.toIntOrNull()
-
-                        ?: Regex(
-                            """(?i)(?:episodio|episode|ep|e)\s*0*(\d{1,3})"""
-                        )
-                            .find(fileName)
-                            ?.groupValues
-                            ?.getOrNull(1)
-                            ?.toIntOrNull()
-
-                        ?: Regex(
-                            """(?:^|[.\s_-])0*(\d{1,3})(?:[.\s_-]|$)"""
-                        )
-                            .find(fileName)
-                            ?.groupValues
-                            ?.getOrNull(1)
-                            ?.toIntOrNull()
-
-                        ?: (index + 1)
-
+       private suspend fun parseUprotFolder(
+        url: String,
+        cloudSeason: Int
+    ): List<Episode> {
+    
+        Log.d(
+            "CB01:UprotFolder",
+            "Parsing Uprot folder: $url - blocco CloudStream: $cloudSeason"
+        )
+    
+        data class FolderEpisode(
+            val originalSeason: Int,
+            val originalEpisode: Int,
+            val fileName: String,
+            val url: String
+        )
+    
+        return try {
+    
+            val response =
+                app.get(
+                    url,
+                    headers = commonHeaders
+                ).text
+    
+            val doc =
+                Jsoup.parse(
+                    response,
+                    url
+                )
+    
+            val rows =
+                doc.select(
+                    "table tr"
+                )
+    
+            if (rows.isEmpty()) {
+    
                 Log.d(
                     "CB01:UprotFolder",
-                    "File Uprot → S${originalSeason}E${originalEpisode} | $fileName"
+                    "Nessuna riga trovata nella cartella"
                 )
-
-                FolderEpisode(
-                    originalSeason = originalSeason,
-                    originalEpisode = originalEpisode,
-                    fileName = fileName,
-                    url = watchUrl
-                )
+    
+                return emptyList()
             }
-
-        /*
-         * IMPORTANTISSIMO:
-         *
-         * La cartella Uprot può contenere:
-         *
-         * S01E01
-         * S01E02
-         * ...
-         * S02E01
-         * S02E02
-         *
-         * ma per CloudStream tutto questo appartiene
-         * allo stesso blocco/serie CB01.
-         *
-         * Perciò ordiniamo prima per stagione originale,
-         * poi per episodio, e rinumeriamo 1,2,3,4...
-         */
-        val sortedEpisodes =
-            parsedEpisodes
-                .distinctBy {
-                    Triple(
-                        it.originalSeason,
-                        it.originalEpisode,
-                        it.url
+    
+            val parsedEpisodes =
+                rows.mapIndexedNotNull { index, row ->
+    
+                    val fileName =
+                        row.selectFirst("td")
+                            ?.text()
+                            ?.trim()
+                            .orEmpty()
+    
+                    if (fileName.isBlank()) {
+                        return@mapIndexedNotNull null
+                    }
+    
+                    val linkElement =
+                        row.selectFirst(
+                            "a[href*='/msfi/'], " +
+                                "a[href*='/mse/'], " +
+                                "a[href*='/msf/']"
+                        )
+                            ?: row.selectFirst(
+                                "a[href]"
+                            )
+    
+                    val watchUrl =
+                        linkElement
+                            ?.attr("abs:href")
+                            ?.ifBlank {
+                                linkElement.attr("href")
+                            }
+                            .orEmpty()
+    
+                    if (watchUrl.isBlank()) {
+                        return@mapIndexedNotNull null
+                    }
+    
+                    val seasonEpisodeMatch =
+                        Regex(
+                            """(?i)S(\d{1,2})E(\d{1,3})"""
+                        )
+                            .find(
+                                fileName
+                            )
+    
+                    val originalSeason =
+                        seasonEpisodeMatch
+                            ?.groupValues
+                            ?.getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: 1
+    
+                    val originalEpisode =
+                        seasonEpisodeMatch
+                            ?.groupValues
+                            ?.getOrNull(2)
+                            ?.toIntOrNull()
+    
+                            ?: Regex(
+                                """(?i)(?:episodio|episode|ep|e)\s*0*(\d{1,3})"""
+                            )
+                                .find(fileName)
+                                ?.groupValues
+                                ?.getOrNull(1)
+                                ?.toIntOrNull()
+    
+                            ?: (index + 1)
+    
+                    Log.d(
+                        "CB01:UprotFolder",
+                        "File Uprot → " +
+                            "S${originalSeason}E${originalEpisode} | " +
+                            fileName
+                    )
+    
+                    FolderEpisode(
+                        originalSeason =
+                            originalSeason,
+    
+                        originalEpisode =
+                            originalEpisode,
+    
+                        fileName =
+                            fileName,
+    
+                        url =
+                            watchUrl
                     )
                 }
-                .sortedWith(
-                    compareBy<FolderEpisode> {
-                        it.originalSeason
-                    }.thenBy {
-                        it.originalEpisode
+    
+            val sortedEpisodes =
+                parsedEpisodes
+                    .distinctBy {
+                        Triple(
+                            it.originalSeason,
+                            it.originalEpisode,
+                            it.url
+                        )
                     }
+                    .sortedWith(
+                        compareBy<FolderEpisode> {
+                            it.originalSeason
+                        }
+                            .thenBy {
+                                it.originalEpisode
+                            }
+                    )
+    
+            /*
+             * IMPORTANTE:
+             *
+             * Il blocco CB01 continua ad essere una singola
+             * "stagione CloudStream", perché alcune pagine CB01
+             * raccolgono serie differenti nello stesso articolo.
+             *
+             * Però NON perdiamo più la numerazione originale:
+             * la conserviamo nel nome.
+             */
+            sortedEpisodes.mapIndexed { index, item ->
+    
+                val cloudEpisodeNumber =
+                    index + 1
+    
+                val cleanFileName =
+                    item.fileName
+                        .replace(
+                            Regex(
+                                """(?i)\.(mp4|mkv|avi)$"""
+                            ),
+                            ""
+                        )
+                        .replace("_", " ")
+                        .replace(".", " ")
+                        .replace(
+                            Regex("\\s+"),
+                            " "
+                        )
+                        .trim()
+    
+                val displayName =
+                    "S%02dE%02d - %s".format(
+                        item.originalSeason,
+                        item.originalEpisode,
+                        cleanFileName
+                    )
+    
+                Log.d(
+                    "CB01:UprotFolder",
+                    "CloudStream → " +
+                        "blocco S${cloudSeason} " +
+                        "E${cloudEpisodeNumber} | " +
+                        "originale S${item.originalSeason}" +
+                        "E${item.originalEpisode}"
                 )
-
-        sortedEpisodes.mapIndexed { index, item ->
-
-            val cloudEpisodeNumber = index + 1
-
-            val cleanName =
-                item.fileName
-                    .replace(".mp4", "", ignoreCase = true)
-                    .replace(".mkv", "", ignoreCase = true)
-                    .replace(".avi", "", ignoreCase = true)
-                    .replace("_", " ")
-                    .replace(".", " ")
-                    .trim()
-
-            Log.d(
-                "CB01:UprotFolder",
-                "CloudStream → S${cloudSeason}E${cloudEpisodeNumber} " +
-                    "(originale S${item.originalSeason}E${item.originalEpisode})"
-            )
-
-            newEpisode(item.url) {
-
-                this.season = cloudSeason
-                this.episode = cloudEpisodeNumber
-
-                this.name =
-                    cleanName.ifBlank {
-                        "Episodio $cloudEpisodeNumber"
-                    }
+    
+                newEpisode(
+                    item.url
+                ) {
+    
+                    this.season =
+                        cloudSeason
+    
+                    this.episode =
+                        cloudEpisodeNumber
+    
+                    this.name =
+                        displayName
+                }
             }
+    
+        } catch (e: Exception) {
+    
+            Log.e(
+                "CB01:UprotFolder",
+                "Errore parsing Uprot folder: ${e.message}",
+                e
+            )
+    
+            emptyList()
         }
-
-    } catch (e: Exception) {
-
-        Log.e(
-            "CB01:UprotFolder",
-            "Errore parsing Uprot folder: ${e.message}"
-        )
-
-        emptyList()
     }
-}
     override suspend fun load(url: String): LoadResponse {
         Log.d("CB01", "Caricamento pagina: $url")
         val document = app.get(url, headers = commonHeaders).document
@@ -545,246 +570,242 @@ document
          * Se NON c'è /msfld/, utilizziamo
          * il parsing classico degli episodi.
          */
-        wrap.select(".sp-body *").forEach { row ->
+        /*
+ * ============================================================
+ * EPISODI PRESENTI DIRETTAMENTE NELLA PAGINA CB01
+ * ============================================================
+ *
+ * NON iteriamo più ".sp-body *":
+ * un elemento padre può contenere 10 episodi e quindi
+ * faceva finire tutti i mirror dentro la stessa puntata.
+ */
 
-            val anchors =
-                row.select("a[href]")
-
-            if (anchors.isEmpty()) {
-                return@forEach
-            }
-
-            val rowText =
-                row.text()
-                    .trim()
-
-            if (
-                rowText.isBlank() ||
-                rowText.contains(
-                    "[riduci]",
-                    ignoreCase = true
-                )
-            ) {
-                return@forEach
-            }
-
+        val body =
+            wrap.selectFirst(
+                ".sp-body"
+            )
+        
+        if (body != null) {
+        
+            data class InlineEpisode(
+                val episode: Int,
+                val links: MutableList<String>
+            )
+        
+            val grouped =
+                linkedMapOf<Int, InlineEpisode>()
+        
             /*
-             * Alcune pagine hanno la cartella indicata
-             * soltanto nella riga "TUTTA LA SERIE".
+             * Analizziamo ciascun link separatamente.
              */
-            if (
-                rowText.contains(
-                    Regex(
-                        "(?i)" +
-                            "TUTTA LA SERIE|" +
-                            "TUTTI GLI EPISODI|" +
-                            "INTERA STAGIONE|" +
-                            "STAGIONE COMPLETA"
-                    )
-                )
-            ) {
-
-                val uprotFolder =
-                    anchors
-                        .map { anchor ->
-                            anchor.attr("abs:href")
-                                .ifBlank {
-                                    anchor.attr("href")
-                                }
-                        }
-                        .firstOrNull { link ->
-                            link.contains(
-                                "/msfld/",
-                                ignoreCase = true
-                            )
-                        }
-
-                if (!uprotFolder.isNullOrBlank()) {
-
-                    Log.d(
-                        "CB01",
-                        "Cartella Uprot trovata dalla riga: $uprotFolder"
-                    )
-
-                    val folderEpisodes =
-                        parseUprotFolder(
-                            uprotFolder,
-                            currentSeason
+            body.select(
+                "a[href]"
+            )
+                .forEach { anchor ->
+        
+                    val link =
+                        anchor.attr(
+                            "abs:href"
                         )
-
-                    folderEpisodes.forEach { episode ->
-
-                        val alreadyExists =
-                            episodes.any {
-                                it.season == episode.season &&
-                                it.episode == episode.episode
-                            }
-
-                        if (!alreadyExists) {
-                            episodes.add(episode)
-                        }
-                    }
-
-                    return@forEach
-                }
-
-                /*
-                 * Fallback:
-                 * se "TUTTA LA SERIE" non punta a /msfld/,
-                 * manteniamo i link disponibili.
-                 */
-                val folderLinks =
-                    anchors
-                        .map { anchor ->
-                            anchor.attr("abs:href")
-                                .ifBlank {
-                                    anchor.attr("href")
-                                }
-                        }
-                        .filter { link ->
-                            supportedHosts.any { host ->
-                                link.contains(
-                                    host,
-                                    ignoreCase = true
+                            .ifBlank {
+                                anchor.attr(
+                                    "href"
                                 )
                             }
-                        }
-
-                if (folderLinks.isNotEmpty()) {
-
-                    val linksData =
-                        folderLinks.joinToString("###")
-
-                    /*
-                     * Qui non possiamo espandere gli episodi
-                     * perché non abbiamo una cartella Uprot.
-                     */
+                            .trim()
+        
+                    if (link.isBlank()) {
+                        return@forEach
+                    }
+        
                     if (
-                        episodes.none {
-                            it.data == linksData
-                        }
-                    ) {
-
-                        episodes.add(
-                            newEpisode(linksData) {
-
-                                this.name =
-                                    "$seasonNameClean - Completa"
-
-                                this.season =
-                                    currentSeason
-
-                                this.episode = 1
-                            }
-                        )
-                    }
-                }
-
-                return@forEach
-            }
-
-            /*
-             * Parsing episodio classico.
-             *
-             * Esempi:
-             * 1x01
-             * 1×02
-             * Episodio 3
-             */
-            val epMatch =
-                Regex(
-                    """(\d+)\s*[x×\u00D7]\s*(\d+)"""
-                ).find(rowText)
-
-            val fallbackMatch =
-                Regex(
-                    """(?i)(?:Episodio\s*)?(\d+)"""
-                ).find(rowText)
-
-            if (
-                epMatch == null &&
-                fallbackMatch == null
-            ) {
-                return@forEach
-            }
-
-            /*
-             * NON usiamo la stagione originale trovata nel testo.
-             *
-             * Tutti gli episodi di questo blocco devono
-             * appartenere alla stagione CloudStream currentSeason.
-             */
-            val eNum =
-                epMatch
-                    ?.groupValues
-                    ?.getOrNull(2)
-                    ?.toIntOrNull()
-
-                    ?: fallbackMatch
-                        ?.groupValues
-                        ?.getOrNull(1)
-                        ?.toIntOrNull()
-
-                    ?: return@forEach
-
-            val linksForEpisode =
-                anchors
-                    .map { anchor ->
-                        anchor.attr("abs:href")
-                            .ifBlank {
-                                anchor.attr("href")
-                            }
-                    }
-                    .filter { link ->
-                        supportedHosts.any { host ->
+                        supportedHosts.none { host ->
+        
                             link.contains(
                                 host,
                                 ignoreCase = true
                             )
                         }
+                    ) {
+                        return@forEach
                     }
-
-            if (linksForEpisode.isEmpty()) {
-                return@forEach
-            }
-
-            val linksData =
-                linksForEpisode.joinToString("###")
-
-            val isDuplicate =
-                episodes.any {
-                    it.season == currentSeason &&
-                    it.episode == eNum
+        
+                    /*
+                     * Risaliamo dal link fino a trovare
+                     * il contenitore più piccolo che contiene
+                     * la numerazione dell'episodio.
+                     */
+                    var current:
+                        Element? =
+                        anchor
+        
+                    var episodeNumber:
+                        Int? =
+                        null
+        
+                    var episodeText =
+                        ""
+        
+                    while (
+                        current != null &&
+                        current != body
+                    ) {
+        
+                        val text =
+                            current.text()
+                                .trim()
+        
+                        /*
+                         * Supporta:
+                         *
+                         * 1x01
+                         * 1×01
+                         * 1x01.1
+                         * 1x01.2
+                         * Episodio 1
+                         */
+                        val xMatch =
+                            Regex(
+                                """(?i)(\d+)\s*[x×]\s*0*(\d+)(?:\.\d+)?"""
+                            )
+                                .find(
+                                    text
+                                )
+        
+                        val episodeMatch =
+                            Regex(
+                                """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
+                            )
+                                .find(
+                                    text
+                                )
+        
+                        val found =
+                            xMatch
+                                ?.groupValues
+                                ?.getOrNull(2)
+                                ?.toIntOrNull()
+        
+                                ?: episodeMatch
+                                    ?.groupValues
+                                    ?.getOrNull(1)
+                                    ?.toIntOrNull()
+        
+                        if (found != null) {
+        
+                            episodeNumber =
+                                found
+        
+                            episodeText =
+                                text
+        
+                            break
+                        }
+        
+                        current =
+                            current.parent()
+                    }
+        
+                    if (episodeNumber == null) {
+        
+                        Log.d(
+                            "CB01:SERIES",
+                            "Link senza episodio riconoscibile: $link"
+                        )
+        
+                        return@forEach
+                    }
+        
+                    Log.d(
+                        "CB01:SERIES",
+                        "INLINE → " +
+                            "S$currentSeason " +
+                            "E$episodeNumber | " +
+                            "$episodeText | $link"
+                    )
+        
+                    val entry =
+                        grouped.getOrPut(
+                            episodeNumber!!
+                        ) {
+                            InlineEpisode(
+                                episode =
+                                    episodeNumber!!,
+        
+                                links =
+                                    mutableListOf()
+                            )
+                        }
+        
+                    if (
+                        link !in
+                        entry.links
+                    ) {
+                        entry.links.add(
+                            link
+                        )
+                    }
                 }
-
-            if (!isDuplicate) {
-
-                episodes.add(
-                    newEpisode(linksData) {
-
-                        this.name =
-                            "${
-                                String.format(
-                                    "%02d",
-                                    currentSeason
-                                )
-                            }x${
-                                String.format(
-                                    "%02d",
-                                    eNum
-                                )
-                            }"
-
-                        this.season =
-                            currentSeason
-
-                        this.episode =
-                            eNum
+        
+            grouped
+                .values
+                .sortedBy {
+                    it.episode
+                }
+                .forEach { item ->
+        
+                    if (
+                        item.links.isEmpty()
+                    ) {
+                        return@forEach
                     }
-                )
+        
+                    val linksData =
+                        item.links
+                            .distinct()
+                            .joinToString(
+                                "###"
+                            )
+        
+                    val alreadyExists =
+                        episodes.any {
+                            it.season ==
+                                currentSeason &&
+                                it.episode ==
+                                item.episode
+                        }
+        
+                    if (!alreadyExists) {
+        
+                        Log.d(
+                            "CB01:SERIES",
+                            "CREO EPISODIO " +
+                                "S$currentSeason" +
+                                "E${item.episode} " +
+                                "mirror=${item.links.size}"
+                        )
+        
+                        episodes.add(
+                            newEpisode(
+                                linksData
+                            ) {
+        
+                                this.name =
+                                    "%02dx%02d".format(
+                                        currentSeason,
+                                        item.episode
+                                    )
+        
+                                this.season =
+                                    currentSeason
+        
+                                this.episode =
+                                    item.episode
+                            }
+                        )
+                    }
+                }
             }
-        }
-    }
 
         // ============================
         //  SERIE TV — STRUTTURA season-list
