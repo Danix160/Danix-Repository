@@ -239,6 +239,41 @@ class Altadefinizione01Provider : MainAPI() {
                     headers = headers
                 ).document
 
+            document.select("script").forEachIndexed { index, script ->
+
+            val content =
+                script.data()
+                    .ifBlank {
+                        script.html()
+                    }
+        
+            if (
+                content.contains("vidx", ignoreCase = true) ||
+                content.contains("vidxgo-player-film", ignoreCase = true) ||
+                content.contains("22084616") ||
+                content.contains("imdb", ignoreCase = true)
+            ) {
+        
+                Log.d(
+                    TAG,
+                    "===== SCRIPT VIDX $index =====\n$content"
+                )
+            }
+        }
+
+            val debugIframe =
+                document.selectFirst(
+                    "iframe#vidxgo-player-film"
+                )
+            
+            if (debugIframe != null) {
+            
+                Log.d(
+                    TAG,
+                    "VIDX IFRAME ATTRIBUTES = ${debugIframe.attributes()}"
+                )
+            }
+
             val results =
                 mutableListOf<SearchResponse>()
 
