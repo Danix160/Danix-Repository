@@ -18,7 +18,7 @@ cloudstream {
     extra["prefix"] = "CB01"
     extra["displayName"] = "CB01"
     
-    version = 78
+    version = 79
     description = "cb01uno.one"
     authors = listOf("Danix")
     
