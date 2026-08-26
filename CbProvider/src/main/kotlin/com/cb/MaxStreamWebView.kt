@@ -21,11 +21,20 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class MaxStreamWebViewResult {
+enum class MaxStreamWebViewStatus {
     PLAYER_FOUND,
     CANCELLED,
     TIMEOUT
 }
+
+data class MaxStreamWebViewResult(
+    val status: MaxStreamWebViewStatus,
+    val finalUrl: String? = null,
+    val playerHost: String? = null,
+    val iframeCount: Int = 0,
+    val videoCount: Int = 0,
+    val sourceCount: Int = 0
+)
 
 /**
  * WebView diagnostica per MaxStream.
@@ -110,7 +119,9 @@ object MaxStreamWebView {
                 "Impossibile aprire WebView: Activity non registrata"
             )
 
-            return MaxStreamWebViewResult.CANCELLED
+            return MaxStreamWebViewResult(
+                status = MaxStreamWebViewStatus.CANCELLED
+            )
         }
 
         val result =
@@ -603,9 +614,72 @@ object MaxStreamWebView {
                                                 ">>> ELEMENTO PLAYER REALE RILEVATO NEL DOM <<<"
                                             )
                                         
+                                            val iframeCount =
+                                                Regex(
+                                                    """\\\"iframeCount\\\":([0-9]+)"""
+                                                )
+                                                    .find(playerResult)
+                                                    ?.groupValues
+                                                    ?.getOrNull(1)
+                                                    ?.toIntOrNull()
+                                                    ?: 0
+
+                                            val videoCount =
+                                                Regex(
+                                                    """\\\"videoCount\\\":([0-9]+)"""
+                                                )
+                                                    .find(playerResult)
+                                                    ?.groupValues
+                                                    ?.getOrNull(1)
+                                                    ?.toIntOrNull()
+                                                    ?: 0
+
+                                            val sourceCount =
+                                                Regex(
+                                                    """\\\"sourceCount\\\":([0-9]+)"""
+                                                )
+                                                    .find(playerResult)
+                                                    ?.groupValues
+                                                    ?.getOrNull(1)
+                                                    ?.toIntOrNull()
+                                                    ?: 0
+
+                                            val playerHost =
+                                                Regex(
+                                                    """\\\"host\\\":\\\"([^\\\"]+)\\\""""
+                                                )
+                                                    .findAll(playerResult)
+                                                    .mapNotNull {
+                                                        it.groupValues
+                                                            .getOrNull(1)
+                                                            ?.takeIf { host ->
+                                                                host.isNotBlank()
+                                                            }
+                                                    }
+                                                    .firstOrNull()
+
                                             complete(
-                                                MaxStreamWebViewResult.PLAYER_FOUND
+                                                MaxStreamWebViewResult(
+                                                    status =
+                                                        MaxStreamWebViewStatus.PLAYER_FOUND,
+
+                                                    finalUrl =
+                                                        view.url,
+
+                                                    playerHost =
+                                                        playerHost,
+
+                                                    iframeCount =
+                                                        iframeCount,
+
+                                                    videoCount =
+                                                        videoCount,
+
+                                                    sourceCount =
+                                                        sourceCount
+                                                )
                                             )
+                                        }
 
                                         } else {
 
@@ -763,22 +837,49 @@ object MaxStreamWebView {
 
                         dialog.setOnDismissListener {
 
+                            val lastUrl =
+                                try {
+                                    webView.url
+                                } catch (_: Exception) {
+                                    null
+                                }
+
                             try {
                                 webView.stopLoading()
                             } catch (_: Exception) {
                             }
 
                             try {
-                                webView.destroy()
+                                webView.webChromeClient =
+                                    null
+
+                                webView.webViewClient =
+                                    WebViewClient()
                             } catch (_: Exception) {
                             }
+
+                            webView.postDelayed(
+                                {
+                                    try {
+                                        webView.destroy()
+                                    } catch (_: Exception) {
+                                    }
+                                },
+                                500
+                            )
 
                             if (
                                 !completed.get()
                             ) {
 
                                 complete(
-                                    MaxStreamWebViewResult.CANCELLED
+                                    MaxStreamWebViewResult(
+                                        status =
+                                            MaxStreamWebViewStatus.CANCELLED,
+
+                                        finalUrl =
+                                            lastUrl
+                                    )
                                 )
                             }
                         }
@@ -808,6 +909,9 @@ object MaxStreamWebView {
             }
 
         return result
-            ?: MaxStreamWebViewResult.TIMEOUT
+            ?: MaxStreamWebViewResult(
+                status =
+                    MaxStreamWebViewStatus.TIMEOUT
+            )
     }
 }
