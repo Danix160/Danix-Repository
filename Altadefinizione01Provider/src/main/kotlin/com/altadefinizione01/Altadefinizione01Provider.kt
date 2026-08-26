@@ -470,6 +470,56 @@ class Altadefinizione01Provider : MainAPI() {
     }
 
     // ============================================================
+    // VIDXGOFILM
+    // ============================================================
+        private fun findVidxGoFilmUrl(
+            document: org.jsoup.nodes.Document
+        ): String? {
+        
+            val iframe =
+                document.selectFirst(
+                    "iframe#vidxgo-player-film"
+                )
+                    ?: return null
+        
+            val rawUrl =
+                iframe.attr("src")
+                    .ifBlank {
+                        iframe.attr("data-src")
+                    }
+                    .trim()
+        
+            if (rawUrl.isBlank()) {
+                Log.e(
+                    TAG,
+                    "iframe VidxGo trovato ma src vuoto: ${iframe.outerHtml()}"
+                )
+                return null
+            }
+        
+            val finalUrl =
+                when {
+                    rawUrl.startsWith("//") ->
+                        "https:$rawUrl"
+        
+                    rawUrl.startsWith("http") ->
+                        rawUrl
+        
+                    rawUrl.startsWith("/") ->
+                        mainUrl.trimEnd('/') + rawUrl
+        
+                    else ->
+                        rawUrl
+                }
+        
+            Log.d(
+                TAG,
+                "VIDXGO FILM IFRAME SRC = $finalUrl"
+            )
+        
+            return finalUrl
+        }
+    // ============================================================
     // LOAD
     // ============================================================
 
@@ -1223,39 +1273,71 @@ val parts =
                         )
                     }
                 }
-
-                /*
+                
+                                /*
                  * VIDXGO FILM
+                 *
+                 * Usiamo prima l'URL realmente presente
+                 * nell'iframe della pagina.
                  */
-                if (
+                val vidxIframe =
                     document.selectFirst(
                         "iframe#vidxgo-player-film"
-                    ) != null
-                ) {
-
-                    val imdb =
-                        findVidxGoImdb(
+                    )
+                
+                if (vidxIframe != null) {
+                
+                    Log.d(
+                        TAG,
+                        "VIDXGO FILM IFRAME HTML = ${vidxIframe.outerHtml()}"
+                    )
+                
+                    val realVidxUrl =
+                        findVidxGoFilmUrl(
                             document
                         )
-
-                    if (
-                        !imdb.isNullOrBlank()
-                    ) {
-
-                        val vidxUrl =
-                            "https://v.vidxgo.co/$imdb"
-
+                
+                    if (!realVidxUrl.isNullOrBlank()) {
+                
                         Log.d(
                             TAG,
-                            "VIDXGO FILM = $vidxUrl"
+                            "VIDXGO FILM REALE = $realVidxUrl"
                         )
-
+                
                         loadExtractor(
-                            vidxUrl,
-                            "$mainUrl/",
+                            realVidxUrl,
+                            pageUrl,
                             subtitleCallback,
                             callback
                         )
+                
+                    } else {
+                
+                        /*
+                         * Fallback al vecchio sistema.
+                         */
+                        val imdb =
+                            findVidxGoImdb(
+                                document
+                            )
+                
+                        if (!imdb.isNullOrBlank()) {
+                
+                            val fallbackUrl =
+                                "https://v.vidxgo.co/$imdb"
+                
+                            Log.d(
+                                TAG,
+                                "VIDXGO FILM FALLBACK = $fallbackUrl"
+                            )
+                
+                            loadExtractor(
+                                fallbackUrl,
+                                pageUrl,
+                                subtitleCallback,
+                                callback
+                            )
+                        }
                     }
                 }
             }
