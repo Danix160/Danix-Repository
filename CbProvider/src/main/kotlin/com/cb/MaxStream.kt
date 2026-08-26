@@ -536,5 +536,5 @@ class MaxStream : ExtractorApi() {
                 )
             }
         }
-    }
+    } 
 }
