@@ -30,6 +30,7 @@ enum class MaxStreamWebViewStatus {
 data class MaxStreamWebViewResult(
     val status: MaxStreamWebViewStatus,
     val finalUrl: String? = null,
+    val playerUrl: String? = null,
     val playerHost: String? = null,
     val iframeCount: Int = 0,
     val videoCount: Int = 0,
@@ -548,6 +549,9 @@ object MaxStreamWebView {
                                                     iframes:
                                                         iframeInfo,
 
+                                                    realIframes:
+                                                        realIframes,
+
                                                     videos:
                                                         videoInfo,
 
@@ -644,19 +648,35 @@ object MaxStreamWebView {
                                                     ?.toIntOrNull()
                                                     ?: 0
 
-                                            val playerHost =
+                                            val playerUrl =
                                                 Regex(
-                                                    """\\\"host\\\":\\\"([^\\\"]+)\\\""""
+                                                    """\\\"(?:src|dataSrc)\\\":\\\"(https?:[^\\\"]+)\\\""""
                                                 )
                                                     .findAll(playerResult)
                                                     .mapNotNull {
                                                         it.groupValues
                                                             .getOrNull(1)
-                                                            ?.takeIf { host ->
-                                                                host.isNotBlank()
+                                                            ?.replace("\\/", "/")
+                                                            ?.takeIf { candidate ->
+                                                                candidate.contains(
+                                                                    "maxstream.video/emiuhihi/",
+                                                                    ignoreCase = true
+                                                                )
                                                             }
                                                     }
                                                     .firstOrNull()
+
+                                            val playerHost =
+                                                playerUrl
+                                                    ?.let { candidate ->
+                                                        try {
+                                                            android.net.Uri
+                                                                .parse(candidate)
+                                                                .host
+                                                        } catch (_: Exception) {
+                                                            null
+                                                        }
+                                                    }
 
                                             complete(
                                                 MaxStreamWebViewResult(
@@ -665,6 +685,9 @@ object MaxStreamWebView {
 
                                                     finalUrl =
                                                         view.url,
+
+                                                    playerUrl =
+                                                        playerUrl,
 
                                                     playerHost =
                                                         playerHost,
