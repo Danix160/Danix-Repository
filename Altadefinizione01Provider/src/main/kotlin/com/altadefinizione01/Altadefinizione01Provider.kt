@@ -1838,10 +1838,7 @@ val parts =
                     ) {
 
                         val vidxUrl =
-                            "https://v.vidxgo.co/t/" +
-                                "$imdb/" +
-                                "$season/" +
-                                "$episode"
+                            "https://v.vidxgo.co/$imdb"
 
                         Log.d(
                             TAG,
@@ -1927,14 +1924,11 @@ val parts =
                 }
 
                 val vidxUrl =
-                    "https://v.vidxgo.co/t/" +
-                        "$imdb/" +
-                        "$season/" +
-                        "$episode"
+                    "https://v.vidxgo.co/$imdb"
 
                 Log.d(
                     TAG,
-                    "VIDX DIRECT = $vidxUrl"
+                    "VIDX ROOT TEST = $vidxUrl (requested S${season}E${episode})"
                 )
 
                 Log.d(
