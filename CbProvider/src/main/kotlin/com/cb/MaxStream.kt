@@ -175,6 +175,19 @@ class MaxStream : ExtractorApi() {
                     "source=${webViewResult.sourceCount}"
             )
 
+            if (
+                webViewResult.status ==
+                MaxStreamWebViewStatus.PLAYER_PAGE_READY
+            ) {
+
+                Log.d(
+                    "MAXSTREAM_DEBUG",
+                    "Diagnostica player completata: " +
+                        "pagina interna=${webViewResult.playerPageUrl}, " +
+                        "video=${webViewResult.videoCount}"
+                )
+            }
+
             when (
                 webViewResult.status
             ) {
