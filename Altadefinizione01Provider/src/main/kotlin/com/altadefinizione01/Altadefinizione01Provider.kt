@@ -51,19 +51,7 @@ class Altadefinizione01Provider : MainAPI() {
                 "Home",
             
             "$mainUrl/serie-tv/" to
-                "Serie TV",
-
-            "$mainUrl/?genere=2" to
-                "Animazione",
-            
-            "$mainUrl/?genere=1" to
-                "Azione",
-            
-            "$mainUrl/?genere=3" to
-                "Avventura",
-
-            "$mainUrl/?genere=26" to
-                "Famiglia"
+                "Serie TV"
         )
 
     private val headers =
