@@ -201,39 +201,6 @@ class VidxGoExtractor : ExtractorApi() {
                             .take(3000)
                     }"
                 )
-
-                val webViewVideo =
-                    VidxGoWebView.resolve(
-                        url = url,
-                        referer = pageReferer,
-                        userAgent = USER_AGENT
-                    )
-
-                if (
-                    !webViewVideo.isNullOrBlank()
-                ) {
-
-                    Log.d(
-                        TAG,
-                        "SERIE VIDEO URL WEBVIEW = $webViewVideo"
-                    )
-
-                    emitVideo(
-                        videoUrl = webViewVideo,
-                        callback = callback
-                    )
-
-                } else {
-
-                    Log.e(
-                        TAG,
-                        "SERIE: WebView terminata senza URL video"
-                    )
-                }
-
-                return
-            }
-
             /*
              * Film: manteniamo il comportamento attuale.
              */
