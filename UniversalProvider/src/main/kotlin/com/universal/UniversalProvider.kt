@@ -1020,28 +1020,85 @@ class UniversalProvider : MainAPI() {
          * ma non decide quanti episodi mostrare.
          */
         
-        val ad01Inventory =
-            inventories.filter {
-                it.source.equals(
-                    "Altadefinizione01",
-                    ignoreCase = true
-                )
-            }
-        
         val referenceInventory =
-            if (ad01Inventory.isNotEmpty()) {
-                ad01Inventory
-            } else {
-                inventories
+    inventories
+        .groupBy {
+            Triple(
+                it.season,
+                it.episode,
+                it.part
+            )
+        }
+        .mapNotNull { (_, versions) ->
+
+            val preferred =
+                versions.firstOrNull {
+                    it.source.equals(
+                        "Altadefinizione01",
+                        ignoreCase = true
+                    )
+                }
+                    ?: versions.firstOrNull {
+                        it.source.equals(
+                            "OnlineSerieTV",
+                            ignoreCase = true
+                        )
+                    }
+                    ?: versions.firstOrNull()
+                    ?: return@mapNotNull null
+
+            val mergedUrls =
+                versions
+                    .flatMap {
+                        it.urls
+                    }
+                    .filter {
+                        it.isNotBlank()
+                    }
+                    .distinct()
+
+            preferred.copy(
+                urls =
+                    mergedUrls,
+
+                /*
+                 * Se il provider preferito non ha
+                 * absoluteEpisode, prova gli altri.
+                 */
+                absoluteEpisode =
+                    preferred.absoluteEpisode
+                        ?: versions
+                            .mapNotNull {
+                                it.absoluteEpisode
+                            }
+                            .firstOrNull(),
+
+                /*
+                 * Mantieni il primo titolo utile.
+                 */
+                title =
+                    preferred.title
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?: versions
+                            .mapNotNull {
+                                it.title
+                            }
+                            .firstOrNull {
+                                it.isNotBlank()
+                            }
+            )
+        }
+        .sortedWith(
+            compareBy<ProviderEpisode> {
+                it.season ?: 0
             }
-        
-        Log.d(
-            TAG,
-            "REFERENCE INVENTORY = " +
-                if (ad01Inventory.isNotEmpty()) {
-                    "Altadefinizione01 (${ad01Inventory.size})"
-                } else {
-                    "Tutti i provider (${inventories.size})"
+                .thenBy {
+                    it.episode ?: 0
+                }
+                .thenBy {
+                    it.part ?: 0
                 }
         )
 
