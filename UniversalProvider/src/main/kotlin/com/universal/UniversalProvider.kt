@@ -738,6 +738,43 @@ class UniversalProvider : MainAPI() {
             }
         }
 
+        /*
+         * ============================================================
+         * STRUTTURA STAGIONI DI RIFERIMENTO
+         * ============================================================
+         *
+         * Se Altadefinizione01 possiede la serie,
+         * preferiamo la sua suddivisione reale in stagioni.
+         *
+         * TMDB continua a fornire titoli, immagini, trama ecc.,
+         * ma non decide quanti episodi mostrare.
+         */
+        
+        val ad01Inventory =
+            inventories.filter {
+                it.source.equals(
+                    "Altadefinizione01",
+                    ignoreCase = true
+                )
+            }
+        
+        val referenceInventory =
+            if (ad01Inventory.isNotEmpty()) {
+                ad01Inventory
+            } else {
+                inventories
+            }
+        
+        Log.d(
+            TAG,
+            "REFERENCE INVENTORY = " +
+                if (ad01Inventory.isNotEmpty()) {
+                    "Altadefinizione01 (${ad01Inventory.size})"
+                } else {
+                    "Tutti i provider (${inventories.size})"
+                }
+        )
+
                     val filteredTmdbEpisodes =
                 if (inventories.isEmpty()) {
             
@@ -763,35 +800,19 @@ class UniversalProvider : MainAPI() {
             
                         } else {
             
-                            val providerEpisodesForSeason =
-                                inventories.filter {
-                                    it.season ==
-                                        media.season
-                                }
-            
-                            val maxProviderEpisode =
-                                providerEpisodesForSeason
-                                    .mapNotNull {
-                                        it.episode
-                                    }
-                                    .maxOrNull()
-            
                             val available =
-                                if (
-                                    media.episode != null &&
-                                    maxProviderEpisode != null
-                                ) {
-            
-                                    media.episode <=
-                                        maxProviderEpisode
-            
-                                } else {
-            
-                                    EpisodeMapper.hasMatch(
-                                        media,
-                                        inventories
-                                    )
-                                }
+                                EpisodeMapper.hasMatch(
+                                    media,
+                                    referenceInventory
+                                )
+                            
+                            Log.d(
+                                TAG,
+                                "TMDB UI " +
+                                    "S${media.season}E${media.episode} " +
+                                    "ABS=${media.absoluteEpisode} " +
+                                    "available=$available"
+                            )
             
                             Log.d(
                                 TAG,
@@ -838,7 +859,7 @@ class UniversalProvider : MainAPI() {
             
             
             val providerOnlyEpisodes =
-                inventories
+                referenceInventory
                     /*
                      * Un episodio presente sia su AD01 che OSTV
                      * deve comparire una sola volta.
