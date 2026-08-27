@@ -1,45 +1,76 @@
 package com.rivestream
 
 import android.util.Log
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import java.net.URLDecoder
 import java.net.URLEncoder
 
+// ============================================================
+// MODELLI SPORT
+// ============================================================
+
+data class RiveSportEvent(
+    @JsonProperty("id")
+    val id: String? = null,
+
+    @JsonProperty("title")
+    val title: String? = null,
+
+    @JsonProperty("category")
+    val category: String? = null,
+
+    @JsonProperty("date")
+    val date: Long? = null,
+
+    @JsonProperty("poster")
+    val poster: String? = null,
+
+    @JsonProperty("popular")
+    val popular: Boolean? = null
+)
+
+// ============================================================
+// PROVIDER
+// ============================================================
+
 class RiveStreamProvider : MainAPI() {
 
-    override var name =
-        "RiveStream"
+    override var name = "RiveStream"
+    override var mainUrl = "https://rivestream.ru"
+    override var lang = "it"
 
-    override var mainUrl =
-        "https://rivestream.ru"
+    override val supportedTypes = setOf(
+        TvType.Live
+    )
 
-    override var lang =
-        "it"
-
-    override val supportedTypes =
-        setOf(
-            TvType.Live
-        )
-
-    override val hasMainPage =
-        true
-
-    override val hasQuickSearch =
-        true
+    override val hasMainPage = true
+    override val hasQuickSearch = true
 
     companion object {
-        private const val TAG =
-            "RIVESTREAM_DEBUG"
+        private const val TAG = "RIVESTREAM_DEBUG"
+
+        private const val SPORTS_API =
+            "https://streamed.pk/api"
+
+        private const val LIVE_TV_API =
+            "https://api.cdn-live.tv/api/v1"
     }
 
-    override val mainPage =
-        mainPageOf(
-            "$mainUrl/iptv" to
-                "TV Italiana",
+    override val mainPage = mainPageOf(
 
-            "$mainUrl/livesports" to
-                "Eventi sportivi"
-        )
+        "italian-tv" to
+            "TV Italiana",
+
+        "sports-live" to
+            "Eventi sportivi",
+
+        "football" to
+            "Calcio",
+
+        "basketball" to
+            "Basket"
+    )
 
     // ============================================================
     // HOME
@@ -57,20 +88,34 @@ class RiveStreamProvider : MainAPI() {
             )
         }
 
-        return when {
+        Log.d(
+            TAG,
+            "GET MAIN PAGE = ${request.data}"
+        )
 
-            request.data.contains(
-                "/iptv"
-            ) ->
+        return when (request.data) {
+
+            "italian-tv" ->
                 loadItalianTv(
                     request.name
                 )
 
-            request.data.contains(
-                "/livesports"
-            ) ->
-                loadSportsEvents(
-                    request.name
+            "sports-live" ->
+                loadSports(
+                    sectionName = request.name,
+                    query = "live"
+                )
+
+            "football" ->
+                loadSports(
+                    sectionName = request.name,
+                    query = "football"
+                )
+
+            "basketball" ->
+                loadSports(
+                    sectionName = request.name,
+                    query = "basketball"
                 )
 
             else ->
@@ -82,6 +127,146 @@ class RiveStreamProvider : MainAPI() {
     }
 
     // ============================================================
+    // EVENTI SPORTIVI
+    // ============================================================
+
+    private suspend fun loadSports(
+        sectionName: String,
+        query: String
+    ): HomePageResponse {
+
+        val url =
+            "$SPORTS_API/matches/$query/popular"
+
+        Log.d(
+            TAG,
+            "SPORT API = $url"
+        )
+
+        val response = try {
+
+            app.get(
+                url,
+                headers = mapOf(
+                    "Accept" to
+                        "application/json"
+                )
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "SPORT REQUEST ERROR = ${e.message}"
+            )
+
+            return newHomePageResponse(
+                sectionName,
+                emptyList()
+            )
+        }
+
+        Log.d(
+            TAG,
+            "SPORT STATUS = ${response.code}"
+        )
+
+        Log.d(
+            TAG,
+            "SPORT BODY = ${
+                response.text.take(1000)
+            }"
+        )
+
+        val events = try {
+
+            response.parsedSafe<
+                List<RiveSportEvent>
+            >()
+                ?: emptyList()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "SPORT JSON ERROR = ${e.message}"
+            )
+
+            emptyList()
+        }
+
+        Log.d(
+            TAG,
+            "SPORT EVENTS = ${events.size}"
+        )
+
+        val cards =
+            events.mapNotNull { event ->
+
+                val title =
+                    event.title
+                        ?.trim()
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?: return@mapNotNull null
+
+                val id =
+                    event.id
+                        ?: return@mapNotNull null
+
+                val category =
+                    event.category
+                        ?.trim()
+                        .orEmpty()
+
+                val poster =
+                    event.poster
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?.let {
+                            fixImageUrl(it)
+                        }
+
+                Log.d(
+                    TAG,
+                    "EVENT = " +
+                        "$title | " +
+                        "id=$id | " +
+                        "category=$category"
+                )
+
+                newLiveSearchResponse(
+                    title,
+                    buildData(
+                        type = "sport",
+                        id = id,
+                        title = title,
+                        category = category
+                    ),
+                    TvType.Live
+                ) {
+
+                    posterUrl = poster
+                }
+            }
+                .distinctBy {
+                    it.url
+                }
+
+        Log.d(
+            TAG,
+            "SPORT CARDS = ${cards.size}"
+        )
+
+        return newHomePageResponse(
+            sectionName,
+            cards
+        )
+    }
+
+    // ============================================================
     // TV ITALIANA
     // ============================================================
 
@@ -89,281 +274,87 @@ class RiveStreamProvider : MainAPI() {
         sectionName: String
     ): HomePageResponse {
 
-        val document =
-            try {
+        val url =
+            "$LIVE_TV_API/channels/" +
+                "?user=cdnlivetv&plan=free"
 
-                app.get(
-                    "$mainUrl/iptv"
-                ).document
+        Log.d(
+            TAG,
+            "TV API = $url"
+        )
 
-            } catch (e: Exception) {
+        val response = try {
 
-                Log.e(
-                    TAG,
-                    "IPTV ERROR = ${e.message}"
+            app.get(
+                url,
+                headers = mapOf(
+                    "Accept" to
+                        "application/json"
                 )
-
-                return newHomePageResponse(
-                    sectionName,
-                    emptyList()
-                )
-            }
-
-        val cards =
-            document.select(
-                "div[class*=MovieCardSmall]"
             )
 
-        Log.d(
-            TAG,
-            "IPTV CARDS = ${cards.size}"
-        )
+        } catch (e: Exception) {
 
-        val channels =
-            cards
-                .mapNotNull { card ->
+            Log.e(
+                TAG,
+                "TV REQUEST ERROR = ${e.message}"
+            )
 
-                    val title =
-                        card
-                            .selectFirst("h4")
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    if (
-                        title.isBlank() ||
-                        !isItalianChannel(
-                            title
-                        )
-                    ) {
-                        return@mapNotNull null
-                    }
-
-                    val category =
-                        card
-                            .selectFirst("p")
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    val cleanTitle =
-                        cleanItalianName(
-                            title
-                        )
-
-                    val image =
-                        card
-                            .selectFirst("img")
-                            ?.attr("src")
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?.let {
-                                fixUrl(it)
-                            }
-
-                    Log.d(
-                        TAG,
-                        "ITALIAN CHANNEL = $title"
-                    )
-
-                    newLiveSearchResponse(
-                        cleanTitle,
-                        buildData(
-                            type =
-                                "iptv",
-
-                            title =
-                                title,
-
-                            category =
-                                category,
-
-                            time =
-                                ""
-                        ),
-                        TvType.Live
-                    ) {
-
-                        posterUrl =
-                            image
-                    }
-                }
-                .distinctBy {
-                    it.name
-                        .lowercase()
-                }
-                .sortedBy {
-                    italianOrder(
-                        it.name
-                    )
-                }
+            return newHomePageResponse(
+                sectionName,
+                emptyList()
+            )
+        }
 
         Log.d(
             TAG,
-            "ITALIAN CHANNELS = ${channels.size}"
+            "TV STATUS = ${response.code}"
         )
+
+        /*
+         * Per il primo test non assumiamo
+         * ancora la struttura JSON.
+         *
+         * Stampiamo una parte della risposta
+         * così vediamo esattamente come
+         * cdn-live.tv restituisce i canali.
+         */
+
+        Log.d(
+            TAG,
+            "TV BODY = ${
+                response.text.take(4000)
+            }"
+        )
+
+        val json = try {
+
+            AppUtils.parseJson<
+                Any
+            >(
+                response.text
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "TV JSON ERROR = ${e.message}"
+            )
+
+            null
+        }
+
+        /*
+         * Per ora la TV rimane vuota.
+         *
+         * Appena vediamo TV BODY nel log,
+         * modelliamo correttamente il JSON.
+         */
 
         return newHomePageResponse(
             sectionName,
-            channels
-        )
-    }
-
-    // ============================================================
-    // EVENTI SPORTIVI
-    // ============================================================
-
-    private suspend fun loadSportsEvents(
-        sectionName: String
-    ): HomePageResponse {
-
-        val document =
-            try {
-
-                app.get(
-                    "$mainUrl/livesports"
-                ).document
-
-            } catch (e: Exception) {
-
-                Log.e(
-                    TAG,
-                    "SPORT ERROR = ${e.message}"
-                )
-
-                return newHomePageResponse(
-                    sectionName,
-                    emptyList()
-                )
-            }
-
-        val cards =
-            document.select(
-                "div[class*=MovieCardSmall]"
-            )
-
-        Log.d(
-            TAG,
-            "SPORT CARDS = ${cards.size}"
-        )
-
-        val events =
-            cards
-                .mapNotNull { card ->
-
-                    val title =
-                        card
-                            .selectFirst("h4")
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    if (
-                        title.isBlank()
-                    ) {
-                        return@mapNotNull null
-                    }
-
-                    val paragraphs =
-                        card.select("p")
-
-                    val sport =
-                        paragraphs
-                            .getOrNull(0)
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    val time =
-                        paragraphs
-                            .getOrNull(1)
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    /*
-                     * Le categorie come
-                     * Basketball / Football / Hockey
-                     * hanno p = "sports".
-                     * Non sono eventi.
-                     */
-                    if (
-                        sport.equals(
-                            "sports",
-                            ignoreCase = true
-                        )
-                    ) {
-                        return@mapNotNull null
-                    }
-
-                    /*
-                     * Una card evento reale normalmente
-                     * ha almeno sport o data/orario.
-                     */
-                    if (
-                        sport.isBlank() &&
-                        time.isBlank()
-                    ) {
-                        return@mapNotNull null
-                    }
-
-                    val image =
-                        card
-                            .selectFirst("img")
-                            ?.attr("src")
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?.let {
-                                fixUrl(it)
-                            }
-
-                    Log.d(
-                        TAG,
-                        "SPORT EVENT = " +
-                            "$title | $sport | $time"
-                    )
-
-                    newLiveSearchResponse(
-                        title,
-                        buildData(
-                            type =
-                                "sport",
-
-                            title =
-                                title,
-
-                            category =
-                                sport,
-
-                            time =
-                                time
-                        ),
-                        TvType.Live
-                    ) {
-
-                        posterUrl =
-                            image
-                    }
-                }
-                .distinctBy {
-                    buildString {
-
-                        append(
-                            it.name.lowercase()
-                        )
-                    }
-                }
-
-        Log.d(
-            TAG,
-            "SPORT EVENTS = ${events.size}"
-        )
-
-        return newHomePageResponse(
-            sectionName,
-            events
+            emptyList()
         )
     }
 
@@ -375,9 +366,7 @@ class RiveStreamProvider : MainAPI() {
         query: String
     ): List<SearchResponse> {
 
-        if (
-            query.length < 2
-        ) {
+        if (query.length < 2) {
             return emptyList()
         }
 
@@ -386,177 +375,90 @@ class RiveStreamProvider : MainAPI() {
                 .trim()
                 .lowercase()
 
-        val result =
-            mutableListOf<SearchResponse>()
+        val url =
+            "$SPORTS_API/matches/all/popular"
 
-        /*
-         * Cerca prima nei canali IPTV.
-         */
-        try {
+        val response = try {
 
-            val iptv =
-                app.get(
-                    "$mainUrl/iptv"
-                ).document
-
-            iptv
-                .select(
-                    "div[class*=MovieCardSmall]"
+            app.get(
+                url,
+                headers = mapOf(
+                    "Accept" to
+                        "application/json"
                 )
-                .forEach { card ->
+            )
 
-                    val title =
-                        card
-                            .selectFirst("h4")
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    if (
-                        title.isBlank() ||
-                        !isItalianChannel(title)
-                    ) {
-                        return@forEach
-                    }
-
-                    if (
-                        !title.lowercase()
-                            .contains(normalized)
-                    ) {
-                        return@forEach
-                    }
-
-                    val category =
-                        card
-                            .selectFirst("p")
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
-
-                    result.add(
-                        newLiveSearchResponse(
-                            cleanItalianName(
-                                title
-                            ),
-                            buildData(
-                                type =
-                                    "iptv",
-
-                                title =
-                                    title,
-
-                                category =
-                                    category,
-
-                                time =
-                                    ""
-                            ),
-                            TvType.Live
-                        )
-                    )
-                }
-
-        } catch (
-            e: Exception
-        ) {
+        } catch (e: Exception) {
 
             Log.e(
                 TAG,
-                "SEARCH IPTV ERROR = ${e.message}"
+                "SEARCH ERROR = ${e.message}"
             )
+
+            return emptyList()
         }
 
-        /*
-         * Cerca anche negli eventi.
-         */
-        try {
+        val events = try {
 
-            val sports =
-                app.get(
-                    "$mainUrl/livesports"
-                ).document
+            response.parsedSafe<
+                List<RiveSportEvent>
+            >()
+                ?: emptyList()
 
-            sports
-                .select(
-                    "div[class*=MovieCardSmall]"
-                )
-                .forEach { card ->
+        } catch (e: Exception) {
 
-                    val title =
-                        card
-                            .selectFirst("h4")
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
+            emptyList()
+        }
 
-                    val p =
-                        card.select("p")
+        return events
+            .filter {
 
-                    val sport =
-                        p.getOrNull(0)
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
+                val title =
+                    it.title
+                        ?.lowercase()
+                        .orEmpty()
 
-                    val time =
-                        p.getOrNull(1)
-                            ?.text()
-                            ?.trim()
-                            .orEmpty()
+                val category =
+                    it.category
+                        ?.lowercase()
+                        .orEmpty()
 
-                    if (
-                        title.isBlank() ||
-                        sport.equals(
-                            "sports",
-                            ignoreCase = true
-                        )
-                    ) {
-                        return@forEach
-                    }
-
-                    if (
-                        !title.lowercase()
-                            .contains(normalized) &&
-                        !sport.lowercase()
-                            .contains(normalized)
-                    ) {
-                        return@forEach
-                    }
-
-                    result.add(
-                        newLiveSearchResponse(
-                            title,
-                            buildData(
-                                type =
-                                    "sport",
-
-                                title =
-                                    title,
-
-                                category =
-                                    sport,
-
-                                time =
-                                    time
-                            ),
-                            TvType.Live
-                        )
+                title.contains(
+                    normalized
+                ) ||
+                    category.contains(
+                        normalized
                     )
+            }
+            .mapNotNull { event ->
+
+                val title =
+                    event.title
+                        ?: return@mapNotNull null
+
+                val id =
+                    event.id
+                        ?: return@mapNotNull null
+
+                newLiveSearchResponse(
+                    title,
+                    buildData(
+                        type = "sport",
+                        id = id,
+                        title = title,
+                        category =
+                            event.category
+                                .orEmpty()
+                    ),
+                    TvType.Live
+                ) {
+
+                    posterUrl =
+                        event.poster
+                            ?.let {
+                                fixImageUrl(it)
+                            }
                 }
-
-        } catch (
-            e: Exception
-        ) {
-
-            Log.e(
-                TAG,
-                "SEARCH SPORT ERROR = ${e.message}"
-            )
-        }
-
-        return result
-            .distinctBy {
-                it.name.lowercase()
             }
     }
 
@@ -564,12 +466,8 @@ class RiveStreamProvider : MainAPI() {
         query: String
     ): List<SearchResponse> {
 
-        return search(
-            query
-        )
-            .take(
-                25
-            )
+        return search(query)
+            .take(30)
     }
 
     // ============================================================
@@ -581,13 +479,15 @@ class RiveStreamProvider : MainAPI() {
     ): LoadResponse? {
 
         val data =
-            parseData(
-                url
-            )
+            parseData(url)
                 ?: return null
 
         val type =
             data["type"]
+                ?: return null
+
+        val id =
+            data["id"]
                 ?: return null
 
         val title =
@@ -598,66 +498,23 @@ class RiveStreamProvider : MainAPI() {
             data["category"]
                 .orEmpty()
 
-        val time =
-            data["time"]
-                .orEmpty()
-
-        val displayTitle =
-            if (
-                type == "iptv"
-            ) {
-
-                cleanItalianName(
-                    title
-                )
-
-            } else {
-                title
-            }
-
-        val playData =
-            buildData(
-                type =
-                    type,
-
-                title =
-                    title,
-
-                category =
-                    category,
-
-                time =
-                    time
-            )
+        Log.d(
+            TAG,
+            "LOAD type=$type id=$id title=$title"
+        )
 
         return newLiveStreamLoadResponse(
-            displayTitle,
+            title,
             url,
-            playData
+            url
         ) {
 
             plot =
-                buildString {
+                when (type) {
 
-                    when (type) {
+                    "sport" -> {
 
-                        "iptv" -> {
-
-                            append(
-                                "Canale TV italiano"
-                            )
-
-                            if (
-                                category.isNotBlank()
-                            ) {
-
-                                append(
-                                    "\n$category"
-                                )
-                            }
-                        }
-
-                        "sport" -> {
+                        buildString {
 
                             if (
                                 category.isNotBlank()
@@ -668,45 +525,36 @@ class RiveStreamProvider : MainAPI() {
                             }
 
                             if (
-                                time.isNotBlank()
+                                isNotEmpty()
                             ) {
-
-                                if (
-                                    isNotEmpty()
-                                ) {
-                                    append("\n")
-                                }
-
-                                append(
-                                    time
-                                )
+                                append("\n")
                             }
+
+                            append(
+                                "Evento sportivo"
+                            )
                         }
                     }
+
+                    "tv" ->
+                        "Canale TV italiano"
+
+                    else ->
+                        "Live"
                 }
 
             tags =
-                when (type) {
-
-                    "iptv" ->
-                        listOf(
-                            "TV Italiana",
-                            "Live"
-                        )
-
-                    else ->
-                        listOfNotNull(
-                            category.takeIf {
-                                it.isNotBlank()
-                            },
-                            "Live"
-                        )
-                }
+                listOfNotNull(
+                    category.takeIf {
+                        it.isNotBlank()
+                    },
+                    "Live"
+                )
         }
     }
 
     // ============================================================
-    // LOAD LINKS
+    // LINKS
     // ============================================================
 
     override suspend fun loadLinks(
@@ -722,185 +570,42 @@ class RiveStreamProvider : MainAPI() {
     ): Boolean {
 
         val parsed =
-            parseData(
-                data
-            )
+            parseData(data)
                 ?: return false
 
         Log.d(
             TAG,
-            "LOADLINKS " +
-                "type=${parsed["type"]} " +
+            "LOADLINKS type=${parsed["type"]} " +
+                "id=${parsed["id"]} " +
                 "title=${parsed["title"]}"
         )
 
         /*
-         * Catalogo pronto.
+         * Non implementiamo ancora
+         * la riproduzione.
          *
-         * Qui collegheremo successivamente
-         * la risoluzione della pagina/player.
+         * Prima verifichiamo catalogo/API.
          */
 
         return false
     }
 
     // ============================================================
-    // FILTRO ITALIA
-    // ============================================================
-
-    private val italianKeywords =
-        listOf(
-            "rai ",
-            "rai1",
-            "rai2",
-            "rai3",
-            "rai sport",
-            "mediaset",
-            "canale 5",
-            "italia 1",
-            "italia1",
-            "rete 4",
-            "rete4",
-            "la7",
-            "tv8",
-            "nove",
-            "cielo",
-            "iris",
-            "cine34",
-            "italia 2",
-            "italia2",
-            "top crime",
-            "tgcom24",
-            "focus",
-            "boing",
-            "cartoonito",
-            "real time",
-            "dmax",
-            "giallo",
-            "food network",
-            "motor trend",
-            "warner tv",
-            "super!"
-        )
-
-    private fun isItalianChannel(
-        title: String
-    ): Boolean {
-
-        val name =
-            title
-                .lowercase()
-                .trim()
-
-        if (
-            name.contains(
-                " italy"
-            ) ||
-            name.endsWith(
-                "italy"
-            )
-        ) {
-            return true
-        }
-
-        return italianKeywords.any {
-            keyword ->
-
-            name.contains(
-                keyword
-            )
-        }
-    }
-
-    private fun cleanItalianName(
-        title: String
-    ): String {
-
-        return title
-            .replace(
-                Regex(
-                    """\s+Italy$""",
-                    RegexOption.IGNORE_CASE
-                ),
-                ""
-            )
-            .trim()
-    }
-
-    /*
-     * Solo per avere Rai/Mediaset
-     * in testa alla lista.
-     */
-    private fun italianOrder(
-        name: String
-    ): String {
-
-        val n =
-            name.lowercase()
-
-        val prefix =
-            when {
-
-                n == "rai 1" ->
-                    "001"
-
-                n == "rai 2" ->
-                    "002"
-
-                n == "rai 3" ->
-                    "003"
-
-                n.contains(
-                    "rete 4"
-                ) ->
-                    "004"
-
-                n.contains(
-                    "canale 5"
-                ) ->
-                    "005"
-
-                n.contains(
-                    "italia 1"
-                ) ->
-                    "006"
-
-                n.contains(
-                    "la7"
-                ) ->
-                    "007"
-
-                n.contains(
-                    "tv8"
-                ) ->
-                    "008"
-
-                n == "nove" ->
-                    "009"
-
-                else ->
-                    "100"
-            }
-
-        return "$prefix-$n"
-    }
-
-    // ============================================================
-    // SERIALIZZAZIONE
+    // DATA
     // ============================================================
 
     private fun buildData(
         type: String,
+        id: String,
         title: String,
-        category: String,
-        time: String
+        category: String
     ): String {
 
         return "https://rivestream.local/item?" +
             "type=${encode(type)}" +
+            "&id=${encode(id)}" +
             "&title=${encode(title)}" +
-            "&category=${encode(category)}" +
-            "&time=${encode(time)}"
+            "&category=${encode(category)}"
     }
 
     private fun parseData(
@@ -963,21 +668,17 @@ class RiveStreamProvider : MainAPI() {
         )
     }
 
-    private fun fixUrl(
+    private fun fixImageUrl(
         url: String
     ): String {
 
         return when {
 
-            url.startsWith(
-                "//"
-            ) ->
+            url.startsWith("//") ->
                 "https:$url"
 
-            url.startsWith(
-                "/"
-            ) ->
-                "$mainUrl$url"
+            url.startsWith("/") ->
+                "https://streamed.pk$url"
 
             else ->
                 url
