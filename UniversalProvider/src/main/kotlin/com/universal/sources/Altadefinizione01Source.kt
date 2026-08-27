@@ -1628,11 +1628,6 @@ class Altadefinizione01Source : SourceAdapter {
         return linksFound
     }
 
-       val vidxUrl =
-    "https://v.vidxgo.co/t/" +
-        "$imdb/" +
-        "$season/" +
-        "$episode"
     // ============================================================
     // LOAD LINKS UNIVERSAL
     // ============================================================
