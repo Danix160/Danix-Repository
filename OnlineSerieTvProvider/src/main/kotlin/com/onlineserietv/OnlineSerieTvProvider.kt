@@ -582,17 +582,57 @@ class OnlineSerieTvProvider : MainAPI() {
         )
 
         playerUrls.forEach { playerUrl ->
-
+        
             println(
-                "OSTV FILM -> loadExtractor = $playerUrl"
+                "OSTV FILM PLAYER = $playerUrl"
             )
+        
+            when {
+        
+                playerUrl.contains(
+                    "maxstream.video",
+                    ignoreCase = true
+                ) -> {
+        
+                    println(
+                        "OSTV FILM -> MaxStream locale"
+                    )
+        
+                    MaxStream().getUrl(
+                        playerUrl,
+                        data,
+                        subtitleCallback,
+                        callback
+                    )
+                }
 
-            loadExtractor(
-                playerUrl,
-                data,
-                subtitleCallback,
-                callback
-            )
+                playerUrl.contains(
+                    "uprot.net",
+                    ignoreCase = true
+                ) -> {
+        
+                    println(
+                        "OSTV FILM -> Uprot locale"
+                    )
+        
+                    Uprot().getUrl(
+                        playerUrl,
+                        data,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+        
+                else -> {
+        
+                    loadExtractor(
+                        playerUrl,
+                        data,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+            }
         }
 
         return true
@@ -608,17 +648,59 @@ class OnlineSerieTvProvider : MainAPI() {
         .map { it.trim() }
         .filter { it.isNotEmpty() }
 
-    urls.forEach { url ->
-
-        println("OSTV LOADLINKS URL = $url")
-
-        loadExtractor(
-            url,
-            mainUrl,
-            subtitleCallback,
-            callback
-        )
-    }
+            urls.forEach { url ->
+        
+            println(
+                "OSTV LOADLINKS URL = $url"
+            )
+        
+            when {
+        
+                url.contains(
+                    "maxstream.video",
+                    ignoreCase = true
+                ) -> {
+        
+                    println(
+                        "OSTV SERIE -> MaxStream locale"
+                    )
+        
+                    MaxStream().getUrl(
+                        url,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+        
+                url.contains(
+                    "uprot.net",
+                    ignoreCase = true
+                ) -> {
+        
+                    println(
+                        "OSTV SERIE -> Uprot locale"
+                    )
+        
+                    Uprot().getUrl(
+                        url,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+        
+                else -> {
+        
+                    loadExtractor(
+                        url,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+            }
+        }
 
     return true
 }
