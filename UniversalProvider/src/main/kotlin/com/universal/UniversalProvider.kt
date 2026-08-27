@@ -54,6 +54,13 @@ class UniversalProvider : MainAPI() {
 
         private const val BACKDROP_BASE =
             "https://image.tmdb.org/t/p/original"
+
+        // Backend IMDb episodes. Leave blank until configured.
+        private const val IMDB_EPISODE_API =
+            "https://universal-imdb-episodes.onrender.com/imdb/episodes"
+        
+        private const val IMDB_EPISODE_KEY =
+            "84549bd65b0bce0785d71dd6193ef001"
     }
 
     /*
@@ -544,6 +551,279 @@ class UniversalProvider : MainAPI() {
         }
     }
 
+
+    private data class ImdbEpisode(
+        val imdbId: String?,
+        val season: Int,
+        val episode: Int,
+        val title: String?
+    )
+
+    private suspend fun loadImdbEpisodeList(
+        imdbId: String
+    ): List<ImdbEpisode> {
+
+        if (imdbId.isBlank() || IMDB_EPISODE_API.isBlank()) {
+            return emptyList()
+        }
+
+        val url =
+            IMDB_EPISODE_API.trimEnd('/') + "/" + imdbId
+
+        Log.d(TAG, "IMDb EPISODES = $url")
+
+        val response =
+            try {
+                app.get(
+                    url,
+                    headers = mapOf(
+                        "X-Universal-Key" to IMDB_EPISODE_KEY
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "IMDb episode request error: ${e.message}"
+                )
+                return emptyList()
+            }
+
+        if (response.code !in 200..299) {
+            Log.e(TAG, "IMDb episode HTTP ${response.code}")
+            return emptyList()
+        }
+
+        return try {
+            val root = JSONObject(response.text)
+            val array = root.optJSONArray("episodes")
+                ?: return emptyList()
+
+            val result = mutableListOf<ImdbEpisode>()
+
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+
+                val season = item.optInt("season", 0)
+                val episode = item.optInt("episode", 0)
+
+                if (season <= 0 || episode <= 0) {
+                    continue
+                }
+
+                result.add(
+                    ImdbEpisode(
+                        imdbId =
+                            item.optString("id")
+                                .takeIf {
+                                    it.isNotBlank() && it != "null"
+                                },
+                        season = season,
+                        episode = episode,
+                        title =
+                            item.optString("title")
+                                .takeIf {
+                                    it.isNotBlank() && it != "null"
+                                }
+                    )
+                )
+            }
+
+            result
+                .distinctBy { it.season to it.episode }
+                .sortedWith(
+                    compareBy<ImdbEpisode> { it.season }
+                        .thenBy { it.episode }
+                )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "IMDb episode JSON error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun loadTmdbEpisodeMetadata(
+        tmdbId: Int,
+        seasonNumber: Int
+    ): Map<Int, Pair<String?, String?>> {
+
+        val url =
+            "$mainUrl/tv/$tmdbId/season/$seasonNumber" +
+                "?api_key=$TMDB_API_KEY" +
+                "&language=it-IT"
+
+        val response =
+            try {
+                app.get(url)
+            } catch (e: Exception) {
+                Log.e(TAG, "TMDB season metadata error: ${e.message}")
+                return emptyMap()
+            }
+
+        if (response.code !in 200..299) {
+            return emptyMap()
+        }
+
+        return try {
+            val json = JSONObject(response.text)
+            val array = json.optJSONArray("episodes")
+                ?: return emptyMap()
+
+            val result =
+                mutableMapOf<Int, Pair<String?, String?>>()
+
+            for (i in 0 until array.length()) {
+                val ep = array.optJSONObject(i) ?: continue
+
+                val episodeNumber =
+                    ep.optInt("episode_number", 0)
+
+                if (episodeNumber <= 0) continue
+
+                val episodeTitle =
+                    ep.optString("name")
+                        .takeIf {
+                            it.isNotBlank() && it != "null"
+                        }
+
+                val still =
+                    ep.optString("still_path")
+                        .takeIf {
+                            it.isNotBlank() && it != "null"
+                        }
+                        ?.let {
+                            IMAGE_BASE + it
+                        }
+
+                result[episodeNumber] =
+                    episodeTitle to still
+            }
+
+            result
+
+        } catch (e: Exception) {
+            Log.e(TAG, "TMDB metadata JSON error: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    private suspend fun buildEpisodesFromImdb(
+        imdbEpisodes: List<ImdbEpisode>,
+        tmdbId: Int,
+        title: String,
+        originalTitle: String?,
+        year: Int?,
+        imdbId: String?,
+        poster: String?
+    ): List<Episode> {
+
+        val result = mutableListOf<Episode>()
+
+        val metadataCache =
+            mutableMapOf<Int, Map<Int, Pair<String?, String?>>>()
+
+        var absolute = 0
+
+        for (imdbEpisode in imdbEpisodes) {
+            absolute++
+
+            val seasonMetadata =
+                metadataCache[imdbEpisode.season]
+                    ?: loadTmdbEpisodeMetadata(
+                        tmdbId = tmdbId,
+                        seasonNumber = imdbEpisode.season
+                    ).also {
+                        metadataCache[imdbEpisode.season] = it
+                    }
+
+            val tmdbMetadata =
+                seasonMetadata[imdbEpisode.episode]
+
+            val episodeTitle =
+                imdbEpisode.title
+                    ?: tmdbMetadata?.first
+                    ?: "Episodio ${imdbEpisode.episode}"
+
+            val still =
+                tmdbMetadata?.second ?: poster
+
+            val media =
+                UniversalMedia(
+                    title = title,
+                    originalTitle = originalTitle,
+                    year = year,
+                    tmdbId = tmdbId,
+                    imdbId = imdbId,
+                    season = imdbEpisode.season,
+                    episode = imdbEpisode.episode,
+                    absoluteEpisode = absolute,
+                    episodeTitle = episodeTitle,
+                    isMovie = false
+                )
+
+            result.add(
+                newEpisode(
+                    encodeMedia(media)
+                ) {
+                    this.name = episodeTitle
+                    this.season = imdbEpisode.season
+                    this.episode = imdbEpisode.episode
+                    this.posterUrl = still
+                }
+            )
+        }
+
+        return result
+    }
+
+    private suspend fun loadTmdbEpisodeCatalog(
+        tmdbId: Int,
+        title: String,
+        originalTitle: String?,
+        year: Int?,
+        imdbId: String?,
+        seasons: org.json.JSONArray?
+    ): List<Episode> {
+
+        val result = mutableListOf<Episode>()
+        var absoluteOffset = 0
+
+        if (seasons == null) {
+            return result
+        }
+
+        for (i in 0 until seasons.length()) {
+            val season =
+                seasons.optJSONObject(i)
+                    ?: continue
+
+            val seasonNumber =
+                season.optInt("season_number", -1)
+
+            if (seasonNumber <= 0) {
+                continue
+            }
+
+            val episodeCount =
+                season.optInt("episode_count", 0)
+
+            result.addAll(
+                loadSeasonEpisodes(
+                    tmdbId = tmdbId,
+                    title = title,
+                    originalTitle = originalTitle,
+                    year = year,
+                    imdbId = imdbId,
+                    seasonNumber = seasonNumber,
+                    absoluteOffset = absoluteOffset
+                )
+            )
+
+            absoluteOffset += episodeCount
+        }
+
+        return result
+    }
+
     private suspend fun loadTv(
         tmdbId: Int
     ): LoadResponse? {
@@ -637,67 +917,57 @@ class UniversalProvider : MainAPI() {
                 "seasons"
             )
 
-        val tmdbEpisodes =
-        mutableListOf<Episode>()
-        var absoluteOffset = 0
-        
-        if (seasons != null) {
-
-            for (
-                i in 0 until seasons.length()
-            ) {
-        
-                val season =
-                    seasons.optJSONObject(i)
-                        ?: continue
-        
-                val seasonNumber =
-                    season.optInt(
-                        "season_number",
-                        -1
-                    )
-        
-                if (
-                    seasonNumber <= 0
-                ) {
-                    continue
-                }
-        
-                val episodeCount =
-                    season.optInt(
-                        "episode_count",
-                        0
-                    )
-        
-                tmdbEpisodes.addAll(
-                    loadSeasonEpisodes(
-                        tmdbId =
-                            tmdbId,
-                
-                        title =
-                            title,
-                
-                        originalTitle =
-                            originalTitle,
-                
-                        year =
-                            year,
-                
-                        imdbId =
-                            imdbId,
-                
-                        seasonNumber =
-                            seasonNumber,
-                
-                        absoluteOffset =
-                            absoluteOffset
-                    )
-                )
-        
-                absoluteOffset +=
-                    episodeCount
+        /*
+         * IMDb decide la struttura stagione/episodio.
+         * TMDB resta il fallback e la fonte grafica/metadati.
+         */
+        val imdbEpisodes =
+            if (!imdbId.isNullOrBlank()) {
+                loadImdbEpisodeList(imdbId)
+            } else {
+                emptyList()
             }
-        }
+
+        Log.d(
+            TAG,
+            "IMDb EPISODES trovati = ${imdbEpisodes.size}"
+        )
+
+        val catalogEpisodes: List<Episode> =
+            if (imdbEpisodes.isNotEmpty()) {
+
+                Log.d(
+                    TAG,
+                    "Uso IMDb come struttura episodi"
+                )
+
+                buildEpisodesFromImdb(
+                    imdbEpisodes = imdbEpisodes,
+                    tmdbId = tmdbId,
+                    title = title,
+                    originalTitle = originalTitle,
+                    year = year,
+                    imdbId = imdbId,
+                    poster = poster
+                )
+
+            } else {
+
+                Log.d(
+                    TAG,
+                    "IMDb non disponibile: fallback TMDB"
+                )
+
+                loadTmdbEpisodeCatalog(
+                    tmdbId = tmdbId,
+                    title = title,
+                    originalTitle = originalTitle,
+                    year = year,
+                    imdbId = imdbId,
+                    seasons = seasons
+                )
+            }
+
         val seriesMedia =
             UniversalMedia(
                 title = title,
@@ -775,7 +1045,7 @@ class UniversalProvider : MainAPI() {
                 }
         )
 
-                    val filteredTmdbEpisodes =
+                    val filteredCatalogEpisodes =
                 if (inventories.isEmpty()) {
             
                     /*
@@ -783,11 +1053,11 @@ class UniversalProvider : MainAPI() {
                      * non vengono caricati, manteniamo TMDB
                      * come fallback.
                      */
-                    tmdbEpisodes
+                    catalogEpisodes
             
                 } else {
             
-                    tmdbEpisodes.filter { episode ->
+                    catalogEpisodes.filter { episode ->
             
                         val media =
                             decodeMedia(
@@ -827,7 +1097,7 @@ class UniversalProvider : MainAPI() {
              */
             
             val tmdbKeys =
-                tmdbEpisodes
+                catalogEpisodes
                     .mapNotNull { episode ->
             
                         val media =
@@ -960,7 +1230,7 @@ class UniversalProvider : MainAPI() {
             
             val filteredEpisodes =
                 (
-                    filteredTmdbEpisodes +
+                    filteredCatalogEpisodes +
                         providerOnlyEpisodes
                 )
                     .sortedWith(
@@ -976,7 +1246,7 @@ class UniversalProvider : MainAPI() {
             Log.d(
                 TAG,
                 "UI EPISODI: " +
-                    "${tmdbEpisodes.size} TMDB, " +
+                    "${catalogEpisodes.size} catalogo, " +
                     "${inventories.size} provider, " +
                     "${providerOnlyEpisodes.size} extra provider, " +
                     "${filteredEpisodes.size} finali"
