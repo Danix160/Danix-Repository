@@ -1160,162 +1160,310 @@ class UniversalProvider : MainAPI() {
                     .toSet()
             
             
-            val providerOnlyEpisodes =
-                referenceInventory
-                    /*
-                     * Un episodio presente sia su AD01 che OSTV
-                     * deve comparire una sola volta.
-                     */
-                    .groupBy {
-                        it.season to
-                            it.episode
-                    }
-                    .mapNotNull { (_, providerVersions) ->
-            
-                        val providerEpisode =
-                            providerVersions
-                                .firstOrNull()
-                                ?: return@mapNotNull null
-            
-                        val season =
-                            providerEpisode.season
-                                ?: return@mapNotNull null
-            
-                        val episodeNumber =
-                            providerEpisode.episode
-                                ?: return@mapNotNull null
-            
-                        /*
-                         * Se TMDB possiede già questo episodio,
-                         * viene utilizzata la versione TMDB.
-                         */
-                        if (
-                            tmdbKeys.contains(
-                                season to
-                                    episodeNumber
-                            )
-                        ) {
-            
-                            return@mapNotNull null
+            /*
+ * ============================================================
+ * EPISODI EXTRA DEI PROVIDER
+ * ============================================================
+ *
+ * Alcune serie animate vengono divise dai siti italiani
+ * in singoli segmenti:
+ *
+ * 1x01
+ * 1x01.1
+ * 1x01.2
+ *
+ * IMDb può considerarli un solo episodio televisivo,
+ * mentre AD01/OSTV li espongono come episodi separati.
+ *
+ * Se nell'inventario sono presenti "part",
+ * usiamo quindi absoluteEpisode per creare una
+ * numerazione progressiva per stagione.
+ */
+
+val hasEpisodeParts =
+    referenceInventory.any {
+        it.part != null
+    }
+
+val providerOnlyEpisodes =
+    if (hasEpisodeParts) {
+
+        Log.d(
+            TAG,
+            "Rilevata numerazione a segmenti/parti"
+        )
+
+        /*
+         * Raggruppiamo prima per stagione.
+         */
+        referenceInventory
+            .groupBy {
+                it.season
+            }
+            .flatMap { (seasonNumber, seasonEpisodes) ->
+
+                if (seasonNumber == null) {
+                    return@flatMap emptyList()
+                }
+
+                /*
+                 * Manteniamo ogni combinazione
+                 * episodio + parte separata.
+                 */
+                val uniqueEpisodes =
+                    seasonEpisodes
+                        .groupBy {
+                            it.episode to
+                                it.part
                         }
-            
-                        /*
-                         * Episodio realmente presente sul provider
-                         * ma sconosciuto a TMDB.
-                         */
+                        .mapNotNull { (_, versions) ->
+
+                            versions.firstOrNull()
+                        }
+                        .sortedWith(
+                            compareBy<ProviderEpisode> {
+                                it.episode ?: 0
+                            }
+                                .thenBy {
+                                    it.part ?: 0
+                                }
+                        )
+
+                /*
+                 * Ogni segmento diventa un vero
+                 * episodio progressivo Cloudstream:
+                 *
+                 * 1x01   → E1
+                 * 1x01.1 → E2
+                 * 1x01.2 → E3
+                 * ...
+                 */
+                uniqueEpisodes
+                    .mapIndexed { index, providerEpisode ->
+
+                        val newEpisodeNumber =
+                            index + 1
+
                         val providerMedia =
                             UniversalMedia(
                                 title =
                                     title,
-            
+
                                 originalTitle =
                                     originalTitle,
-            
+
                                 year =
                                     year,
-            
+
                                 tmdbId =
                                     tmdbId,
-            
+
                                 imdbId =
                                     imdbId,
-            
+
                                 season =
-                                    season,
-            
+                                    seasonNumber,
+
                                 episode =
-                                    episodeNumber,
-            
+                                    newEpisodeNumber,
+
                                 absoluteEpisode =
                                     providerEpisode.absoluteEpisode,
-            
+
                                 episodeTitle =
                                     providerEpisode.title,
-            
+
                                 isMovie =
                                     false
                             )
-            
+
                         newEpisode(
                             encodeMedia(
                                 providerMedia
                             )
                         ) {
-            
+
                             this.name =
                                 providerEpisode.title
                                     ?.takeIf {
                                         it.isNotBlank()
                                     }
-                                    ?: "Episodio $episodeNumber"
-            
+                                    ?: "Episodio $newEpisodeNumber"
+
                             this.season =
-                                season
-            
+                                seasonNumber
+
                             this.episode =
-                                episodeNumber
-            
-                            /*
-                             * TMDB non possiede una still
-                             * specifica per questo episodio.
-                             *
-                             * Usiamo quindi la copertina
-                             * della serie come anteprima.
-                             */
+                                newEpisodeNumber
+
                             this.posterUrl =
                                 poster
                         }
                     }
-            
-            
-            val filteredEpisodes =
-                (
-                    filteredCatalogEpisodes +
-                        providerOnlyEpisodes
-                )
-                    .sortedWith(
-                        compareBy<Episode> {
-                            it.season ?: 0
-                        }
-                            .thenBy {
-                                it.episode ?: 0
-                            }
+            }
+
+    } else {
+
+        /*
+         * Serie normali:
+         * manteniamo il comportamento precedente.
+         */
+
+        referenceInventory
+            .groupBy {
+                it.season to
+                    it.episode
+            }
+            .mapNotNull { (_, providerVersions) ->
+
+                val providerEpisode =
+                    providerVersions
+                        .firstOrNull()
+                        ?: return@mapNotNull null
+
+                val season =
+                    providerEpisode.season
+                        ?: return@mapNotNull null
+
+                val episodeNumber =
+                    providerEpisode.episode
+                        ?: return@mapNotNull null
+
+                if (
+                    tmdbKeys.contains(
+                        season to
+                            episodeNumber
                     )
-            
-            
-            Log.d(
-                TAG,
-                "UI EPISODI: " +
-                    "${catalogEpisodes.size} catalogo, " +
-                    "${inventories.size} provider, " +
-                    "${providerOnlyEpisodes.size} extra provider, " +
-                    "${filteredEpisodes.size} finali"
-            )
+                ) {
 
-        return newTvSeriesLoadResponse(
-            title,
-            buildLoadData(
-                tmdbId,
-                false
-            ),
-            TvType.TvSeries,
-            filteredEpisodes
-        ) {
+                    return@mapNotNull null
+                }
 
-            this.posterUrl =
-                poster
+                val providerMedia =
+                    UniversalMedia(
+                        title =
+                            title,
 
-            this.backgroundPosterUrl =
-                backdrop
+                        originalTitle =
+                            originalTitle,
 
-            this.plot =
-                plot
+                        year =
+                            year,
 
-            this.year =
-                year
-        }
+                        tmdbId =
+                            tmdbId,
+
+                        imdbId =
+                            imdbId,
+
+                        season =
+                            season,
+
+                        episode =
+                            episodeNumber,
+
+                        absoluteEpisode =
+                            providerEpisode.absoluteEpisode,
+
+                        episodeTitle =
+                            providerEpisode.title,
+
+                        isMovie =
+                            false
+                    )
+
+                newEpisode(
+                    encodeMedia(
+                        providerMedia
+                    )
+                ) {
+
+                    this.name =
+                        providerEpisode.title
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: "Episodio $episodeNumber"
+
+                    this.season =
+                        season
+
+                    this.episode =
+                        episodeNumber
+
+                    this.posterUrl =
+                        poster
+                }
+            }
     }
+    val filteredEpisodes =
+    (
+        if (hasEpisodeParts) {
 
+            /*
+             * Se i provider espongono segmenti/parti,
+             * la loro struttura episodica ha precedenza
+             * su IMDb.
+             */
+            providerOnlyEpisodes
+
+        } else {
+
+            /*
+             * Serie normali:
+             * IMDb come base + eventuali episodi extra
+             * trovati sui provider.
+             */
+            filteredCatalogEpisodes +
+                providerOnlyEpisodes
+        }
+    )
+        .distinctBy {
+            (it.season ?: 0) to
+                (it.episode ?: 0)
+        }
+        .sortedWith(
+            compareBy<Episode> {
+                it.season ?: 0
+            }
+                .thenBy {
+                    it.episode ?: 0
+                }
+        )
+
+Log.d(
+    TAG,
+    "UI EPISODI: " +
+        "${catalogEpisodes.size} catalogo, " +
+        "${inventories.size} provider, " +
+        "${providerOnlyEpisodes.size} provider finali, " +
+        "${filteredEpisodes.size} finali, " +
+        "parts=$hasEpisodeParts"
+)
+
+return newTvSeriesLoadResponse(
+    title,
+    buildLoadData(
+        tmdbId,
+        false
+    ),
+    TvType.TvSeries,
+    filteredEpisodes
+) {
+
+    this.posterUrl =
+        poster
+
+    this.backgroundPosterUrl =
+        backdrop
+
+    this.plot =
+        plot
+
+    this.year =
+        year
+}
+}
     private suspend fun loadSeasonEpisodes(
         tmdbId: Int,
         title: String,
