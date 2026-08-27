@@ -875,6 +875,34 @@ class Altadefinizione01Source : SourceAdapter {
                         )
                     }
                 }
+
+                if (result.isEmpty()) {
+    Log.d(
+        TAG,
+        "AD01 INVENTORY DEBUG seasons=" +
+            document.select("[id^=season-]").size +
+            " dataLink=" +
+            document.select("[data-link]").size +
+            " li=" +
+            document.select("li").size +
+            " iframe=" +
+            document.select("iframe").size
+    )
+
+    document.select("[data-link]")
+        .take(30)
+        .forEachIndexed { index, element ->
+            Log.d(
+                TAG,
+                "AD01 DATA-LINK[$index] " +
+                    "tag=${element.tagName()} " +
+                    "class=${element.className()} " +
+                    "num=${element.attr("data-num")} " +
+                    "link=${element.attr("data-link")} " +
+                    "text=${element.text()}"
+            )
+        }
+}
         
             Log.d(
                 TAG,
