@@ -7,6 +7,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.universal.models.UniversalMedia
 import com.universal.models.ProviderEpisode
+import com.universal.extractors.MaxStream
+import com.universal.extractors.Uprot
 import com.universal.utils.EpisodeMapper
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -1193,6 +1195,63 @@ class OnlineSerieTvSource : SourceAdapter {
         return null
     }
 
+    private suspend fun loadUniversalExtractor(
+        url: String,
+        referer: String?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+    
+        when {
+    
+            url.contains(
+                "uprot.net",
+                ignoreCase = true
+            ) -> {
+    
+                Log.d(
+                    TAG,
+                    "Uso Uprot Universal"
+                )
+    
+                Uprot().getUrl(
+                    url,
+                    referer,
+                    subtitleCallback,
+                    callback
+                )
+            }
+    
+            url.contains(
+                "maxstream.video",
+                ignoreCase = true
+            ) -> {
+    
+                Log.d(
+                    TAG,
+                    "Uso MaxStream Universal"
+                )
+    
+                MaxStream().getUrl(
+                    url,
+                    referer,
+                    subtitleCallback,
+                    callback
+                )
+            }
+    
+            else -> {
+    
+                loadExtractor(
+                    url,
+                    referer,
+                    subtitleCallback,
+                    callback
+                )
+            }
+        }
+    }
+
     // ============================================================
     // FILM
     // ============================================================
@@ -1398,7 +1457,7 @@ class OnlineSerieTvSource : SourceAdapter {
                     "FILM extractor = $playerUrl"
                 )
 
-                loadExtractor(
+                loadUniversalExtractor(
                     playerUrl,
                     pageUrl,
                     subtitleCallback,
@@ -1512,7 +1571,7 @@ class OnlineSerieTvSource : SourceAdapter {
                     "OSTV MAPPED extractor = $playerUrl"
                 )
     
-                loadExtractor(
+                loadUniversalExtractor(
                     playerUrl,
                     showUrl,
                     subtitleCallback,
