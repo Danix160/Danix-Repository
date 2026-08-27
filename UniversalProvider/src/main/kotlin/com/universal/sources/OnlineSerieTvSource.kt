@@ -1221,6 +1221,38 @@ class OnlineSerieTvSource : SourceAdapter {
                         )
                     )
                 }
+                       
+                if (result.isEmpty()) {
+            Log.d(
+                TAG,
+                "OSTV INVENTORY DEBUG " +
+                    "tables=${document.select("table").size} " +
+                    "tr=${document.select("table tr").size} " +
+                    "links=${document.select("a[href]").size} " +
+                    "iframes=${document.select("iframe").size}"
+            )
+        
+            document.select("a[href]")
+                .filter { element ->
+                    val text = element.text()
+                    val href = element.attr("href")
+        
+                    text.contains("x", ignoreCase = true) ||
+                        text.contains("episod", ignoreCase = true) ||
+                        href.contains("uprot", ignoreCase = true) ||
+                        href.contains("maxstream", ignoreCase = true)
+                }
+                .take(40)
+                .forEachIndexed { index, element ->
+                    Log.d(
+                        TAG,
+                        "OSTV LINK[$index] " +
+                            "href=${element.attr("href")} " +
+                            "text=${element.text()} " +
+                            "parent=${element.parent()?.text()?.take(200)}"
+                    )
+                }
+        }
             
                 Log.d(
                     TAG,
