@@ -814,14 +814,6 @@ class UniversalProvider : MainAPI() {
                                     "available=$available"
                             )
             
-                            Log.d(
-                                TAG,
-                                "TMDB UI " +
-                                    "S${media.season}E${media.episode} " +
-                                    "providerMax=$maxProviderEpisode " +
-                                    "available=$available"
-                            )
-            
                             available
                         }
                     }
