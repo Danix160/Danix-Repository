@@ -327,24 +327,6 @@ class RiveStreamProvider : MainAPI() {
             }"
         )
 
-        val json = try {
-
-            AppUtils.parseJson<
-                Any
-            >(
-                response.text
-            )
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "TV JSON ERROR = ${e.message}"
-            )
-
-            null
-        }
-
         /*
          * Per ora la TV rimane vuota.
          *
