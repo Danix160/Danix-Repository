@@ -6,6 +6,9 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.universal.models.UniversalMedia
+import com.universal.extractors.MaxStream
+import com.universal.extractors.Uprot
+import com.universal.extractors.VidxGoExtractor
 import com.universal.models.ProviderEpisode
 import com.universal.utils.EpisodeMapper
 import org.jsoup.nodes.Document
@@ -902,6 +905,91 @@ class Altadefinizione01Source : SourceAdapter {
             return result
         }
 
+        private suspend fun loadUniversalExtractor(
+            url: String,
+            referer: String?,
+            subtitleCallback: (SubtitleFile) -> Unit,
+            callback: (ExtractorLink) -> Unit
+        ) {
+        
+            Log.d(
+                TAG,
+                "LOCAL EXTRACTOR = $url"
+            )
+        
+            when {
+        
+                url.contains(
+                    "v.vidxgo.co",
+                    ignoreCase = true
+                ) -> {
+        
+                    Log.d(
+                        TAG,
+                        "Uso VidxGoExtractor Universal"
+                    )
+        
+                    VidxGoExtractor().getUrl(
+                        url,
+                        referer,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+        
+                url.contains(
+                    "uprot.net",
+                    ignoreCase = true
+                ) -> {
+        
+                    Log.d(
+                        TAG,
+                        "Uso Uprot Universal"
+                    )
+        
+                    Uprot().getUrl(
+                        url,
+                        referer,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+        
+                url.contains(
+                    "maxstream.video",
+                    ignoreCase = true
+                ) -> {
+        
+                    Log.d(
+                        TAG,
+                        "Uso MaxStream Universal"
+                    )
+        
+                    MaxStream().getUrl(
+                        url,
+                        referer,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+        
+                else -> {
+        
+                    Log.d(
+                        TAG,
+                        "Fallback loadExtractor globale = $url"
+                    )
+        
+                    loadExtractor(
+                        url,
+                        referer,
+                        subtitleCallback,
+                        callback
+                    )
+                }
+            }
+        }
+
         override suspend fun getEpisodeInventory(
             media: UniversalMedia
         ): List<ProviderEpisode> {
@@ -1277,7 +1365,7 @@ class Altadefinizione01Source : SourceAdapter {
 
                             try {
 
-                                loadExtractor(
+                                loadUniversalExtractor(
                                     link,
                                     iframeUrl,
                                     subtitleCallback,
@@ -1338,7 +1426,7 @@ class Altadefinizione01Source : SourceAdapter {
 
                 try {
 
-                    loadExtractor(
+                    loadUniversalExtractor(
                         vidxUrl,
                         "$MAIN_URL/",
                         subtitleCallback,
@@ -1428,7 +1516,7 @@ class Altadefinizione01Source : SourceAdapter {
                             "AD01 MAPPED extractor = $playerUrl"
                         )
     
-                        loadExtractor(
+                        loadUniversalExtractor(
                             playerUrl,
                             showUrl,
                             subtitleCallback,
@@ -1518,7 +1606,7 @@ class Altadefinizione01Source : SourceAdapter {
     
                 try {
     
-                    loadExtractor(
+                    loadUniversalExtractor(
                         vidxUrl,
                         "$MAIN_URL/",
                         subtitleCallback,
@@ -1539,6 +1627,12 @@ class Altadefinizione01Source : SourceAdapter {
     
         return linksFound
     }
+
+       val vidxUrl =
+    "https://v.vidxgo.co/t/" +
+        "$imdb/" +
+        "$season/" +
+        "$episode"
     // ============================================================
     // LOAD LINKS UNIVERSAL
     // ============================================================
