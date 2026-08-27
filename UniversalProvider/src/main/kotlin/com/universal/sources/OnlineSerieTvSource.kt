@@ -826,6 +826,176 @@ class OnlineSerieTvSource : SourceAdapter {
         return best
     }
 
+            private suspend fun normalizeAbsoluteEpisodes(
+            media: UniversalMedia,
+            episodes: List<ProviderEpisode>
+        ): List<ProviderEpisode> {
+        
+            val tmdbId =
+                media.tmdbId
+                    ?: return episodes
+        
+            if (episodes.isEmpty()) {
+                return episodes
+            }
+        
+            /*
+             * Se il provider espone già più stagioni reali,
+             * non dobbiamo modificare nulla.
+             */
+            val providerSeasons =
+                episodes
+                    .mapNotNull { it.season }
+                    .distinct()
+        
+            if (providerSeasons.size > 1) {
+                return episodes
+            }
+        
+            /*
+             * Recuperiamo le stagioni reali da TMDB.
+             */
+            val response =
+                try {
+                    app.get(
+                        "https://api.themoviedb.org/3/tv/$tmdbId" +
+                            "?api_key=e541cb159df14ce70fc51ab75703a1a2" +
+                            "&language=it-IT"
+                    )
+                } catch (e: Exception) {
+        
+                    Log.e(
+                        TAG,
+                        "TMDB season map error: ${e.message}"
+                    )
+        
+                    return episodes
+                }
+        
+            if (response.code !in 200..299) {
+                return episodes
+            }
+        
+            val json =
+                try {
+                    org.json.JSONObject(
+                        response.text
+                    )
+                } catch (_: Exception) {
+                    return episodes
+                }
+        
+            val seasonsArray =
+                json.optJSONArray("seasons")
+                    ?: return episodes
+        
+            val seasonCounts =
+                mutableListOf<Pair<Int, Int>>()
+        
+            for (
+                i in 0 until seasonsArray.length()
+            ) {
+        
+                val season =
+                    seasonsArray.optJSONObject(i)
+                        ?: continue
+        
+                val seasonNumber =
+                    season.optInt(
+                        "season_number",
+                        -1
+                    )
+        
+                val episodeCount =
+                    season.optInt(
+                        "episode_count",
+                        0
+                    )
+        
+                /*
+                 * Ignoriamo gli speciali / stagione 0.
+                 */
+                if (
+                    seasonNumber > 0 &&
+                    episodeCount > 0
+                ) {
+        
+                    seasonCounts.add(
+                        seasonNumber to episodeCount
+                    )
+                }
+            }
+        
+            if (seasonCounts.size <= 1) {
+                return episodes
+            }
+        
+            Log.d(
+                TAG,
+                "OSTV normalizzazione assoluta TMDB = $seasonCounts"
+            )
+        
+            return episodes.map { providerEpisode ->
+        
+                val absolute =
+                    providerEpisode.absoluteEpisode
+                        ?: return@map providerEpisode
+        
+                var remaining =
+                    absolute
+        
+                var mappedSeason: Int? =
+                    null
+        
+                var mappedEpisode: Int? =
+                    null
+        
+                for (
+                    (seasonNumber, count) in seasonCounts
+                ) {
+        
+                    if (remaining <= count) {
+        
+                        mappedSeason =
+                            seasonNumber
+        
+                        mappedEpisode =
+                            remaining
+        
+                        break
+                    }
+        
+                    remaining -=
+                        count
+                }
+        
+                if (
+                    mappedSeason == null ||
+                    mappedEpisode == null
+                ) {
+        
+                    providerEpisode
+        
+                } else {
+        
+                    Log.d(
+                        TAG,
+                        "OSTV ABS $absolute: " +
+                            "S${providerEpisode.season}E${providerEpisode.episode} " +
+                            "→ S${mappedSeason}E${mappedEpisode}"
+                    )
+        
+                    providerEpisode.copy(
+                        season =
+                            mappedSeason,
+        
+                        episode =
+                            mappedEpisode
+                    )
+                }
+            }
+        }
+
     // ============================================================
     // PARSING EPISODE
     // ============================================================
@@ -1115,9 +1285,15 @@ class OnlineSerieTvSource : SourceAdapter {
             val document =
                 selected.second
         
-            return buildProviderEpisodes(
-                document,
-                media.title
+            val rawEpisodes =
+                buildProviderEpisodes(
+                    document,
+                    media.title
+                )
+            
+            return normalizeAbsoluteEpisodes(
+                media,
+                rawEpisodes
             )
         }
             
@@ -1493,9 +1669,12 @@ class OnlineSerieTvSource : SourceAdapter {
     ): Int {
     
        val providerEpisodes =
-            buildProviderEpisodes(
-                document,
-                media.title
+            normalizeAbsoluteEpisodes(
+                media,
+                buildProviderEpisodes(
+                    document,
+                    media.title
+                )
             )
     
         if (providerEpisodes.isEmpty()) {
