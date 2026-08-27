@@ -1058,24 +1058,7 @@ class UniversalProvider : MainAPI() {
                     .distinct()
 
             preferred.copy(
-                urls =
-                    mergedUrls,
-
-                /*
-                 * Se il provider preferito non ha
-                 * absoluteEpisode, prova gli altri.
-                 */
-                absoluteEpisode =
-                    preferred.absoluteEpisode
-                        ?: versions
-                            .mapNotNull {
-                                it.absoluteEpisode
-                            }
-                            .firstOrNull(),
-
-                /*
-                 * Mantieni il primo titolo utile.
-                 */
+                urls = mergedUrls,
                 title =
                     preferred.title
                         ?.takeIf {
