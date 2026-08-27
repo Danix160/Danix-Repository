@@ -59,8 +59,6 @@ class RiveStreamProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
 
-        "italian-tv" to
-            "TV Italiana",
 
         "sports-live" to
             "Eventi sportivi",
@@ -95,10 +93,6 @@ class RiveStreamProvider : MainAPI() {
 
         return when (request.data) {
 
-            "italian-tv" ->
-                loadItalianTv(
-                    request.name
-                )
 
             "sports-live" ->
                 loadSports(
@@ -180,20 +174,19 @@ class RiveStreamProvider : MainAPI() {
 
         val events = try {
 
-            response.parsedSafe<
-                List<RiveSportEvent>
-            >()
-                ?: emptyList()
-
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "SPORT JSON ERROR = ${e.message}"
-            )
-
-            emptyList()
-        }
+        val raw = response.parsedSafe<Array<RiveSportEvent>>()
+    
+        raw?.toList() ?: emptyList()
+    
+    } catch (e: Exception) {
+    
+        Log.e(
+            TAG,
+            "SPORT JSON ERROR = ${e.message}"
+        )
+    
+        emptyList()
+    }
 
         Log.d(
             TAG,
