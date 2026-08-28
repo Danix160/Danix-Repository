@@ -1037,7 +1037,15 @@ try {
     )
 
     Log.d(TAG, "PRIVATE INDEX HTTP = ${test.code}")
-    Log.d(TAG, "PRIVATE INDEX BODY = ${test.text.take(200)}")
+    
+    test.text.lines().forEach { line ->
+    if (
+        line.contains("#EXT-X-STREAM-INF") ||
+        line.contains("RESOLUTION=")
+    ) {
+        Log.d(TAG, "PRIVATE QUALITY = $line")
+    }
+}
 
     if (!test.text.trimStart().startsWith("#EXTM3U")) {
 
