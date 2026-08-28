@@ -222,7 +222,22 @@ class RiveStreamProvider : MainAPI() {
                 )
         }
     }
-
+    
+    private fun horizontalHomePage(
+        sectionName: String,
+        cards: List<SearchResponse>
+    ): HomePageResponse {
+        return HomePageResponse(
+            items = listOf(
+                HomePageList(
+                    name = sectionName,
+                    list = cards,
+                    isHorizontalImages = true
+                )
+            ),
+            hasNext = false
+        )
+    }
     // ============================================================
     // EVENTI SPORTIVI
     // ============================================================
@@ -356,7 +371,7 @@ class RiveStreamProvider : MainAPI() {
             "SPORT CARDS = ${cards.size}"
         )
 
-        return newHomePageResponse(
+        return horizontalHomePage(
             sectionName,
             cards
         )
@@ -506,7 +521,7 @@ class RiveStreamProvider : MainAPI() {
                 "TV CARDS = ${cards.size}"
             )
         
-            return newHomePageResponse(
+            return horizontalHomePage(
                 sectionName,
                 cards
             )
@@ -725,10 +740,10 @@ class RiveStreamProvider : MainAPI() {
         "PRIVATE TV CARDS = ${cards.size}"
     )
 
-    return newHomePageResponse(
-        sectionName,
-        cards
-    )
+    return horizontalHomePage(
+    sectionName,
+    cards
+)
 }
 
     private fun extractItalianPrivateChannels(
