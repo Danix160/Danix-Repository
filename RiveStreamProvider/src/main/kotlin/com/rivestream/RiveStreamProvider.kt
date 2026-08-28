@@ -709,10 +709,15 @@ class RiveStreamProvider : MainAPI() {
                         ?.takeIf { it.isNotBlank() }
                         ?: return@mapNotNull null
 
-                        val poster =
+                        val originalPoster =
                             findItalianChannelLogo(
                                 title,
                                 logos
+                            )
+                        
+                        val poster =
+                            fixWikimediaLogoUrl(
+                                originalPoster
                             )
                         
                         Log.d(
@@ -1371,6 +1376,75 @@ normalized = when (normalized) {
     )
 
     return null
+}
+
+private fun fixWikimediaLogoUrl(
+    url: String?
+): String? {
+
+    if (url.isNullOrBlank()) {
+        return url
+    }
+
+    val marker =
+        "upload.wikimedia.org/wikipedia/commons/thumb/"
+
+    if (!url.contains(marker, ignoreCase = true)) {
+        return url
+    }
+
+    return try {
+
+        val path =
+            url.substringAfter(marker)
+
+        val parts =
+            path.split("/")
+
+        // Wikimedia thumb:
+        // a/a1/File.svg/960px-File.svg.png
+        if (parts.size < 4) {
+            return url
+        }
+
+        val fileName =
+            parts[2]
+
+        val decodedFileName =
+            URLDecoder.decode(
+                fileName,
+                "UTF-8"
+            )
+
+        val encodedFileName =
+            URLEncoder.encode(
+                decodedFileName,
+                "UTF-8"
+            )
+                .replace("+", "_")
+
+        val fixedUrl =
+            "https://commons.wikimedia.org/wiki/" +
+                "Special:Redirect/file/" +
+                encodedFileName +
+                "?width=500"
+
+        Log.d(
+            TAG,
+            "WIKIMEDIA FIX = $url -> $fixedUrl"
+        )
+
+        fixedUrl
+
+    } catch (e: Exception) {
+
+        Log.e(
+            TAG,
+            "WIKIMEDIA FIX ERROR = ${e.message}"
+        )
+
+        url
+    }
 }
     // ============================================================
     // SEARCH
