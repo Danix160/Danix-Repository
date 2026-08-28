@@ -2001,42 +2001,179 @@ if (type == "tv") {
             "SPORT EMBED SIZE = ${embedHtml.length}"
         )
 
-        Log.d(
-            TAG,
-            "SPORT EMBED BODY = ${
-                embedHtml
-                    .take(3000)
+        val normalizedHtml =
+    embedHtml.replace("\\/", "/")
+
+// ============================================================
+// DEBUG PLAYER OFFUSCATO
+// ============================================================
+
+// Cerca variabili window['nome']='valore'
+val windowVars =
+    Regex(
+        """window\[['"]([^'"]+)['"]\]\s*=\s*['"]([^'"]+)['"]"""
+    )
+        .findAll(normalizedHtml)
+        .toList()
+
+Log.d(
+    TAG,
+    "SPORT WINDOW VARS = ${windowVars.size}"
+)
+
+windowVars.take(10).forEach { match ->
+
+    val variableName =
+        match.groupValues[1]
+
+    val value =
+        match.groupValues[2]
+
+    Log.d(
+        TAG,
+        "SPORT WINDOW VAR = " +
+            "$variableName | " +
+            "len=${value.length} | " +
+            "start=${value.take(80)}"
+    )
+
+    // Cerca dove viene riutilizzata la variabile.
+    val occurrences =
+        Regex(
+            Regex.escape(variableName)
+        )
+            .findAll(normalizedHtml)
+            .map { it.range.first }
+            .toList()
+
+    Log.d(
+        TAG,
+        "SPORT VAR USES = " +
+            "$variableName -> ${occurrences.size}"
+    )
+
+    occurrences
+        .filter { position ->
+            position > match.range.last
+        }
+        .take(5)
+        .forEachIndexed { index, position ->
+
+            val start =
+                (position - 300)
+                    .coerceAtLeast(0)
+
+            val end =
+                (position + variableName.length + 700)
+                    .coerceAtMost(
+                        normalizedHtml.length
+                    )
+
+            val context =
+                normalizedHtml
+                    .substring(start, end)
                     .replace("\n", " ")
-            }"
-        )
-
-        // Cerchiamo già eventuali URL HLS visibili
-        val hlsUrls =
-            Regex(
-                """https?://[^"'\\\s<>]+\.m3u8[^"'\\\s<>]*""",
-                RegexOption.IGNORE_CASE
-            )
-                .findAll(
-                    embedHtml.replace("\\/", "/")
-                )
-                .map {
-                    it.value
-                }
-                .distinct()
-                .toList()
-
-        Log.d(
-            TAG,
-            "SPORT HLS FOUND = ${hlsUrls.size}"
-        )
-
-        hlsUrls.forEach { hls ->
+                    .replace("\r", " ")
 
             Log.d(
                 TAG,
-                "SPORT HLS = $hls"
+                "SPORT VAR CONTEXT " +
+                    "$variableName #${index + 1} = " +
+                    context
             )
         }
+}
+
+// ============================================================
+// INDICATORI JAVASCRIPT
+// ============================================================
+
+val indicators =
+    listOf(
+        "atob",
+        "eval(",
+        "Function(",
+        "fetch(",
+        "XMLHttpRequest",
+        "WebSocket",
+        ".m3u8",
+        "hls",
+        "source",
+        "src:"
+    )
+
+indicators.forEach { indicator ->
+
+    val positions =
+        Regex(
+            Regex.escape(indicator),
+            RegexOption.IGNORE_CASE
+        )
+            .findAll(normalizedHtml)
+            .map { it.range.first }
+            .toList()
+
+    Log.d(
+        TAG,
+        "SPORT JS INDICATOR " +
+            "$indicator = ${positions.size}"
+    )
+
+    positions
+        .take(3)
+        .forEachIndexed { index, position ->
+
+            val start =
+                (position - 250)
+                    .coerceAtLeast(0)
+
+            val end =
+                (position + indicator.length + 500)
+                    .coerceAtMost(
+                        normalizedHtml.length
+                    )
+
+            val context =
+                normalizedHtml
+                    .substring(start, end)
+                    .replace("\n", " ")
+                    .replace("\r", " ")
+
+            Log.d(
+                TAG,
+                "SPORT JS CONTEXT " +
+                    "$indicator #${index + 1} = " +
+                    context
+            )
+        }
+}
+
+// ============================================================
+// HLS GIÀ VISIBILI
+// ============================================================
+
+val hlsUrls =
+    Regex(
+        """https?://[^"'\\\s<>]+\.m3u8[^"'\\\s<>]*""",
+        RegexOption.IGNORE_CASE
+    )
+        .findAll(normalizedHtml)
+        .map { it.value }
+        .distinct()
+        .toList()
+
+Log.d(
+    TAG,
+    "SPORT HLS FOUND = ${hlsUrls.size}"
+)
+
+hlsUrls.forEach { hls ->
+
+    Log.d(
+        TAG,
+        "SPORT HLS = $hls"
+    )
+}
 
     } catch (e: Exception) {
 
