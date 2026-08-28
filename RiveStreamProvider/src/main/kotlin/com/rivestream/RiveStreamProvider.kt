@@ -949,17 +949,44 @@ if (type == "tv-private") {
 
     Log.d(TAG, "PRIVATE LOADLINKS id=$id title=$title")
 
-    val playerUrl = "https://hamis.romponalis.st/premiumtv/daddy.php?id=$id"
-
     try {
-        val response = app.get(
-            playerUrl,
-            referer = "https://dlhd.pk/"
-        )
+    // 1. Pagina Alpha specifica del canale
+    val alphaUrl = "https://dlhd.pk/stream/stream-$id.php"
 
-        Log.d(TAG, "PRIVATE PLAYER HTTP = ${response.code}")
+    val alphaResponse = app.get(
+        alphaUrl,
+        referer = "$mainUrl/"
+    )
 
-        val html = response.text
+    Log.d(TAG, "PRIVATE ALPHA HTTP = ${alphaResponse.code}")
+
+    // 2. Trova automaticamente daddy.php, daddy2.php,
+    // daddy5.php ecc.
+    val alphaHtml = alphaResponse.text
+    .replace("\\/", "/")
+
+    val playerUrl = Regex(
+        """https?://[^"'<>]+/premiumtv/daddy\d*\.php\?id=\d+""",
+        RegexOption.IGNORE_CASE
+    ).find(alphaHtml)
+        ?.value
+
+    if (playerUrl.isNullOrBlank()) {
+        Log.e(TAG, "PRIVATE: player daddy non trovato per id=$id")
+        return false
+    }
+
+    Log.d(TAG, "PRIVATE PLAYER URL = $playerUrl")
+
+    // 3. Apri il player corretto
+    val response = app.get(
+        playerUrl,
+        referer = alphaUrl
+    )
+
+    Log.d(TAG, "PRIVATE PLAYER HTTP = ${response.code}")
+
+    val html = response.text
 
         val base64 = Regex(
             """(?:window\.)?atob\(\s*['"]([^'"]+)['"]\s*\)"""
@@ -990,7 +1017,10 @@ if (type == "tv-private") {
             return false
         }
 
-        val playerOrigin = "https://hamis.romponalis.st"
+        val playerOrigin = Regex(
+            """^(https?://[^/]+)"""
+        ).find(playerUrl)?.groupValues?.getOrNull(1)
+            ?: return false
 
 val streamHeaders = mapOf(
     "Origin" to playerOrigin,
