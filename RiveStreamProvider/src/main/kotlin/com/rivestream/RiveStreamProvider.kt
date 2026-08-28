@@ -777,7 +777,7 @@ class RiveStreamProvider : MainAPI() {
 
     private suspend fun loadItalianLogoMap(): Map<String, String> {
 
-    if (italianLogosLoaded) {
+    if (italianLogosLoaded && italianLogoCache.isNotEmpty()) {
         return italianLogoCache
     }
 
@@ -785,71 +785,171 @@ class RiveStreamProvider : MainAPI() {
 
         Log.d(TAG, "LOGOS: caricamento IPTV-org")
 
+        // ============================================================
+        // CHANNELS
+        // ============================================================
+
         val channelsResponse = app.get(
-            "https://iptv-org.github.io/api/channels.json"
+            "https://iptv-org.github.io/api/channels.json",
+            headers = mapOf(
+                "Accept" to "application/json"
+            )
         )
+
+        Log.d(
+            TAG,
+            "LOGOS CHANNELS HTTP = ${channelsResponse.code}"
+        )
+
+        Log.d(
+            TAG,
+            "LOGOS CHANNELS SIZE = ${channelsResponse.text.length}"
+        )
+
+        // ============================================================
+        // LOGOS
+        // ============================================================
 
         val logosResponse = app.get(
-            "https://iptv-org.github.io/api/logos.json"
+            "https://iptv-org.github.io/api/logos.json",
+            headers = mapOf(
+                "Accept" to "application/json"
+            )
         )
 
-        val channels = channelsResponse
-            .parsedSafe<Array<IptvOrgChannel>>()
-            ?.toList()
-            ?: emptyList()
+        Log.d(
+            TAG,
+            "LOGOS LOGOS HTTP = ${logosResponse.code}"
+        )
 
-        val logos = logosResponse
-            .parsedSafe<Array<IptvOrgLogo>>()
-            ?.toList()
-            ?: emptyList()
+        Log.d(
+            TAG,
+            "LOGOS LOGOS SIZE = ${logosResponse.text.length}"
+        )
+
+        // ============================================================
+        // PARSING
+        // ============================================================
+
+        val channels = try {
+
+            AppUtils.parseJson<
+                Array<IptvOrgChannel>
+            >(
+                channelsResponse.text
+            ).toList()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "LOGOS CHANNELS PARSE ERROR = ${e.message}",
+                e
+            )
+
+            emptyList()
+        }
+
+        val logos = try {
+
+            AppUtils.parseJson<
+                Array<IptvOrgLogo>
+            >(
+                logosResponse.text
+            ).toList()
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "LOGOS LOGOS PARSE ERROR = ${e.message}",
+                e
+            )
+
+            emptyList()
+        }
 
         Log.d(
             TAG,
             "LOGOS: channels=${channels.size} logos=${logos.size}"
         )
 
-        // Solo canali italiani
-        val italianChannels = channels.filter {
-            it.country.equals(
-                "IT",
-                ignoreCase = true
+        if (channels.isEmpty() || logos.isEmpty()) {
+
+            Log.e(
+                TAG,
+                "LOGOS: API vuota, cache non marcata come caricata"
             )
+
+            return italianLogoCache
         }
 
-        /*
-         * channelId -> logo
-         *
-         * Preferiamo:
-         * 1. logo attualmente in uso
-         * 2. logo senza feed specifico
-         * 3. qualsiasi altro logo disponibile
-         */
+        // ============================================================
+        // SOLO CANALI ITALIANI
+        // ============================================================
+
+        val italianChannels =
+            channels.filter { channel ->
+
+                channel.country.equals(
+                    "IT",
+                    ignoreCase = true
+                )
+            }
+
+        Log.d(
+            TAG,
+            "LOGOS: Italian channels=${italianChannels.size}"
+        )
+
+        // ============================================================
+        // LOGO PER CHANNEL ID
+        // ============================================================
+
         val logosByChannel =
             logos
-                .filter {
-                    !it.channel.isNullOrBlank() &&
-                    !it.url.isNullOrBlank()
+                .filter { logo ->
+
+                    !logo.channel.isNullOrBlank() &&
+                    !logo.url.isNullOrBlank()
                 }
-                .groupBy {
-                    it.channel!!
+                .groupBy { logo ->
+                    logo.channel!!
                 }
                 .mapValues { (_, channelLogos) ->
 
                     channelLogos
                         .sortedWith(
+
                             compareByDescending<IptvOrgLogo> {
                                 it.inUse == true
-                            }.thenByDescending {
-                                it.feed == null
-                            }.thenByDescending {
-                                it.tags?.contains(
-                                    "horizontal"
-                                ) == true
                             }
+
+                                // Preferiamo logo generico
+                                .thenByDescending {
+                                    it.feed.isNullOrBlank()
+                                }
+
+                                // Preferiamo orizzontale
+                                .thenByDescending {
+                                    it.tags?.contains(
+                                        "horizontal"
+                                    ) == true
+                                }
+
+                                // Preferiamo logo grande
+                                .thenByDescending {
+                                    (it.width ?: 0) *
+                                        (it.height ?: 0)
+                                }
                         )
                         .firstOrNull()
                         ?.url
                 }
+
+        // ============================================================
+        // NAME -> LOGO
+        // ============================================================
 
         val result =
             mutableMapOf<String, String>()
@@ -858,30 +958,35 @@ class RiveStreamProvider : MainAPI() {
 
             val channelId =
                 channel.id
-                    ?.takeIf { it.isNotBlank() }
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
                     ?: return@forEach
 
             val logo =
                 logosByChannel[channelId]
-                    ?.takeIf { it.isNotBlank() }
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
                     ?: return@forEach
 
             val names =
-                buildList {
+                mutableListOf<String>()
 
-                    channel.name
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let {
-                            add(it)
-                        }
+            channel.name
+                ?.takeIf {
+                    it.isNotBlank()
+                }
+                ?.let {
+                    names.add(it)
+                }
 
-                    channel.altNames
-                        ?.filter {
-                            it.isNotBlank()
-                        }
-                        ?.let {
-                            addAll(it)
-                        }
+            channel.altNames
+                ?.filter {
+                    it.isNotBlank()
+                }
+                ?.let {
+                    names.addAll(it)
                 }
 
             names.forEach { channelName ->
@@ -892,6 +997,7 @@ class RiveStreamProvider : MainAPI() {
                     )
 
                 if (normalized.isNotBlank()) {
+
                     result.putIfAbsent(
                         normalized,
                         logo
@@ -901,7 +1007,11 @@ class RiveStreamProvider : MainAPI() {
         }
 
         italianLogoCache = result
-        italianLogosLoaded = true
+
+        // IMPORTANTE:
+        // true solo se abbiamo realmente caricato qualcosa
+        italianLogosLoaded =
+            result.isNotEmpty()
 
         Log.d(
             TAG,
@@ -926,47 +1036,44 @@ private fun normalizeChannelName(
 
     return value
         .lowercase()
+
+        // Suffisso usato da RiveStream
+        .replace(
+            Regex(
+                """\s+italy\s*$""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+
+        // Qualità
+        .replace(
+            Regex(
+                """\b(?:hd|uhd|4k)\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+
+        // HD+
+        .replace(
+            Regex(
+                """\bhd\+\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+
         .replace("&", " and ")
-        .replace(
-            Regex(
-                """\bitaly\b""",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
-        )
-        .replace(
-            Regex(
-                """\bitalia\b""",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
-        )
-        .replace(
-            Regex(
-                """\bhd\b""",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
-        )
-        .replace(
-            Regex(
-                """\buhd\b""",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
-        )
-        .replace(
-            Regex(
-                """\b4k\b""",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
-        )
+
+        // Manteniamo lettere/numeri/spazi
         .replace(
             Regex("""[^a-z0-9]+"""),
             " "
         )
+
         .trim()
+
         .replace(
             Regex("""\s+"""),
             " "
