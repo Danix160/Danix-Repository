@@ -95,6 +95,43 @@ data class RivePrivateChannel(
     val title: String? = null
 )
 
+data class IptvOrgChannel(
+    @JsonProperty("id")
+    val id: String? = null,
+
+    @JsonProperty("name")
+    val name: String? = null,
+
+    @JsonProperty("alt_names")
+    val altNames: Array<String>? = null,
+
+    @JsonProperty("country")
+    val country: String? = null
+)
+
+data class IptvOrgLogo(
+    @JsonProperty("channel")
+    val channel: String? = null,
+
+    @JsonProperty("feed")
+    val feed: String? = null,
+
+    @JsonProperty("in_use")
+    val inUse: Boolean? = null,
+
+    @JsonProperty("tags")
+    val tags: Array<String>? = null,
+
+    @JsonProperty("width")
+    val width: Int? = null,
+
+    @JsonProperty("height")
+    val height: Int? = null,
+
+    @JsonProperty("url")
+    val url: String? = null
+)
+
 // ============================================================
 // PROVIDER
 // ============================================================
@@ -118,13 +155,16 @@ class RiveStreamProvider : MainAPI() {
         private const val SPORTS_API =
             "https://streamed.pk/api"
     }
+
+    private var italianLogoCache: Map<String, String> = emptyMap()
+    private var italianLogosLoaded = false
     
 
     override val mainPage = mainPageOf(
-    "italian-tv" to "TV Italiana",
-    "italian-private-tv" to "TV Private Italiana",
-    "sports-live" to "Eventi sportivi",
     "football" to "Calcio",
+    "italian-private-tv" to "TV Italiana Privata",
+    "sports-live" to "Eventi Live",
+    "italian-tv" to "TV Italiana",
     "basketball" to "Basket"
 )
 
@@ -634,6 +674,9 @@ class RiveStreamProvider : MainAPI() {
     val channels =
         extractItalianPrivateChannels(js)
 
+    val logos =
+        loadItalianLogoMap()
+
     Log.d(
         TAG,
         "PRIVATE ITALIAN CHANNELS = ${channels.size}"
@@ -653,14 +696,27 @@ class RiveStreamProvider : MainAPI() {
                         ?.takeIf { it.isNotBlank() }
                         ?: return@mapNotNull null
 
-                newLiveSearchResponse(
-                    title,
-                    buildPrivateTvData(
-                        id = id,
-                        title = title
-                    ),
-                    TvType.Live
-                )
+                        val poster =
+                            findItalianChannelLogo(
+                                title,
+                                logos
+                            )
+                        
+                        Log.d(
+                            TAG,
+                            "PRIVATE LOGO = $title -> $poster"
+                        )
+                        
+                        newLiveSearchResponse(
+                            title,
+                            buildPrivateTvData(
+                                id = id,
+                                title = title
+                            ),
+                            TvType.Live
+                        ) {
+                            posterUrl = poster
+                        }
             }
             .distinctBy { it.url }
 
@@ -717,6 +773,249 @@ class RiveStreamProvider : MainAPI() {
 
     return results
         .distinctBy { it.id }
+}
+
+    private suspend fun loadItalianLogoMap(): Map<String, String> {
+
+    if (italianLogosLoaded) {
+        return italianLogoCache
+    }
+
+    try {
+
+        Log.d(TAG, "LOGOS: caricamento IPTV-org")
+
+        val channelsResponse = app.get(
+            "https://iptv-org.github.io/api/channels.json"
+        )
+
+        val logosResponse = app.get(
+            "https://iptv-org.github.io/api/logos.json"
+        )
+
+        val channels = channelsResponse
+            .parsedSafe<Array<IptvOrgChannel>>()
+            ?.toList()
+            ?: emptyList()
+
+        val logos = logosResponse
+            .parsedSafe<Array<IptvOrgLogo>>()
+            ?.toList()
+            ?: emptyList()
+
+        Log.d(
+            TAG,
+            "LOGOS: channels=${channels.size} logos=${logos.size}"
+        )
+
+        // Solo canali italiani
+        val italianChannels = channels.filter {
+            it.country.equals(
+                "IT",
+                ignoreCase = true
+            )
+        }
+
+        /*
+         * channelId -> logo
+         *
+         * Preferiamo:
+         * 1. logo attualmente in uso
+         * 2. logo senza feed specifico
+         * 3. qualsiasi altro logo disponibile
+         */
+        val logosByChannel =
+            logos
+                .filter {
+                    !it.channel.isNullOrBlank() &&
+                    !it.url.isNullOrBlank()
+                }
+                .groupBy {
+                    it.channel!!
+                }
+                .mapValues { (_, channelLogos) ->
+
+                    channelLogos
+                        .sortedWith(
+                            compareByDescending<IptvOrgLogo> {
+                                it.inUse == true
+                            }.thenByDescending {
+                                it.feed == null
+                            }.thenByDescending {
+                                it.tags?.contains(
+                                    "horizontal"
+                                ) == true
+                            }
+                        )
+                        .firstOrNull()
+                        ?.url
+                }
+
+        val result =
+            mutableMapOf<String, String>()
+
+        italianChannels.forEach { channel ->
+
+            val channelId =
+                channel.id
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+
+            val logo =
+                logosByChannel[channelId]
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+
+            val names =
+                buildList {
+
+                    channel.name
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            add(it)
+                        }
+
+                    channel.altNames
+                        ?.filter {
+                            it.isNotBlank()
+                        }
+                        ?.let {
+                            addAll(it)
+                        }
+                }
+
+            names.forEach { channelName ->
+
+                val normalized =
+                    normalizeChannelName(
+                        channelName
+                    )
+
+                if (normalized.isNotBlank()) {
+                    result.putIfAbsent(
+                        normalized,
+                        logo
+                    )
+                }
+            }
+        }
+
+        italianLogoCache = result
+        italianLogosLoaded = true
+
+        Log.d(
+            TAG,
+            "LOGOS: Italian map=${result.size}"
+        )
+
+    } catch (e: Exception) {
+
+        Log.e(
+            TAG,
+            "LOGOS ERROR = ${e.message}",
+            e
+        )
+    }
+
+    return italianLogoCache
+}
+
+private fun normalizeChannelName(
+    value: String
+): String {
+
+    return value
+        .lowercase()
+        .replace("&", " and ")
+        .replace(
+            Regex(
+                """\bitaly\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(
+            Regex(
+                """\bitalia\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(
+            Regex(
+                """\bhd\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(
+            Regex(
+                """\buhd\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(
+            Regex(
+                """\b4k\b""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(
+            Regex("""[^a-z0-9]+"""),
+            " "
+        )
+        .trim()
+        .replace(
+            Regex("""\s+"""),
+            " "
+        )
+}
+
+private fun findItalianChannelLogo(
+    title: String,
+    logos: Map<String, String>
+): String? {
+
+    val normalized =
+        normalizeChannelName(title)
+
+    // Match esatto
+    logos[normalized]?.let {
+        return it
+    }
+
+    /*
+     * Fallback controllato.
+     *
+     * Lo usiamo solo per nomi abbastanza lunghi,
+     * così evitiamo associazioni tipo "Rai" -> canale sbagliato.
+     */
+    if (normalized.length >= 6) {
+
+        val candidates =
+            logos.filterKeys { key ->
+
+                key.length >= 6 &&
+                    (
+                        key == normalized ||
+                        key.contains(normalized) ||
+                        normalized.contains(key)
+                    )
+            }
+
+        if (candidates.size == 1) {
+            return candidates.values.first()
+        }
+    }
+
+    Log.d(
+        TAG,
+        "LOGO NOT FOUND = $title -> $normalized"
+    )
+
+    return null
 }
 
     // ============================================================
