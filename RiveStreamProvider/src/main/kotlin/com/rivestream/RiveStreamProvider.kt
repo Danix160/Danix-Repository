@@ -801,10 +801,12 @@ class RiveStreamProvider : MainAPI() {
             "LOGOS CHANNELS HTTP = ${channelsResponse.code}"
         )
 
-        Log.d(
-            TAG,
-            "LOGOS CHANNELS SIZE = ${channelsResponse.text.length}"
-        )
+        val channelsJson = channelsResponse.textLarge
+
+         Log.d(
+         TAG,
+        "LOGOS CHANNELS SIZE = ${channelsJson.length}"
+)
 
         // ============================================================
         // LOGOS
@@ -822,10 +824,12 @@ class RiveStreamProvider : MainAPI() {
             "LOGOS LOGOS HTTP = ${logosResponse.code}"
         )
 
+        val logosJson = logosResponse.textLarge
+
         Log.d(
-            TAG,
-            "LOGOS LOGOS SIZE = ${logosResponse.text.length}"
-        )
+        TAG,
+        "LOGOS LOGOS SIZE = ${logosJson.length}"
+)
 
         // ============================================================
         // PARSING
@@ -833,10 +837,8 @@ class RiveStreamProvider : MainAPI() {
 
         val channels = try {
 
-            AppUtils.parseJson<
-                Array<IptvOrgChannel>
-            >(
-                channelsResponse.text
+            AppUtils.parseJson<Array<IptvOrgChannel>>(
+            channelsJson
             ).toList()
 
         } catch (e: Exception) {
@@ -852,10 +854,8 @@ class RiveStreamProvider : MainAPI() {
 
         val logos = try {
 
-            AppUtils.parseJson<
-                Array<IptvOrgLogo>
-            >(
-                logosResponse.text
+            AppUtils.parseJson<Array<IptvOrgLogo>>(
+            logosJson
             ).toList()
 
         } catch (e: Exception) {
