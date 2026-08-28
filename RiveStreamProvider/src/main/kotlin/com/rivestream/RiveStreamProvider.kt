@@ -907,45 +907,74 @@ class RiveStreamProvider : MainAPI() {
         // ============================================================
 
         val logosByChannel =
-            logos
-                .filter { logo ->
+    logos
+        .filter {
+            !it.channel.isNullOrBlank() &&
+            !it.url.isNullOrBlank()
+        }
+        .groupBy {
+            it.channel!!
+        }
+        .mapValues { (_, channelLogos) ->
 
-                    !logo.channel.isNullOrBlank() &&
-                    !logo.url.isNullOrBlank()
-                }
-                .groupBy { logo ->
-                    logo.channel!!
-                }
-                .mapValues { (_, channelLogos) ->
+            val selectedLogo =
+                channelLogos
+                    .sortedWith(
+                        compareByDescending<IptvOrgLogo> { logo ->
 
-                    channelLogos
-                        .sortedWith(
+                            val url = logo.url.orEmpty().lowercase()
 
-                            compareByDescending<IptvOrgLogo> {
-                                it.inUse == true
+                            // 1° scelta: Imgur
+                            when {
+                                "i.imgur.com" in url -> 3
+
+                                // 2° scelta: qualsiasi host diverso
+                                // da Wikimedia
+                                "wikimedia.org" !in url &&
+                                "wikipedia.org" !in url -> 2
+
+                                // 3° scelta: Wikimedia
+                                else -> 1
                             }
 
-                                // Preferiamo logo generico
-                                .thenByDescending {
-                                    it.feed.isNullOrBlank()
-                                }
+                        }.thenByDescending { logo ->
 
-                                // Preferiamo orizzontale
-                                .thenByDescending {
-                                    it.tags?.contains(
-                                        "horizontal"
-                                    ) == true
-                                }
+                            // Preferiamo i logo attualmente utilizzati
+                            logo.inUse == true
 
-                                // Preferiamo logo grande
-                                .thenByDescending {
-                                    (it.width ?: 0) *
-                                        (it.height ?: 0)
-                                }
-                        )
-                        .firstOrNull()
-                        ?.url
-                }
+                        }.thenByDescending { logo ->
+
+                            // Logo generico del canale prima
+                            // delle versioni associate a feed specifici
+                            logo.feed == null
+
+                        }.thenByDescending { logo ->
+
+                            logo.tags?.any {
+                                it.equals(
+                                    "horizontal",
+                                    ignoreCase = true
+                                )
+                            } == true
+
+                        }.thenByDescending { logo ->
+
+                            // Preferiamo URL raster quando disponibili
+                            val url = logo.url.orEmpty().lowercase()
+
+                            when {
+                                url.endsWith(".png") -> 4
+                                url.endsWith(".webp") -> 3
+                                url.endsWith(".jpg") ||
+                                url.endsWith(".jpeg") -> 2
+                                else -> 1
+                            }
+                        }
+                    )
+                    .firstOrNull()
+
+            selectedLogo?.url
+        }
 
         // ============================================================
         // NAME -> LOGO
