@@ -1960,25 +1960,97 @@ if (type == "tv") {
 
         streams.forEach { stream ->
 
-            val embedUrl =
-                stream.embedUrl
-                    ?.takeIf {
-                        it.startsWith("http")
-                    }
-                    ?: return@forEach
+    val embedUrl =
+        stream.embedUrl
+            ?.takeIf {
+                it.startsWith("http")
+            }
+            ?: return@forEach
+
+    Log.d(
+        TAG,
+        "STREAM FOUND " +
+            "source=$sourceName " +
+            "no=${stream.streamNo} " +
+            "lang=${stream.language} " +
+            "hd=${stream.hd} " +
+            "url=$embedUrl"
+    )
+
+    try {
+
+        val embedResponse =
+            app.get(
+                embedUrl,
+                headers = mapOf(
+                    "Accept" to
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                )
+            )
+
+        Log.d(
+            TAG,
+            "SPORT EMBED HTTP = ${embedResponse.code}"
+        )
+
+        val embedHtml =
+            embedResponse.text
+
+        Log.d(
+            TAG,
+            "SPORT EMBED SIZE = ${embedHtml.length}"
+        )
+
+        Log.d(
+            TAG,
+            "SPORT EMBED BODY = ${
+                embedHtml
+                    .take(3000)
+                    .replace("\n", " ")
+            }"
+        )
+
+        // Cerchiamo già eventuali URL HLS visibili
+        val hlsUrls =
+            Regex(
+                """https?://[^"'\\\s<>]+\.m3u8[^"'\\\s<>]*""",
+                RegexOption.IGNORE_CASE
+            )
+                .findAll(
+                    embedHtml.replace("\\/", "/")
+                )
+                .map {
+                    it.value
+                }
+                .distinct()
+                .toList()
+
+        Log.d(
+            TAG,
+            "SPORT HLS FOUND = ${hlsUrls.size}"
+        )
+
+        hlsUrls.forEach { hls ->
 
             Log.d(
                 TAG,
-                "STREAM FOUND " +
-                    "source=$sourceName " +
-                    "no=${stream.streamNo} " +
-                    "lang=${stream.language} " +
-                    "hd=${stream.hd} " +
-                    "url=$embedUrl"
+                "SPORT HLS = $hls"
             )
-
-            foundSomething = true
         }
+
+    } catch (e: Exception) {
+
+        Log.e(
+            TAG,
+            "SPORT EMBED ERROR " +
+                "url=$embedUrl " +
+                "message=${e.message}",
+            e
+        )
+    }
+
+    foundSomething = true
+}
     }
 
     return foundSomething
