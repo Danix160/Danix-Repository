@@ -1147,8 +1147,31 @@ private fun findItalianChannelLogo(
     logos: Map<String, String>
 ): String? {
 
-    val normalized =
-        normalizeChannelName(title)
+    var normalized = normalizeChannelName(title)
+
+    // Correzioni specifiche dei nomi usati
+    // dalla lista privata di RiveStream
+    normalized = when {
+
+        normalized == "20 mediaset" ->
+            "20"
+
+        normalized == "sky cinema uno 24" ->
+            "sky cinema uno"
+
+        normalized == "sky cinema due 24" ->
+            "sky cinema due"
+
+        normalized.startsWith("8sky cinema ") ->
+            normalized.removePrefix("8")
+
+        Regex("""^sky calcio [1-7] \d+$""")
+            .matches(normalized) ->
+            "sky sport calcio"
+
+        else ->
+            normalized
+    }
 
     // Match esatto
     logos[normalized]?.let {
@@ -1156,11 +1179,39 @@ private fun findItalianChannelLogo(
     }
 
     /*
-     * Fallback controllato.
-     *
-     * Lo usiamo solo per nomi abbastanza lunghi,
-     * così evitiamo associazioni tipo "Rai" -> canale sbagliato.
+     * Eurosport:
+     * proviamo anche varianti presenti
+     * nella banca dati.
      */
+    if (normalized == "eurosport 1") {
+
+        listOf(
+            "eurosport 1",
+            "eurosport1",
+            "eurosport"
+        ).forEach { alias ->
+
+            logos[alias]?.let {
+                return it
+            }
+        }
+    }
+
+    if (normalized == "eurosport 2") {
+
+        listOf(
+            "eurosport 2",
+            "eurosport2",
+            "eurosport"
+        ).forEach { alias ->
+
+            logos[alias]?.let {
+                return it
+            }
+        }
+    }
+
+    // Fuzzy match controllato
     if (normalized.length >= 6) {
 
         val candidates =
@@ -1186,7 +1237,6 @@ private fun findItalianChannelLogo(
 
     return null
 }
-
     // ============================================================
     // SEARCH
     // ============================================================
