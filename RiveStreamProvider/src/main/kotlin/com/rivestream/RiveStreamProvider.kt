@@ -949,15 +949,35 @@ class RiveStreamProvider : MainAPI() {
                             logo.feed == null
 
                         }.thenByDescending { logo ->
-
+                    
+                        // Per le card TV preferiamo nettamente
+                        // i loghi orizzontali
+                        when {
                             logo.tags?.any {
                                 it.equals(
                                     "horizontal",
                                     ignoreCase = true
                                 )
-                            } == true
+                            } == true -> 3
+                    
+                            (logo.width ?: 0) > (logo.height ?: 0) -> 2
+                    
+                            else -> 1
+                        }
 
                         }.thenByDescending { logo ->
+
+                        val width = logo.width ?: 0
+                        val height = logo.height ?: 0
+                    
+                        if (width > 0 && height > 0) {
+                            width.toDouble() / height.toDouble()
+                        } else {
+                            0.0
+                        }
+                    
+                    
+                    }.thenByDescending { logo ->
 
                             // Preferiamo URL raster quando disponibili
                             val url = logo.url.orEmpty().lowercase()
