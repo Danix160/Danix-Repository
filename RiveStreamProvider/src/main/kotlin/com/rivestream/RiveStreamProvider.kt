@@ -992,11 +992,59 @@ if (type == "tv-private") {
 
         val playerOrigin = "https://hamis.romponalis.st"
 
+val streamHeaders = mapOf(
+    "Origin" to playerOrigin,
+    "Referer" to "$playerOrigin/"
+)
+
+var finalStreamUrl = streamUrl
+
+try {
+    val test = app.get(
+        streamUrl,
+        headers = streamHeaders,
+        referer = "$playerOrigin/"
+    )
+
+    Log.d(TAG, "PRIVATE INDEX HTTP = ${test.code}")
+    Log.d(TAG, "PRIVATE INDEX BODY = ${test.text.take(200)}")
+
+    if (!test.text.trimStart().startsWith("#EXTM3U")) {
+
+        val monoUrl = streamUrl
+            .substringBeforeLast("/") +
+            "/tracks-v1a1/mono.m3u8"
+
+        Log.d(TAG, "PRIVATE TRY MONO = $monoUrl")
+
+        val monoTest = app.get(
+            monoUrl,
+            headers = streamHeaders,
+            referer = "$playerOrigin/"
+        )
+
+        Log.d(TAG, "PRIVATE MONO HTTP = ${monoTest.code}")
+        Log.d(TAG, "PRIVATE MONO BODY = ${monoTest.text.take(200)}")
+
+        if (monoTest.text.trimStart().startsWith("#EXTM3U")) {
+            finalStreamUrl = monoUrl
+            Log.d(TAG, "PRIVATE MONO OK")
+        } else {
+            Log.e(TAG, "PRIVATE: nessun manifest HLS valido")
+            return false
+        }
+    }
+
+} catch (e: Exception) {
+    Log.e(TAG, "PRIVATE STREAM TEST ERROR = ${e.message}")
+    return false
+}
+
         callback.invoke(
             newExtractorLink(
                 source = "RiveStream",
                 name = "$title - Alpha",
-                url = streamUrl,
+                url = finalStreamUrl,
                 type = ExtractorLinkType.M3U8
             ) {
                 referer = "$playerOrigin/"
