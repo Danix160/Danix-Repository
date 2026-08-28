@@ -224,20 +224,18 @@ class RiveStreamProvider : MainAPI() {
     }
     
     private fun horizontalHomePage(
-        sectionName: String,
-        cards: List<SearchResponse>
-    ): HomePageResponse {
-        return HomePageResponse(
-            items = listOf(
-                HomePageList(
-                    name = sectionName,
-                    list = cards,
-                    isHorizontalImages = true
-                )
-            ),
-            hasNext = false
-        )
-    }
+    sectionName: String,
+    cards: List<SearchResponse>
+): HomePageResponse {
+    return newHomePageResponse(
+        HomePageList(
+            name = sectionName,
+            list = cards,
+            isHorizontalImages = true
+        ),
+        hasNext = false
+    )
+}
     // ============================================================
     // EVENTI SPORTIVI
     // ============================================================
