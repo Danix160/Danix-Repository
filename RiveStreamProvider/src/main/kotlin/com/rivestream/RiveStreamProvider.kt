@@ -85,6 +85,14 @@ data class RiveTvChannel(
     val website: String? = null
 )
 
+data class RivePrivateChannel(
+    @JsonProperty("id")
+    val id: String? = null,
+
+    @JsonProperty("title")
+    val title: String? = null
+)
+
 // ============================================================
 // PROVIDER
 // ============================================================
@@ -112,6 +120,7 @@ class RiveStreamProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
     "italian-tv" to "TV Italiana",
+    "italian-private-tv" to "TV Private Italiana",
     "sports-live" to "Eventi sportivi",
     "football" to "Calcio",
     "basketball" to "Basket"
@@ -143,6 +152,8 @@ class RiveStreamProvider : MainAPI() {
             "italian-tv" ->
                 loadItalianTv(request.name)
 
+            "italian-private-tv" ->
+                loadItalianPrivateTv(request.name)
 
             "sports-live" ->
                 loadSports(
@@ -556,6 +567,156 @@ class RiveStreamProvider : MainAPI() {
         }
 }
 
+    private suspend fun loadItalianPrivateTv(
+    sectionName: String
+): HomePageResponse {
+
+    Log.d(TAG, "PRIVATE TV: loading IPTV page")
+
+    val page = try {
+        app.get("$mainUrl/iptv")
+    } catch (e: Exception) {
+        Log.e(TAG, "PRIVATE TV PAGE ERROR = ${e.message}")
+
+        return newHomePageResponse(
+            sectionName,
+            emptyList()
+        )
+    }
+
+    val scriptSrc = page.document
+        .select("script[src]")
+        .mapNotNull {
+            it.attr("src")
+                .takeIf { src ->
+                    src.contains("/pages/iptv-") &&
+                    src.contains(".js")
+                }
+        }
+        .firstOrNull()
+
+    if (scriptSrc == null) {
+        Log.e(TAG, "PRIVATE TV: IPTV bundle not found")
+
+        return newHomePageResponse(
+            sectionName,
+            emptyList()
+        )
+    }
+
+    val bundleUrl = when {
+        scriptSrc.startsWith("http") ->
+            scriptSrc
+
+        scriptSrc.startsWith("/") ->
+            "$mainUrl$scriptSrc"
+
+        else ->
+            "$mainUrl/$scriptSrc"
+    }
+
+    val js = try {
+        app.get(bundleUrl).text
+    } catch (e: Exception) {
+        Log.e(
+            TAG,
+            "PRIVATE TV BUNDLE ERROR = ${e.message}"
+        )
+
+        return newHomePageResponse(
+            sectionName,
+            emptyList()
+        )
+    }
+
+    val channels =
+        extractItalianPrivateChannels(js)
+
+    Log.d(
+        TAG,
+        "PRIVATE ITALIAN CHANNELS = ${channels.size}"
+    )
+
+    val cards =
+        channels
+            .mapNotNull { channel ->
+
+                val id =
+                    channel.id
+                        ?.takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+
+                val title =
+                    channel.title
+                        ?.takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+
+                newLiveSearchResponse(
+                    title,
+                    buildPrivateTvData(
+                        id = id,
+                        title = title
+                    ),
+                    TvType.Live
+                )
+            }
+            .distinctBy { it.url }
+
+    Log.d(
+        TAG,
+        "PRIVATE TV CARDS = ${cards.size}"
+    )
+
+    return newHomePageResponse(
+        sectionName,
+        cards
+    )
+}
+
+    private fun extractItalianPrivateChannels(
+    js: String
+): List<RivePrivateChannel> {
+
+    val results =
+        mutableListOf<RivePrivateChannel>()
+
+    val regex = Regex(
+        """\{"id":"([^"]+)","title":"([^"]+)"\}"""
+    )
+
+    regex.findAll(js).forEach { match ->
+
+        val id =
+            match.groupValues[1]
+
+        val title =
+            match.groupValues[2]
+
+        if (
+            title.contains(
+                "Italy",
+                ignoreCase = true
+            )
+        ) {
+
+            results.add(
+                RivePrivateChannel(
+                    id = id,
+                    title = title
+                )
+            )
+        }
+    }
+
+    Log.d(
+        TAG,
+        "PRIVATE TV REGEX RESULTS = ${results.size}"
+    )
+
+    return results
+        .distinctBy { it.id }
+}
+
     // ============================================================
     // SEARCH
     // ============================================================
@@ -738,7 +899,10 @@ class RiveStreamProvider : MainAPI() {
 
                     "tv" ->
                         "Canale TV italiano"
-
+                    
+                    "tv-private" ->
+                        "Canale TV Private italiano"
+                    
                     else ->
                         "Live"
                 }
@@ -773,7 +937,74 @@ class RiveStreamProvider : MainAPI() {
         // ============================================================
         // TV
         // ============================================================
-    
+    // ============================================================
+// TV PRIVATE
+// ============================================================
+
+if (type == "tv-private") {
+
+    val id =
+        parsed["id"]
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
+
+    val title =
+        parsed["title"]
+            ?.takeIf { it.isNotBlank() }
+            ?: "TV Private"
+
+    val embeds = listOf(
+        "Alpha" to
+            "https://dlhd.pk/stream/stream-$id.php",
+
+        "Bravo" to
+            "https://dlstreams.com/stream/stream-$id.php",
+
+        "Charlie" to
+            "https://dlhd.sx/plus/stream-$id.php",
+
+        "Delta" to
+            "https://dlhd.sx/watch/stream-$id.php"
+    )
+
+    Log.d(
+        TAG,
+        "PRIVATE LOADLINKS id=$id title=$title"
+    )
+
+    var found = false
+
+    for ((server, embedUrl) in embeds) {
+
+        Log.d(
+            TAG,
+            "PRIVATE SERVER $server = $embedUrl"
+        )
+
+        try {
+
+            loadExtractor(
+                url = embedUrl,
+                referer = mainUrl,
+                subtitleCallback = subtitleCallback,
+                callback = callback
+            )
+
+            found = true
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "PRIVATE EXTRACTOR ERROR " +
+                    "server=$server " +
+                    "message=${e.message}"
+            )
+        }
+    }
+
+    return found
+}
         if (type == "tv") {
     
             val title =
@@ -1032,6 +1263,18 @@ class RiveStreamProvider : MainAPI() {
         "&title=${encode(title)}" +
         "&category=${encode(category)}" +
         "&stream=${encode(streamUrl)}"
+}
+
+    private fun buildPrivateTvData(
+    id: String,
+    title: String
+): String {
+
+    return "https://rivestream.local/item?" +
+        "type=${encode("tv-private")}" +
+        "&id=${encode(id)}" +
+        "&title=${encode(title)}" +
+        "&category=${encode("Private IPTV")}"
 }
 
     private fun parseData(
