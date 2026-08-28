@@ -882,6 +882,26 @@ class RiveStreamProvider : MainAPI() {
             emptyList()
         }
 
+        logos
+    .filter { logo ->
+        logo.channel
+            ?.contains(
+                "euro",
+                ignoreCase = true
+            ) == true
+    }
+    .forEach { logo ->
+
+        Log.d(
+            TAG,
+            "EUROSPORT LOGO DEBUG: " +
+                "channel=${logo.channel} | " +
+                "url=${logo.url} | " +
+                "inUse=${logo.inUse} | " +
+                "size=${logo.width}x${logo.height}"
+        )
+    }
+
         Log.d(
             TAG,
             "LOGOS: channels=${channels.size} logos=${logos.size}"
@@ -914,6 +934,32 @@ class RiveStreamProvider : MainAPI() {
             TAG,
             "LOGOS: Italian channels=${italianChannels.size}"
         )
+
+        italianChannels
+    .filter { channel ->
+        channel.name
+            ?.contains(
+                "euro",
+                ignoreCase = true
+            ) == true ||
+        channel.altNames
+            ?.any {
+                it.contains(
+                    "euro",
+                    ignoreCase = true
+                )
+            } == true
+    }
+    .forEach { channel ->
+
+        Log.d(
+            TAG,
+            "EUROSPORT DEBUG: " +
+                "id=${channel.id} | " +
+                "name=${channel.name} | " +
+                "alt=${channel.altNames?.joinToString()}"
+        )
+    }
 
         // ============================================================
         // LOGO PER CHANNEL ID
@@ -1172,6 +1218,29 @@ private fun findItalianChannelLogo(
         else ->
             normalized
     }
+
+    // Alias RiveStream -> IPTV-org
+normalized = when (normalized) {
+
+    "eurosport 1" ->
+        listOf(
+            "eurosport 1",
+            "eurosport1",
+            "eurosport"
+        ).firstOrNull { logos.containsKey(it) }
+            ?: normalized
+
+    "eurosport 2" ->
+        listOf(
+            "eurosport 2",
+            "eurosport2",
+            "eurosport"
+        ).firstOrNull { logos.containsKey(it) }
+            ?: normalized
+
+    else ->
+        normalized
+}
 
     // Match esatto
     logos[normalized]?.let {
