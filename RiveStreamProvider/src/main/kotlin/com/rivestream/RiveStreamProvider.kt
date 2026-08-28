@@ -4,7 +4,8 @@ import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -943,68 +944,75 @@ class RiveStreamProvider : MainAPI() {
 // ============================================================
 
 if (type == "tv-private") {
+    val id = parsed["id"]?.takeIf { it.isNotBlank() } ?: return false
+    val title = parsed["title"]?.takeIf { it.isNotBlank() } ?: "TV Private"
 
-    val id =
-        parsed["id"]
-            ?.takeIf { it.isNotBlank() }
-            ?: return false
+    Log.d(TAG, "PRIVATE LOADLINKS id=$id title=$title")
 
-    val title =
-        parsed["title"]
-            ?.takeIf { it.isNotBlank() }
-            ?: "TV Private"
+    val playerUrl = "https://hamis.romponalis.st/premiumtv/daddy.php?id=$id"
 
-    val embeds = listOf(
-        "Alpha" to
-            "https://dlhd.pk/stream/stream-$id.php",
-
-        "Bravo" to
-            "https://dlstreams.com/stream/stream-$id.php",
-
-        "Charlie" to
-            "https://dlhd.sx/plus/stream-$id.php",
-
-        "Delta" to
-            "https://dlhd.sx/watch/stream-$id.php"
-    )
-
-    Log.d(
-        TAG,
-        "PRIVATE LOADLINKS id=$id title=$title"
-    )
-
-    var found = false
-
-    for ((server, embedUrl) in embeds) {
-
-        Log.d(
-            TAG,
-            "PRIVATE SERVER $server = $embedUrl"
+    try {
+        val response = app.get(
+            playerUrl,
+            referer = "https://dlhd.pk/"
         )
 
-        try {
+        Log.d(TAG, "PRIVATE PLAYER HTTP = ${response.code}")
 
-            loadExtractor(
-                url = embedUrl,
-                referer = mainUrl,
-                subtitleCallback = subtitleCallback,
-                callback = callback
-            )
+        val html = response.text
 
-            found = true
+        val base64 = Regex(
+            """(?:window\.)?atob\(\s*['"]([^'"]+)['"]\s*\)"""
+        ).find(html)?.groupValues?.getOrNull(1)
 
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "PRIVATE EXTRACTOR ERROR " +
-                    "server=$server " +
-                    "message=${e.message}"
-            )
+        if (base64.isNullOrBlank()) {
+            Log.e(TAG, "PRIVATE: Base64 source non trovato")
+            return false
         }
-    }
 
-    return found
+        val streamUrl = try {
+            String(
+                android.util.Base64.decode(
+                    base64,
+                    android.util.Base64.DEFAULT
+                ),
+                Charsets.UTF_8
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "PRIVATE BASE64 ERROR = ${e.message}")
+            return false
+        }
+
+        Log.d(TAG, "PRIVATE STREAM = $streamUrl")
+
+        if (!streamUrl.contains(".m3u8")) {
+            Log.e(TAG, "PRIVATE: URL non HLS = $streamUrl")
+            return false
+        }
+
+        val playerOrigin = "https://hamis.romponalis.st"
+
+        callback.invoke(
+            newExtractorLink(
+                source = "RiveStream",
+                name = "$title - Alpha",
+                url = streamUrl,
+                type = ExtractorLinkType.M3U8
+            ) {
+                referer = "$playerOrigin/"
+                headers = mapOf(
+                    "Origin" to playerOrigin,
+                    "Referer" to "$playerOrigin/"
+                )
+            }
+        )
+
+        return true
+
+    } catch (e: Exception) {
+        Log.e(TAG, "PRIVATE ERROR = ${e.message}", e)
+        return false
+    }
 }
         if (type == "tv") {
     
