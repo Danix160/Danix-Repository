@@ -922,13 +922,30 @@ class RiveStreamProvider : MainAPI() {
         // ============================================================
 
         val italianChannels =
-            channels.filter { channel ->
+    channels.filter { channel ->
 
-                channel.country.equals(
-                    "IT",
+        val isItalian =
+            channel.country.equals(
+                "IT",
+                ignoreCase = true
+            )
+
+        val isEurosport =
+            channel.name
+                ?.contains(
+                    "Eurosport",
                     ignoreCase = true
-                )
-            }
+                ) == true ||
+            channel.altNames
+                ?.any {
+                    it.contains(
+                        "Eurosport",
+                        ignoreCase = true
+                    )
+                } == true
+
+        isItalian || isEurosport
+    }
 
         Log.d(
             TAG,
@@ -978,75 +995,82 @@ class RiveStreamProvider : MainAPI() {
 
             val selectedLogo =
                 channelLogos
+                    .filter { logo ->
+                        !logo.url.isNullOrBlank()
+                    }
                     .sortedWith(
                         compareByDescending<IptvOrgLogo> { logo ->
 
-                            val url = logo.url.orEmpty().lowercase()
+                            val url =
+                                logo.url.orEmpty().lowercase()
 
-                            // 1° scelta: Imgur
                             when {
-                                "i.imgur.com" in url -> 3
+                                "i.imgur.com" in url -> 5
 
-                                // 2° scelta: qualsiasi host diverso
-                                // da Wikimedia
                                 "wikimedia.org" !in url &&
-                                "wikipedia.org" !in url -> 2
+                                "wikipedia.org" !in url -> 4
 
-                                // 3° scelta: Wikimedia
+                                url.endsWith(".svg") -> 3
+
+                                "upload.wikimedia.org" in url -> 2
+
                                 else -> 1
                             }
 
                         }.thenByDescending { logo ->
 
-                            // Preferiamo i logo attualmente utilizzati
                             logo.inUse == true
 
                         }.thenByDescending { logo ->
 
-                            // Logo generico del canale prima
-                            // delle versioni associate a feed specifici
                             logo.feed == null
 
                         }.thenByDescending { logo ->
-                    
-                        // Per le card TV preferiamo nettamente
-                        // i loghi orizzontali
-                        when {
-                            logo.tags?.any {
-                                it.equals(
-                                    "horizontal",
-                                    ignoreCase = true
-                                )
-                            } == true -> 3
-                    
-                            (logo.width ?: 0) > (logo.height ?: 0) -> 2
-                    
-                            else -> 1
-                        }
+
+                            when {
+                                logo.tags?.any {
+                                    it.equals(
+                                        "horizontal",
+                                        ignoreCase = true
+                                    )
+                                } == true -> 3
+
+                                (logo.width ?: 0) >
+                                    (logo.height ?: 0) -> 2
+
+                                else -> 1
+                            }
 
                         }.thenByDescending { logo ->
 
-                        val width = logo.width ?: 0
-                        val height = logo.height ?: 0
-                    
-                        if (width > 0 && height > 0) {
-                            width.toDouble() / height.toDouble()
-                        } else {
-                            0.0
-                        }
-                    
-                    
-                    }.thenByDescending { logo ->
+                            val width =
+                                logo.width ?: 0
 
-                            // Preferiamo URL raster quando disponibili
-                            val url = logo.url.orEmpty().lowercase()
+                            val height =
+                                logo.height ?: 0
+
+                            if (width > 0 && height > 0) {
+                                width.toDouble() /
+                                    height.toDouble()
+                            } else {
+                                0.0
+                            }
+
+                        }.thenByDescending { logo ->
+
+                            val url =
+                                logo.url.orEmpty().lowercase()
 
                             when {
                                 url.endsWith(".png") -> 4
                                 url.endsWith(".webp") -> 3
+
                                 url.endsWith(".jpg") ||
-                                url.endsWith(".jpeg") -> 2
-                                else -> 1
+                                    url.endsWith(".jpeg") -> 2
+
+                                url.endsWith(".svg") -> 1
+
+                                else -> 0
                             }
                         }
                     )
@@ -1054,6 +1078,48 @@ class RiveStreamProvider : MainAPI() {
 
             selectedLogo?.url
         }
+
+
+// ============================================================
+// DEBUG SKY CINEMA
+// ============================================================
+
+italianChannels
+    .filter { channel ->
+
+        channel.name
+            ?.contains(
+                "Sky Cinema",
+                ignoreCase = true
+            ) == true
+    }
+    .forEach { channel ->
+
+        val channelLogos =
+            logos.filter {
+                it.channel == channel.id
+            }
+
+        Log.d(
+            TAG,
+            "SKY CINEMA DEBUG: " +
+                "id=${channel.id} | " +
+                "name=${channel.name} | " +
+                "logos=${channelLogos.size}"
+        )
+
+        channelLogos.forEach { logo ->
+
+            Log.d(
+                TAG,
+                "SKY CINEMA LOGO: " +
+                    "channel=${channel.id} | " +
+                    "url=${logo.url} | " +
+                    "inUse=${logo.inUse} | " +
+                    "size=${logo.width}x${logo.height}"
+            )
+        }
+    }
 
         // ============================================================
         // NAME -> LOGO
