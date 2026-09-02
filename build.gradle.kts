@@ -70,22 +70,22 @@ subprojects {
         }
     }
 
-    dependencies {
-        val implementation by configurations
+   dependencies {
+    val implementation by configurations
 
-        implementation(
-            "com.github.recloudstream.cloudstream:library:-SNAPSHOT"
-        )
+    implementation(
+        "com.github.recloudstream.cloudstream:library:-SNAPSHOT"
+    )
 
-        implementation(kotlin("stdlib"))
-        implementation("com.github.Blatzar:NiceHttp:0.4.11")
-        implementation("org.jsoup:jsoup:1.18.3")
+    implementation(kotlin("stdlib"))
+    implementation("com.github.Blatzar:NiceHttp:0.4.11")
+    implementation("org.jsoup:jsoup:1.18.3")
 
-        // Non aggiornare: compatibilità Cloudstream/Android
-        implementation(
-            "com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1"
-        )
-    }
+    // Non aggiornare: compatibilità Cloudstream/Android
+    implementation(
+        "com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1"
+    )
+}
 }
 
 task<Delete>("clean") {
