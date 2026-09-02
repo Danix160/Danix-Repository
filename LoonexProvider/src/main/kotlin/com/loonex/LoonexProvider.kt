@@ -254,20 +254,42 @@ seasonButtons.forEachIndexed { tabIndex, button ->
          * Serve per il NOME, non per il
          * raggruppamento Cloudstream.
          */
-        val xMatch = Regex(
-            """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
-        ).find(label)
+        /*
+ * Cerchiamo prima SxE nel label.
+ *
+ * Esempio:
+ * "Episodio 1x05"
+ *
+ * Se non esiste, lo cerchiamo nell'URL:
+ *
+ * cucciolo_scooby_doo_1x05
+ */
+val xMatch =
+    Regex(
+        """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
+    ).find(label)
+        ?: Regex(
+            """(?i)(\d+)[x×]0*(\d+)"""
+        ).find(playUrl)
 
-        val originalSeason = xMatch
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toIntOrNull()
+val originalSeason = xMatch
+    ?.groupValues
+    ?.getOrNull(1)
+    ?.toIntOrNull()
+    ?: cloudSeason
 
-        val originalEpisode = xMatch
-            ?.groupValues
-            ?.getOrNull(2)
-            ?.toIntOrNull()
-
+val originalEpisode = xMatch
+    ?.groupValues
+    ?.getOrNull(2)
+    ?.toIntOrNull()
+    ?: Regex(
+        """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
+    ).find(label)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.toIntOrNull()
+    ?: (index + 1)
+    
       val episodeStill =
     if (
         tmdbId != null &&
@@ -309,18 +331,10 @@ seasonButtons.forEachIndexed { tabIndex, button ->
         val cloudEpisode = index + 1
 
         val displayName =
-            if (
-                originalSeason != null &&
-                originalEpisode != null
-            ) {
-                "%02dx%02d".format(
-                    originalSeason,
-                    originalEpisode
-                )
+            if (label.isNotBlank()) {
+                label
             } else {
-                label.ifBlank {
-                    "Episodio $cloudEpisode"
-                }
+                "Episodio %02d".format(originalEpisode)
             }
 
         episodes.add(
