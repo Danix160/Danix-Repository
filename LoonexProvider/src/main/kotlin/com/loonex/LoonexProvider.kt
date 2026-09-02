@@ -3,6 +3,8 @@ package com.loonex
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import java.net.URLDecoder
 import java.net.URI
 
