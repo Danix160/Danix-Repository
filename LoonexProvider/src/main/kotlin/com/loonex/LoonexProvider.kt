@@ -111,82 +111,209 @@ class LoonexProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
 
-        val doc = app.get(
-            url,
-            headers = headers
-        ).document
+    val doc = app.get(
+        url,
+        headers = headers
+    ).document
 
-        val html = doc.toString()
+    val html = doc.toString()
 
-        val title = Regex(
-            """"title"\s*:\s*"([^"]+)""""
-        ).find(html)
-            ?.groupValues
-            ?.get(1)
-            ?.replace("\\/", "/")
-            ?: doc.selectFirst("h1,h2,.cartoon-title")
-                ?.text()
-                ?.trim()
-            ?: "Loonex"
+    val title = Regex(
+        """"title"\s*:\s*"([^"]+)""""
+    ).find(html)
+        ?.groupValues
+        ?.get(1)
+        ?.replace("\\/", "/")
+        ?: doc.selectFirst("h1,h2,.cartoon-title")
+            ?.text()
+            ?.trim()
+        ?: "Loonex"
 
-        val poster = Regex(
-            """"image"\s*:\s*"([^"]+)""""
-        ).find(html)
-            ?.groupValues
-            ?.get(1)
-            ?.replace("\\/", "/")
-            ?.let(::fixUrl)
+    val poster = Regex(
+        """"image"\s*:\s*"([^"]+)""""
+    ).find(html)
+        ?.groupValues
+        ?.get(1)
+        ?.replace("\\/", "/")
+        ?.let(::fixUrl)
 
-        val episodes = doc.select(".episode-row")
-            .mapNotNull { row ->
+    val episodes = mutableListOf<Episode>()
+    val seasonsData = mutableListOf<SeasonData>()
 
-                val label = row.attr("data-ep-label").trim()
+    val seasonButtons = doc.select(
+        """button[data-bs-target^="#season-tab-"][data-season-name]"""
+    )
+
+    seasonButtons.forEachIndexed { seasonIndex, button ->
+
+        val seasonName = button
+            .attr("data-season-name")
+            .trim()
+
+        val target = button
+            .attr("data-bs-target")
+            .trim()
+
+        if (target.isBlank()) {
+            return@forEachIndexed
+        }
+
+        val seasonContainer = doc.selectFirst(target)
+            ?: return@forEachIndexed
+
+        // Ogni tab Loonex diventa una stagione Cloudstream
+        val currentSeason = seasonIndex + 1
+
+        val seasonDisplayName = seasonName.ifBlank {
+            "Stagione $currentSeason"
+        }
+
+        seasonsData.add(
+            SeasonData(
+                currentSeason,
+                seasonDisplayName
+            )
+        )
+
+        seasonContainer
+            .select(".episode-row")
+            .forEachIndexed episodeLoop@ { episodeIndex, row ->
+
+                val originalLabel = row
+                    .attr("data-ep-label")
+                    .trim()
 
                 val playUrl = row
                     .selectFirst("a.btn-play-sm")
                     ?.attr("href")
+                    ?.trim()
                     ?.takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
+                    ?: return@episodeLoop
 
-                val seasonName = row
-                    .attr("data-season")
-                    .trim()
+                val xMatch = Regex(
+                    """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
+                ).find(originalLabel)
 
-                val numbers = Regex(
-                    """(\d+)x(\d+)"""
-                ).find(label)
+                val episodeNumber =
+                    xMatch
+                        ?.groupValues
+                        ?.getOrNull(2)
+                        ?.toIntOrNull()
 
-                val season = numbers
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.toIntOrNull()
+                        ?: Regex(
+                            """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
+                        )
+                            .find(originalLabel)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                            ?.toIntOrNull()
 
-                val episode = numbers
-                    ?.groupValues
-                    ?.getOrNull(2)
-                    ?.toIntOrNull()
+                        ?: (episodeIndex + 1)
 
-                newEpisode(fixUrl(playUrl)) {
-                    name = label
-                    this.season = season
-                    this.episode = episode
-
-                    if (seasonName.isNotBlank()) {
-                        description = seasonName
+                val episodeName =
+                    if (
+                        originalLabel.matches(
+                            Regex(
+                                """(?i)\s*episodio\s+\d+\s*[x×]\s*\d+\s*"""
+                            )
+                        )
+                    ) {
+                        "Episodio $episodeNumber"
+                    } else {
+                        originalLabel.ifBlank {
+                            "Episodio $episodeNumber"
+                        }
                     }
-                }
-            }
 
-        return newTvSeriesLoadResponse(
-            title,
-            url,
-            TvType.Cartoon,
-            episodes
-        ) {
-            posterUrl = poster
-        }
+                episodes.add(
+                    newEpisode(
+                        fixUrl(playUrl)
+                    ) {
+                        this.name = episodeName
+                        this.season = currentSeason
+                        this.episode = episodeNumber
+                    }
+                )
+            }
     }
 
+    /*
+     * Fallback per eventuali pagine Loonex
+     * che non usano i tab delle stagioni.
+     */
+    if (episodes.isEmpty()) {
+
+        doc.select(".episode-row")
+            .forEachIndexed { index, row ->
+
+                val label = row
+                    .attr("data-ep-label")
+                    .trim()
+
+                val playUrl = row
+                    .selectFirst("a.btn-play-sm")
+                    ?.attr("href")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@forEachIndexed
+
+                val numbers = Regex(
+                    """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
+                ).find(label)
+
+                val seasonNumber =
+                    numbers
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull()
+                        ?: 1
+
+                val episodeNumber =
+                    numbers
+                        ?.groupValues
+                        ?.getOrNull(2)
+                        ?.toIntOrNull()
+                        ?: (index + 1)
+
+                if (
+                    seasonsData.none {
+                        it.season == seasonNumber
+                    }
+                ) {
+                    seasonsData.add(
+                        SeasonData(
+                            seasonNumber,
+                            "Stagione $seasonNumber"
+                        )
+                    )
+                }
+
+                episodes.add(
+                    newEpisode(
+                        fixUrl(playUrl)
+                    ) {
+                        this.name = label.ifBlank {
+                            "Episodio $episodeNumber"
+                        }
+
+                        this.season = seasonNumber
+                        this.episode = episodeNumber
+                    }
+                )
+            }
+    }
+
+    return newTvSeriesLoadResponse(
+        title,
+        url,
+        TvType.Cartoon,
+        episodes
+    ) {
+        posterUrl = poster
+
+        addSeasonNames(seasonsData)
+    }
+}
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
