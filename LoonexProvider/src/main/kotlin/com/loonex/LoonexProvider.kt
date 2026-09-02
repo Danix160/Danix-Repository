@@ -15,7 +15,7 @@ class LoonexProvider : MainAPI() {
     override var name = "Loonex"
     override var lang = "it"
     override val hasMainPage = true
-    override val hasQuickSearch = true
+    override val hasQuickSearch = false
 
     override val supportedTypes = setOf(
         TvType.Cartoon,
