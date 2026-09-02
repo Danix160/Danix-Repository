@@ -182,6 +182,21 @@ class LoonexProvider : MainAPI() {
             ?.ownText()
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+
+            val trailerUrl = doc
+    .selectFirst("iframe.poster-trailer-iframe[src]")
+    ?.attr("src")
+    ?.trim()
+    ?.takeIf { it.isNotBlank() }
+    ?.let { src ->
+        Regex("""(?:embed/)([A-Za-z0-9_-]{11})""")
+            .find(src)
+            ?.groupValues
+            ?.getOrNull(1)
+    }
+    ?.let { videoId ->
+        "https://www.youtube.com/watch?v=$videoId"
+    }
 /*
  * =========================================================
  * FILM
@@ -212,6 +227,10 @@ if (movieCard != null) {
         ) {
             posterUrl = poster
             this.plot = plot
+        
+            trailerUrl?.let {
+                addTrailer(it)
+            }
         }
     }
 }
@@ -480,6 +499,10 @@ val originalEpisode = xMatch
 ) {
     posterUrl = poster
     this.plot = plot
+
+    trailerUrl?.let {
+        addTrailer(it)
+    }
 
     addSeasonNames(seasonsData)
 }
