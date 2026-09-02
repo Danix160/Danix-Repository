@@ -1,5 +1,7 @@
 import com.android.build.gradle.BaseExtension
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
@@ -23,7 +25,10 @@ allprojects {
     }
 }
 
-fun Project.android(configuration: BaseExtension.() -> Unit) = 
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
+    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+
+fun Project.android(configuration: BaseExtension.() -> Unit) =
     extensions.getByName<BaseExtension>("android").configuration()
 
 subprojects {
@@ -31,9 +36,11 @@ subprojects {
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
-    // Configurazione del plugin tramite l'estensione 'cloudstream'
-    configure<com.lagradost.cloudstream3.gradle.CloudstreamExtension> {
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "user/repo")
+    cloudstream {
+        setRepo(
+            System.getenv("GITHUB_REPOSITORY")
+                ?: "https://github.com/user/repo"
+        )
     }
 
     android {
@@ -50,10 +57,11 @@ subprojects {
             targetCompatibility = JavaVersion.VERSION_1_8
         }
 
-        tasks.withType<KotlinCompile>().configureEach {
-            kotlinOptions {
-                jvmTarget = "1.8"
-                freeCompilerArgs = freeCompilerArgs + listOf(
+        tasks.withType<KotlinJvmCompile> {
+            compilerOptions {
+                jvmTarget.set(JvmTarget.JVM_1_8)
+
+                freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
                     "-Xno-receiver-assertions"
@@ -63,15 +71,20 @@ subprojects {
     }
 
     dependencies {
-        val cloudstream by configurations
         val implementation by configurations
 
-        cloudstream("com.lagradost:cloudstream3:pre-release")
+        implementation(
+            "com.github.recloudstream.cloudstream:library:-SNAPSHOT"
+        )
 
         implementation(kotlin("stdlib"))
-        implementation("com.github.Blatzar:NiceHttp:0.4.17")
+        implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.18.2")
+
+        // Non aggiornare: compatibilità Cloudstream/Android
+        implementation(
+            "com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1"
+        )
     }
 }
 
