@@ -12,6 +12,7 @@ class LoonexProvider : MainAPI() {
 
     override var mainUrl = "https://loonex.eu"
     override var name = "Loonex"
+    override var lang = "it"
     override val hasMainPage = true
     override val hasQuickSearch = true
 
@@ -141,29 +142,24 @@ class LoonexProvider : MainAPI() {
     val seasonsData = mutableListOf<SeasonData>()
 
     val seasonButtons = doc.select(
-    """button[data-bs-target][data-season-name]"""
+    """#season-tabs button[data-bs-target][data-season-name]"""
 )
 
-seasonButtons.forEachIndexed { seasonIndex, button ->
+seasonButtons.forEachIndexed { tabIndex, button ->
 
-    val currentSeason = seasonIndex + 1
+    /*
+     * Ogni TAB Loonex diventa una "stagione"
+     * nel selettore Cloudstream.
+     */
+    val cloudSeason = tabIndex + 1
 
-    val seasonName = button
+    val tabName = button
         .attr("data-season-name")
         .trim()
         .ifBlank {
-            "Stagione $currentSeason"
+            "Parte $cloudSeason"
         }
 
-    /*
-     * Esempio:
-     *
-     * data-bs-target="#season-tab-2"
-     *
-     * diventa:
-     *
-     * season-tab-2
-     */
     val targetId = button
         .attr("data-bs-target")
         .trim()
@@ -173,34 +169,29 @@ seasonButtons.forEachIndexed { seasonIndex, button ->
         return@forEachIndexed
     }
 
-    /*
-     * Cerchiamo ESATTAMENTE il pannello associato
-     * a questo pulsante.
-     */
-    val seasonContainer = doc.getElementById(targetId)
+    val tabContainer = doc.getElementById(targetId)
         ?: return@forEachIndexed
 
     /*
-     * Nome personalizzato della stagione.
+     * Il nome visualizzato nel selettore Cloudstream
+     * è esattamente il nome del TAB Loonex.
      */
     seasonsData.add(
         SeasonData(
-            currentSeason,
-            seasonName
+            cloudSeason,
+            tabName
         )
     )
 
     /*
-     * IMPORTANTISSIMO:
-     *
-     * leggiamo SOLO gli episode-row contenuti
-     * dentro questo preciso seasonContainer.
+     * Prendiamo TUTTI gli episodi presenti
+     * esclusivamente dentro questo tab.
      */
-    val rows = seasonContainer.select(".episode-row")
+    val rows = tabContainer.select(".episode-row")
 
-    rows.forEachIndexed episodeLoop@ { episodeIndex, row ->
+    rows.forEachIndexed episodeLoop@ { index, row ->
 
-        val originalLabel = row
+        val label = row
             .attr("data-ep-label")
             .trim()
 
@@ -214,45 +205,56 @@ seasonButtons.forEachIndexed { seasonIndex, button ->
             ?: return@episodeLoop
 
         /*
-         * Numero episodio.
+         * Recuperiamo la numerazione originale:
          *
-         * Se abbiamo:
+         * 1x01
+         * 2x04
+         * 3x12
          *
-         * Episodio 1x01
-         * Episodio 1x02
-         * Episodio 1x03
-         *
-         * prendiamo solamente:
-         *
-         * 01
-         * 02
-         * 03
-         *
-         * La stagione NON viene presa da "1x".
+         * Serve per il NOME, non per il
+         * raggruppamento Cloudstream.
          */
         val xMatch = Regex(
             """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
-        ).find(originalLabel)
+        ).find(label)
 
-        val episodeNumber =
-            xMatch
-                ?.groupValues
-                ?.getOrNull(2)
-                ?.toIntOrNull()
+        val originalSeason = xMatch
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
 
-                ?: Regex(
-                    """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
+        val originalEpisode = xMatch
+            ?.groupValues
+            ?.getOrNull(2)
+            ?.toIntOrNull()
+
+        /*
+         * Cloudstream deve avere episodi progressivi
+         * all'interno del TAB.
+         *
+         * Questo evita collisioni:
+         *
+         * 1x01
+         * 2x01
+         * 3x01
+         *
+         * non possono essere tutti episode = 1.
+         */
+        val cloudEpisode = index + 1
+
+        val displayName =
+            if (
+                originalSeason != null &&
+                originalEpisode != null
+            ) {
+                "%02dx%02d".format(
+                    originalSeason,
+                    originalEpisode
                 )
-                    .find(originalLabel)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.toIntOrNull()
-
-                ?: (episodeIndex + 1)
-
-        val episodeName =
-            originalLabel.ifBlank {
-                "Episodio $episodeNumber"
+            } else {
+                label.ifBlank {
+                    "Episodio $cloudEpisode"
+                }
             }
 
         episodes.add(
@@ -260,14 +262,25 @@ seasonButtons.forEachIndexed { seasonIndex, button ->
                 fixUrl(playUrl)
             ) {
                 /*
-                 * QUESTA è la cosa importante.
-                 *
-                 * La stagione viene dal TAB,
-                 * non dall'etichetta dell'episodio.
+                 * Il TAB decide il raggruppamento.
                  */
-                this.season = currentSeason
-                this.episode = episodeNumber
-                this.name = episodeName
+                this.season = cloudSeason
+
+                /*
+                 * Progressivo dentro quel tab.
+                 */
+                this.episode = cloudEpisode
+
+                /*
+                 * Manteniamo la numerazione originale
+                 * visibile all'utente.
+                 *
+                 * Es:
+                 * 01x01
+                 * 01x02
+                 * 02x01
+                 */
+                this.name = displayName
             }
         )
     }
