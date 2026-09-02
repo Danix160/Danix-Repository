@@ -172,6 +172,12 @@ class LoonexProvider : MainAPI() {
         ?.get(1)
         ?.replace("\\/", "/")
         ?.let(::fixUrl)
+
+        val plot = doc
+            .selectFirst(".content-box-opaque .text-secondary[style*=\"line-height\"]")
+            ?.ownText()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
 /*
  * =========================================================
  * FILM
@@ -201,6 +207,7 @@ if (movieCard != null) {
             fixUrl(movieUrl)
         ) {
             posterUrl = poster
+            this.plot = plot
         }
     }
 }
@@ -462,15 +469,16 @@ val originalEpisode = xMatch
     }
 
     return newTvSeriesLoadResponse(
-        title,
-        url,
-        TvType.Cartoon,
-        episodes
-    ) {
-        posterUrl = poster
+    title,
+    url,
+    TvType.Cartoon,
+    episodes
+) {
+    posterUrl = poster
+    this.plot = plot
 
-        addSeasonNames(seasonsData)
-    }
+    addSeasonNames(seasonsData)
+}
 }
     override suspend fun loadLinks(
         data: String,
