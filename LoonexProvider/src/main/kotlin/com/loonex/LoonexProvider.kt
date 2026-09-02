@@ -1,7 +1,6 @@
 package com.loonex
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.MainAPI.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.SubtitleFile
