@@ -230,7 +230,13 @@ if (movieCard != null) {
             this.plot = plot
         
             trailerUrl?.let {
-                addTrailer(it)
+                trailers.add(
+                    TrailerData(
+                        extractorUrl = it,
+                        referer = null,
+                        raw = false
+                    )
+                )
             }
         }
     }
@@ -502,8 +508,14 @@ val originalEpisode = xMatch
     this.plot = plot
 
     trailerUrl?.let {
-        addTrailer(it)
-    }
+    trailers.add(
+        TrailerData(
+            extractorUrl = it,
+            referer = null,
+            raw = false
+        )
+    )
+}
 
     addSeasonNames(seasonsData)
 }
