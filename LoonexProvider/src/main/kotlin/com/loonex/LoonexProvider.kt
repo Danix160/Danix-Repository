@@ -141,101 +141,137 @@ class LoonexProvider : MainAPI() {
     val seasonsData = mutableListOf<SeasonData>()
 
     val seasonButtons = doc.select(
-        """button[data-bs-target^="#season-tab-"][data-season-name]"""
-    )
+    """button[data-bs-target][data-season-name]"""
+)
 
-    seasonButtons.forEachIndexed { seasonIndex, button ->
+seasonButtons.forEachIndexed { seasonIndex, button ->
 
-        val seasonName = button
-            .attr("data-season-name")
-            .trim()
+    val currentSeason = seasonIndex + 1
 
-        val target = button
-            .attr("data-bs-target")
-            .trim()
-
-        if (target.isBlank()) {
-            return@forEachIndexed
-        }
-
-        val seasonContainer = doc.selectFirst(target)
-            ?: return@forEachIndexed
-
-        // Ogni tab Loonex diventa una stagione Cloudstream
-        val currentSeason = seasonIndex + 1
-
-        val seasonDisplayName = seasonName.ifBlank {
+    val seasonName = button
+        .attr("data-season-name")
+        .trim()
+        .ifBlank {
             "Stagione $currentSeason"
         }
 
-        seasonsData.add(
-            SeasonData(
-                currentSeason,
-                seasonDisplayName
-            )
-        )
+    /*
+     * Esempio:
+     *
+     * data-bs-target="#season-tab-2"
+     *
+     * diventa:
+     *
+     * season-tab-2
+     */
+    val targetId = button
+        .attr("data-bs-target")
+        .trim()
+        .removePrefix("#")
 
-        seasonContainer
-            .select(".episode-row")
-            .forEachIndexed episodeLoop@ { episodeIndex, row ->
-
-                val originalLabel = row
-                    .attr("data-ep-label")
-                    .trim()
-
-                val playUrl = row
-                    .selectFirst("a.btn-play-sm")
-                    ?.attr("href")
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: return@episodeLoop
-
-                val xMatch = Regex(
-                    """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
-                ).find(originalLabel)
-
-                val episodeNumber =
-                    xMatch
-                        ?.groupValues
-                        ?.getOrNull(2)
-                        ?.toIntOrNull()
-
-                        ?: Regex(
-                            """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
-                        )
-                            .find(originalLabel)
-                            ?.groupValues
-                            ?.getOrNull(1)
-                            ?.toIntOrNull()
-
-                        ?: (episodeIndex + 1)
-
-                val episodeName =
-                    if (
-                        originalLabel.matches(
-                            Regex(
-                                """(?i)\s*episodio\s+\d+\s*[x×]\s*\d+\s*"""
-                            )
-                        )
-                    ) {
-                        "Episodio $episodeNumber"
-                    } else {
-                        originalLabel.ifBlank {
-                            "Episodio $episodeNumber"
-                        }
-                    }
-
-                episodes.add(
-                    newEpisode(
-                        fixUrl(playUrl)
-                    ) {
-                        this.name = episodeName
-                        this.season = currentSeason
-                        this.episode = episodeNumber
-                    }
-                )
-            }
+    if (targetId.isBlank()) {
+        return@forEachIndexed
     }
+
+    /*
+     * Cerchiamo ESATTAMENTE il pannello associato
+     * a questo pulsante.
+     */
+    val seasonContainer = doc.getElementById(targetId)
+        ?: return@forEachIndexed
+
+    /*
+     * Nome personalizzato della stagione.
+     */
+    seasonsData.add(
+        SeasonData(
+            currentSeason,
+            seasonName
+        )
+    )
+
+    /*
+     * IMPORTANTISSIMO:
+     *
+     * leggiamo SOLO gli episode-row contenuti
+     * dentro questo preciso seasonContainer.
+     */
+    val rows = seasonContainer.select(".episode-row")
+
+    rows.forEachIndexed episodeLoop@ { episodeIndex, row ->
+
+        val originalLabel = row
+            .attr("data-ep-label")
+            .trim()
+
+        val playUrl = row
+            .selectFirst("a.btn-play-sm[href]")
+            ?.attr("href")
+            ?.trim()
+            ?.takeIf {
+                it.isNotBlank()
+            }
+            ?: return@episodeLoop
+
+        /*
+         * Numero episodio.
+         *
+         * Se abbiamo:
+         *
+         * Episodio 1x01
+         * Episodio 1x02
+         * Episodio 1x03
+         *
+         * prendiamo solamente:
+         *
+         * 01
+         * 02
+         * 03
+         *
+         * La stagione NON viene presa da "1x".
+         */
+        val xMatch = Regex(
+            """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
+        ).find(originalLabel)
+
+        val episodeNumber =
+            xMatch
+                ?.groupValues
+                ?.getOrNull(2)
+                ?.toIntOrNull()
+
+                ?: Regex(
+                    """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
+                )
+                    .find(originalLabel)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.toIntOrNull()
+
+                ?: (episodeIndex + 1)
+
+        val episodeName =
+            originalLabel.ifBlank {
+                "Episodio $episodeNumber"
+            }
+
+        episodes.add(
+            newEpisode(
+                fixUrl(playUrl)
+            ) {
+                /*
+                 * QUESTA è la cosa importante.
+                 *
+                 * La stagione viene dal TAB,
+                 * non dall'etichetta dell'episodio.
+                 */
+                this.season = currentSeason
+                this.episode = episodeNumber
+                this.name = episodeName
+            }
+        )
+    }
+}
 
     /*
      * Fallback per eventuali pagine Loonex
