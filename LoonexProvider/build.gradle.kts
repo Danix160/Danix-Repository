@@ -1,12 +1,17 @@
-android {
-    
-    namespace = "com.loonex"
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-    kotlinOptions {
-        jvmTarget = "1.8"
-        freeCompilerArgs = freeCompilerArgs + "-Xskip-metadata-version-check"
+android {
+    namespace = "com.loonex"
+}
+
+tasks.withType<KotlinJvmCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_1_8)
+        freeCompilerArgs.add("-Xskip-metadata-version-check")
     }
 }
+
 cloudstream {
     extra["prefix"] = "Loonex"
     extra["displayName"] = "Loonex"
