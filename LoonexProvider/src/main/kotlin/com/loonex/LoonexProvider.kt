@@ -20,7 +20,7 @@ class LoonexProvider : MainAPI() {
     override val supportedTypes = setOf(
         TvType.Cartoon,
         TvType.Anime,
-        TvType.TvSeries
+        TvType.TvSeries,
         TvType.Movie
     )
 
