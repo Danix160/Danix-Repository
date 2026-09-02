@@ -21,6 +21,7 @@ class LoonexProvider : MainAPI() {
         TvType.Cartoon,
         TvType.Anime,
         TvType.TvSeries
+        TvType.Movie
     )
 
     private val headers = mapOf(
@@ -171,7 +172,43 @@ class LoonexProvider : MainAPI() {
         ?.get(1)
         ?.replace("\\/", "/")
         ?.let(::fixUrl)
+/*
+ * =========================================================
+ * FILM
+ * =========================================================
+ *
+ * Loonex usa .quality-card per i film completi,
+ * mentre le serie utilizzano .episode-row.
+ */
+val movieCard = doc.selectFirst(
+    ".quality-card[data-ep-label]"
+)
 
+if (movieCard != null) {
+
+    val movieUrl = movieCard
+        .selectFirst("a.auto-watch-btn[href]")
+        ?.attr("href")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+
+    if (movieUrl != null) {
+
+        return newMovieLoadResponse(
+            title,
+            url,
+            TvType.Movie,
+            fixUrl(movieUrl)
+        ) {
+            posterUrl = poster
+        }
+    }
+}
+
+////////////////
+// SERIE ///////
+////////////////
+        
     val episodes = mutableListOf<Episode>()
     val seasonsData = mutableListOf<SeasonData>()
 
