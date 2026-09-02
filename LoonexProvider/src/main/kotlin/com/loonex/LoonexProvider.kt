@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.fasterxml.jackson.annotation.JsonProperty
 import java.net.URLDecoder
 import java.net.URI
 
@@ -24,6 +25,39 @@ class LoonexProvider : MainAPI() {
 
     private val headers = mapOf(
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
+    )
+
+    private val tmdbApiKey = "e541cb159df14ce70fc51ab75703a1a2"
+    
+    private val tmdbApi = "https://api.themoviedb.org/3"
+    private val tmdbImageBase = "https://image.tmdb.org/t/p/w500"
+    
+    // Cache durante la vita del provider
+    private val tmdbSeriesCache = mutableMapOf<String, Int?>()
+    private val tmdbSeasonCache =
+        mutableMapOf<Pair<Int, Int>, Map<Int, String>>()
+
+    data class TmdbSearchResponse(
+    val results: List<TmdbSearchResult>? = null
+)
+
+    data class TmdbSearchResult(
+        val id: Int? = null,
+        val name: String? = null,
+        val original_name: String? = null,
+        val first_air_date: String? = null
+    )
+    
+    data class TmdbSeasonResponse(
+        val episodes: List<TmdbEpisode>? = null
+    )
+    
+    data class TmdbEpisode(
+        @JsonProperty("episode_number")
+        val episodeNumber: Int? = null,
+    
+        @JsonProperty("still_path")
+        val stillPath: String? = null
     )
 
     override val mainPage = mainPageOf(
@@ -160,6 +194,12 @@ seasonButtons.forEachIndexed { tabIndex, button ->
             "Parte $cloudSeason"
         }
 
+    val tmdbId = findTmdbSeries(tabName)
+
+    val tmdbStillsBySeason =
+    mutableMapOf<Int, Map<Int, String>>()
+    
+
     val targetId = button
         .attr("data-bs-target")
         .trim()
@@ -228,6 +268,32 @@ seasonButtons.forEachIndexed { tabIndex, button ->
             ?.getOrNull(2)
             ?.toIntOrNull()
 
+      val episodeStill =
+    if (
+        tmdbId != null &&
+        originalSeason != null &&
+        originalEpisode != null
+    ) {
+
+        var seasonStills =
+            tmdbStillsBySeason[originalSeason]
+
+        if (seasonStills == null) {
+
+            seasonStills = getTmdbSeasonStills(
+                tmdbId,
+                originalSeason
+            )
+
+            tmdbStillsBySeason[originalSeason] =
+                seasonStills
+        }
+
+        seasonStills[originalEpisode]
+
+    } else {
+        null
+    }
         /*
          * Cloudstream deve avere episodi progressivi
          * all'interno del TAB.
@@ -258,31 +324,23 @@ seasonButtons.forEachIndexed { tabIndex, button ->
             }
 
         episodes.add(
-            newEpisode(
-                fixUrl(playUrl)
-            ) {
-                /*
-                 * Il TAB decide il raggruppamento.
-                 */
-                this.season = cloudSeason
+        newEpisode(
+        fixUrl(playUrl)
+    ) {
+        this.season = cloudSeason
+        this.episode = cloudEpisode
+        this.name = displayName
 
-                /*
-                 * Progressivo dentro quel tab.
-                 */
-                this.episode = cloudEpisode
-
-                /*
-                 * Manteniamo la numerazione originale
-                 * visibile all'utente.
-                 *
-                 * Es:
-                 * 01x01
-                 * 01x02
-                 * 02x01
-                 */
-                this.name = displayName
-            }
-        )
+        /*
+         * Prima scelta:
+         * still vera TMDB.
+         *
+         * Fallback:
+         * poster principale Loonex.
+         */
+        this.posterUrl = episodeStill ?: poster
+    }
+)
     }
 }
 
@@ -420,6 +478,137 @@ seasonButtons.forEachIndexed { tabIndex, button ->
 
         return true
     }
+
+    private suspend fun findTmdbSeries(
+    rawTitle: String
+): Int? {
+
+    tmdbSeriesCache[rawTitle]?.let {
+        return it
+    }
+
+    /*
+     * Estraiamo eventuale anno:
+     *
+     * Ben 10 (2005) Serie Completa
+     *             ↓
+     *            2005
+     */
+    val year = Regex(
+        """\((19|20)\d{2}\)"""
+    ).find(rawTitle)
+        ?.value
+        ?.removePrefix("(")
+        ?.removeSuffix(")")
+        ?.toIntOrNull()
+
+    /*
+     * Pulizia del nome Loonex.
+     */
+    val cleanTitle = rawTitle
+        .replace(
+            Regex("""\((19|20)\d{2}\)"""),
+            ""
+        )
+        .replace(
+            Regex("""(?i)\bserie\s+completa\b"""),
+            ""
+        )
+        .trim()
+
+    val encodedTitle = java.net.URLEncoder.encode(
+        cleanTitle,
+        "UTF-8"
+    )
+
+    val searchUrl = buildString {
+        append("$tmdbApi/search/tv")
+        append("?api_key=$tmdbApiKey")
+        append("&query=$encodedTitle")
+        append("&language=it-IT")
+
+        if (year != null) {
+            append("&first_air_date_year=$year")
+        }
+    }
+
+    return try {
+
+        val response = app.get(
+            searchUrl,
+            headers = headers
+        )
+
+        val json = response.parsedSafe<TmdbSearchResponse>()
+
+        val result = json
+            ?.results
+            ?.firstOrNull()
+
+        val id = result?.id
+
+        tmdbSeriesCache[rawTitle] = id
+
+        id
+
+    } catch (_: Exception) {
+
+        tmdbSeriesCache[rawTitle] = null
+        null
+    }
+}
+
+    private suspend fun getTmdbSeasonStills(
+    tmdbId: Int,
+    season: Int
+): Map<Int, String> {
+
+    val cacheKey = tmdbId to season
+
+    tmdbSeasonCache[cacheKey]?.let {
+        return it
+    }
+
+    val url =
+        "$tmdbApi/tv/$tmdbId/season/$season" +
+        "?api_key=$tmdbApiKey" +
+        "&language=it-IT"
+
+    return try {
+
+        val response = app.get(
+            url,
+            headers = headers
+        )
+
+        val data = response
+            .parsedSafe<TmdbSeasonResponse>()
+
+        val result = data
+            ?.episodes
+            ?.mapNotNull { episode ->
+
+                val number = episode.episodeNumber
+                    ?: return@mapNotNull null
+
+                val still = episode.stillPath
+                    ?: return@mapNotNull null
+
+                number to "$tmdbImageBase$still"
+            }
+            ?.toMap()
+            ?: emptyMap()
+
+        tmdbSeasonCache[cacheKey] = result
+
+        result
+
+    } catch (_: Exception) {
+
+        tmdbSeasonCache[cacheKey] = emptyMap()
+        emptyMap()
+    }
+}
 
     private fun decryptLoonexUrl(
         hex: String,
