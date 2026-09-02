@@ -66,50 +66,54 @@ class LoonexProvider : MainAPI() {
     )
 
     override suspend fun getMainPage(
-        page: Int,
-        request: MainPageRequest
-    ): HomePageResponse {
+    page: Int,
+    request: MainPageRequest
+): HomePageResponse {
 
-        val url = if (page <= 1) {
-            request.data
-        } else {
-            "${request.data}?page=$page"
-        }
-
-        val doc = app.get(
-            url,
-            headers = headers
-        ).document
-
-        val items = doc.select("""a[href*="?cartone="]""")
-            .mapNotNull { a ->
-
-                val title = a.selectFirst(".card-title-cine")
-                    ?.text()
-                    ?.trim()
-                    ?: return@mapNotNull null
-
-                val href = a.attr("href")
-
-                val poster = a.selectFirst("img.card-img-bg")
-                    ?.attr("src")
-                    ?.let(::fixUrl)
-
-                newMovieSearchResponse(
-                    title,
-                    fixUrl(href),
-                    TvType.Cartoon
-                ) {
-                    posterUrl = poster
-                }
-            }
-            .distinctBy { it.url }
-
-        return newHomePageResponse(
-            request.name,
-            items
-        )
+    val url = if (page <= 1) {
+        request.data
+    } else {
+        "${request.data}?page=$page"
     }
+
+    val doc = app.get(
+        url,
+        headers = headers
+    ).document
+
+    val items = doc.select("""a[href*="?cartone="]""")
+        .mapNotNull { a ->
+
+            val title = a.selectFirst(".card-title-cine")
+                ?.text()
+                ?.trim()
+                ?: return@mapNotNull null
+
+            val href = a.attr("href")
+
+            val poster = a.selectFirst("img.card-img-bg")
+                ?.attr("src")
+                ?.let(::fixUrl)
+
+            newMovieSearchResponse(
+                title,
+                fixUrl(href),
+                TvType.Cartoon
+            ) {
+                posterUrl = poster
+            }
+        }
+        .distinctBy { it.url }
+
+    return newHomePageResponse(
+        HomePageList(
+            name = request.name,
+            list = items,
+            isHorizontalImages = true
+        ),
+        hasNext = true
+    )
+}
 
     override suspend fun search(query: String): List<SearchResponse> {
 
