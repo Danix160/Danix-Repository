@@ -1,5 +1,7 @@
 package com.loonex
 
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.stream.StreamInfo
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -200,6 +202,25 @@ class LoonexProvider : MainAPI() {
                 } else {
                     "https://www.youtube.com/watch?v=$videoId"
                 }
+            }
+            
+            try {
+                trailerUrl?.let { youtubeUrl ->
+            
+                    println("LOONEX_YT_TEST_URL = $youtubeUrl")
+            
+                    val service = NewPipe.getService(0)
+                    val info = StreamInfo.getInfo(service, youtubeUrl)
+            
+                    println("LOONEX_YT_TITLE = ${info.name}")
+                    println("LOONEX_YT_VIDEO_STREAMS = ${info.videoStreams.size}")
+                    println("LOONEX_YT_VIDEO_ONLY_STREAMS = ${info.videoOnlyStreams.size}")
+                    println("LOONEX_YT_AUDIO_STREAMS = ${info.audioStreams.size}")
+                }
+            } catch (e: Exception) {
+                println("LOONEX_YT_ERROR = ${e.javaClass.name}")
+                println("LOONEX_YT_ERROR_MESSAGE = ${e.message}")
+                e.printStackTrace()
             }
 
 
