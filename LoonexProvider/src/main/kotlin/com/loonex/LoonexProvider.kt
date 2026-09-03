@@ -183,26 +183,11 @@ class LoonexProvider : MainAPI() {
             ?.trim()
             ?.takeIf { it.isNotBlank() }
 
-         val trailerIframe = doc
+         val trailerUrl = doc
             .selectFirst("iframe.poster-trailer-iframe[src]")
             ?.attr("src")
             ?.trim()
-        
-        println("LOONEX_IFRAME = $trailerIframe")
-        
-        val trailerUrl = trailerIframe
             ?.takeIf { it.isNotBlank() }
-            ?.let { src ->
-                Regex("""embed/([A-Za-z0-9_-]{11})""")
-                    .find(src)
-                    ?.groupValues
-                    ?.getOrNull(1)
-            }
-            ?.let { videoId ->
-                "https://www.youtube.com/watch?v=$videoId"
-            }
-        
-        println("LOONEX_TRAILER = $trailerUrl")
 /*
  * =========================================================
  * FILM
