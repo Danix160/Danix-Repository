@@ -5,6 +5,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.stream.StreamInfo
 import com.fasterxml.jackson.annotation.JsonProperty
 import java.net.URLDecoder
 import java.net.URI
@@ -198,11 +200,44 @@ class LoonexProvider : MainAPI() {
                 "https://www.youtube.com/watch?v=$videoId"
             }
 
-            val testTrailerUrl = if (trailerUrl?.contains("xm37yTCJQOA") == true) {
-                "https://www.youtube.com/watch?v=ZhdXjPEfoTI"
-            } else {
-                trailerUrl
+            try {
+                val youtubeUrl = trailerUrl
+            
+                if (youtubeUrl != null) {
+                    println("LOONEX_YT_TEST_URL = $youtubeUrl")
+            
+                    val service = NewPipe.getService(0)
+                    val info = StreamInfo.getInfo(service, youtubeUrl)
+            
+                    println("LOONEX_YT_TITLE = ${info.name}")
+                    println("LOONEX_YT_VIDEO_STREAMS = ${info.videoStreams.size}")
+                    println("LOONEX_YT_VIDEO_ONLY_STREAMS = ${info.videoOnlyStreams.size}")
+                    println("LOONEX_YT_AUDIO_STREAMS = ${info.audioStreams.size}")
+            
+                    info.videoStreams.forEach {
+                        println(
+                            "LOONEX_YT_VIDEO = ${it.resolution} | ${it.content}"
+                        )
+                    }
+            
+                    info.videoOnlyStreams.forEach {
+                        println(
+                            "LOONEX_YT_VIDEO_ONLY = ${it.resolution} | ${it.content}"
+                        )
+                    }
+            
+                    info.audioStreams.forEach {
+                        println(
+                            "LOONEX_YT_AUDIO = ${it.format} | ${it.content}"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                println("LOONEX_YT_ERROR = ${e.javaClass.name}")
+                println("LOONEX_YT_ERROR_MESSAGE = ${e.message}")
+                e.printStackTrace()
             }
+
 /*
  * =========================================================
  * FILM
@@ -234,7 +269,7 @@ if (movieCard != null) {
             posterUrl = poster
             this.plot = plot
         
-            testTrailerUrl?.let {
+            trailerUrl?.let {
                 trailers.add(
                     TrailerData(
                         extractorUrl = it,
@@ -512,7 +547,7 @@ val originalEpisode = xMatch
     posterUrl = poster
     this.plot = plot
 
-    testTrailerUrl?.let {
+    trailerUrl?.let {
         trailers.add(
             TrailerData(
                 extractorUrl = it,
