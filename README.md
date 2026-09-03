@@ -23,6 +23,8 @@
 
 **👆 Clicca su Gumball per installare**
 
+<a href="https://danix160.github.io/Danix-Repository/install.html"> <img src="https://img.shields.io/badge/INSTALLA-DANIX_REPOSITORY-success?style=flat-square"> </a>
+
 <br><br>
 
 <a href="https://github.com/Danix160/Danix-Repository/issues">
