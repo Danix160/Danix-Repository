@@ -12,20 +12,20 @@
 
 ### 📦 Installa la repository
 
-<a href="cloudstreamrepo://raw.githubusercontent.com/Danix160/Danix-Repository/builds/repo.json">
-  <img
-    src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
-    alt="Installa Danix Repository"
-    width="150"
-  >
+<a href="https://danix160.github.io/Danix-Repository/install.html"> 
+<img src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png" alt="Installa Danix Repository" width="140"> 
 </a>
 
 <br>
 
 **👆 Clicca su Gumball per installare**
 
-<a href="https://danix160.github.io/Danix-Repository/install.html">
-  <img src="https://img.shields.io/badge/INSTALLA-DANIX_REPOSITORY-success?style=flat-square">
+<a href="cloudstreamrepo://raw.githubusercontent.com/Danix160/Danix-Repository/builds/repo.json">
+  <img
+    src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
+    alt="Installa Danix Repository"
+    width="150"
+  >
 </a>
 
 <br><br>
