@@ -1,22 +1,40 @@
 <div align="center">
 
-# 🇮🇹 Plugin CloudStream ITA
+# 🇮🇹 Danix Repository
 
-Repository di plugin italiani per **CloudStream**.
+### ☁️ Plugin italiani per CloudStream
 
-### 📦 Clicca su Gumball per installare la repository
+<br>
+
+<img src="https://img.shields.io/badge/CloudStream-Extensions-4A90E2?style=for-the-badge">
+<img src="https://img.shields.io/badge/Lingua-Italiano-009246?style=for-the-badge">
+<img src="https://img.shields.io/badge/Plugin-Attivi-8A2BE2?style=for-the-badge">
+
+<br><br>
+
+### 📦 Installa la repository
+
+<p>
+  <a href="https://danix160.github.io/Danix-Repository/install.html">
+    <img
+      src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
+      alt="Installa Danix Repository"
+      width="200"
+    >
+  </a>
+</p>
+
+### 👆 Clicca su Gumball per installare
 
 <a href="https://danix160.github.io/Danix-Repository/install.html">
-  <img src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png" alt="Installa Danix Repository" width="190">
+  <img src="https://img.shields.io/badge/INSTALLA-DANIX_REPOSITORY-success?style=for-the-badge&logo=github">
 </a>
 
 <br><br>
 
-<b>
-<a href="https://danix160.github.io/Danix-Repository/install.html">
-👉 CLICCA QUI PER INSTALLARE, SE L'IMMAGINE NON DOVESSE FUNZIONARE 👈
-</a>
-</b>
+<sub>
+Se Gumball non dovesse funzionare, utilizza il pulsante <b>INSTALLA DANIX REPOSITORY</b>.
+</sub>
 
 </div>
 
@@ -25,7 +43,7 @@ Repository di plugin italiani per **CloudStream**.
 <h2 align="center">🧩 Plugin disponibili</h2>
 
 <p align="center">
-  Tutti i plugin disponibili nella <b>Danix Repository</b>
+  Estensioni disponibili nella <b>Danix Repository</b>
 </p>
 
 <table>
