@@ -44,6 +44,7 @@
   <sub>Estensioni disponibili nella <b>Danix Repository</b></sub>
 </p>
 
+<center>
 <table>
 <tr>
 <td width="50%" valign="top">
@@ -121,6 +122,7 @@
 </td>
 </tr>
 </table>
+</center>
 
 <p align="center">
 <sub>
