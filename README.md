@@ -4,27 +4,23 @@
 
 #### ☁️ Plugin italiani per CloudStream
 
+<img src="https://img.shields.io/github/last-commit/Danix160/Danix-Repository?style=flat-square&label=Ultimo%20aggiornamento">
 <img src="https://img.shields.io/badge/CloudStream-Extensions-4A90E2?style=flat-square">
 <img src="https://img.shields.io/badge/Lingua-Italiano-009246?style=flat-square">
-<img src="https://img.shields.io/badge/Plugin-Attivi-8A2BE2?style=flat-square">
 
 <br><br>
 
 ### 📦 Installa la repository
 
 <a href="https://danix160.github.io/Danix-Repository/install.html">
-  <img
-    src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
-    alt="Installa Danix Repository"
-    width="150"
-  >
+  <img src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
+       alt="Installa Danix Repository"
+       width="140">
 </a>
 
 <br>
 
 **👆 Clicca su Gumball per installare**
-
-<br>
 
 <a href="https://danix160.github.io/Danix-Repository/install.html">
   <img src="https://img.shields.io/badge/INSTALLA-DANIX_REPOSITORY-success?style=flat-square">
@@ -32,9 +28,23 @@
 
 <br><br>
 
-<sub>Se l'immagine non dovesse funzionare, usa il pulsante qui sopra.</sub>
+<a href="https://github.com/Danix160/Danix-Repository/issues">
+  <img src="https://img.shields.io/github/issues/Danix160/Danix-Repository?style=flat-square&label=Problemi">
+</a>
+<a href="https://github.com/Danix160/Danix-Repository/stargazers">
+  <img src="https://img.shields.io/github/stars/Danix160/Danix-Repository?style=flat-square&label=Stelle">
+</a>
 
 </div>
+
+---
+
+<p align="center">
+  <a href="#-plugin-disponibili">Plugin</a> •
+  <a href="#-installazione-manuale">Installazione</a> •
+  <a href="#-aggiornamenti">Aggiornamenti</a> •
+  <a href="#-segnala-un-problema">Problemi</a>
+</p>
 
 ---
 
@@ -44,23 +54,16 @@
   <sub>Estensioni disponibili nella <b>Danix Repository</b></sub>
 </p>
 
-<center>
 <table>
 <tr>
 <td width="50%" valign="top">
 
-<b>🎬 ALTADEFINIZIONE01</b><br>
-<img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square">
-<sub>Film · Serie TV · Cartoni</sub><br>
-<sub>🌐 <a href="https://altadefinizione-01.forum">Sito</a></sub>
+<b>🎬 ALTADEFINIZIONE01</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni</sub><br> <sub>🌐 <a href="https://altadefinizione-01.forum">Sito</a></sub>
 
 </td>
 <td width="50%" valign="top">
 
-<b>🎬 CB01</b><br>
-<img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square">
-<sub>Film · Serie TV · Cartoni · Anime</sub><br>
-<sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
+<b>🎬 CB01</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
 
 </td>
 </tr>
@@ -68,18 +71,12 @@
 <tr>
 <td width="50%" valign="top">
 
-<b>🎥 GUARDAPLAY</b><br>
-<img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square">
-<sub>Film · Cartoni</sub><br>
-<sub>❌ Player momentaneamente offline</sub>
+<b>🎥 GUARDAPLAY</b><br> <img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square"> <sub>Film · Cartoni</sub><br> <sub>❌ Player momentaneamente offline</sub>
 
 </td>
 <td width="50%" valign="top">
 
-<b>📺 ONLINESERIETV</b><br>
-<img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square">
-<sub>Film · Serie TV · Cartoni · Anime</sub><br>
-<sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
+<b>📺 ONLINESERIETV</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
 
 </td>
 </tr>
@@ -87,18 +84,12 @@
 <tr>
 <td width="50%" valign="top">
 
-<b>🧸 LOONEX</b><br>
-<img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square">
-<sub>Cartoni · Anime</sub><br>
-<sub>🌐 <a href="https://loonex.eu/cartoni/">Sito</a></sub>
+<b>🧸 LOONEX</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Cartoni · Anime</sub><br> <sub>🌐 <a href="https://loonex.eu/cartoni/">Sito</a></sub>
 
 </td>
 <td width="50%" valign="top">
 
-<b>📡 RIVESTREAM</b><br>
-<img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square">
-<sub>Canali TV</sub><br>
-<sub>⚠️ Solo canali, niente eventi per ora</sub>
+<b>📡 RIVESTREAM</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Canali TV</sub><br> <sub>⚠️ Solo canali, niente eventi per ora</sub>
 
 </td>
 </tr>
@@ -106,23 +97,16 @@
 <tr>
 <td width="50%" valign="top">
 
-<b>🌐 UNIVERSAL</b><br>
-<img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square">
-<sub>Film · Serie TV</sub><br>
-<sub>⚠️ Funzionante, ma possibili incongruenze</sub>
+<b>🌐 UNIVERSAL</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV</sub><br> <sub>⚠️ Funzionante, ma possibili incongruenze</sub>
 
 </td>
 <td width="50%" valign="top">
 
-<b>🐉 TOONITALIA</b><br>
-<img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square">
-<sub>Film · Serie TV · Cartoni · Anime</sub><br>
-<sub>❌ Struttura del sito soggetta a variazioni</sub>
+<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>❌ Struttura del sito soggetta a variazioni</sub>
 
 </td>
 </tr>
 </table>
-</center>
 
 <p align="center">
 <sub>
@@ -132,63 +116,74 @@
 </sub>
 </p>
 
-## 🚀 Installazione
+---
 
-### Installazione rapida
+## 📥 Installazione manuale
 
-Clicca sull'immagine di **Gumball** presente all'inizio della pagina.
+<details>
+<summary><b>Mostra istruzioni</b></summary>
 
-Verrai indirizzato alla pagina di installazione della **Danix Repository**.
+<br>
 
-### 🔧 Installazione manuale
-
-Se l'installazione tramite il pulsante non dovesse funzionare:
+Se l'installazione tramite Gumball non dovesse funzionare:
 
 1. Apri **CloudStream**
-2. Vai su **Impostazioni**
-3. Apri la sezione **Estensioni / Repository**
+2. Vai in **Impostazioni**
+3. Apri **Estensioni / Repository**
 4. Aggiungi una nuova repository
-5. Inserisci questo indirizzo:
+5. Inserisci:
 
 `https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/plugins.json`
 
----
-
-## ✨ Funzionalità
-
-A seconda del plugin sono disponibili:
-
-- 🎬 Film
-- 📺 Serie TV
-- 🧸 Cartoni animati
-- 🇯🇵 Anime
-- 🔎 Ricerca dei contenuti
-- 📑 Stagioni ed episodi
-- 🖼️ Poster e immagini degli episodi
-- 🎵 Sigle e trailer
-- ▶️ Riproduzione direttamente tramite CloudStream
+</details>
 
 ---
 
 ## 🔄 Aggiornamenti
 
-I plugin vengono aggiornati quando necessario per adattarsi ai cambiamenti dei rispettivi siti.
+<details>
+<summary><b>Ultimi aggiornamenti</b></summary>
 
-Se un plugin smette improvvisamente di funzionare, assicurati prima di avere installato **l'ultima versione disponibile** dalla repository.
+<br>
+
+### 🧸 Loonex
+
+* Supporto a Cartoni e Anime
+* Gestione stagioni ed episodi
+* Immagini episodi tramite TMDB
+* Supporto alle sigle/trailer
+* Migliorata la riproduzione delle sigle YouTube
+
+### 📡 RiveStream
+
+* Supporto ai canali TV
+* Eventi attualmente non disponibili
+
+### 🌐 Universal
+
+* Plugin funzionante
+* Possibili incongruenze su alcuni contenuti
+
+</details>
+
+> 💡 Assicurati sempre di utilizzare l'ultima versione disponibile dei plugin.
 
 ---
 
-## 🐛 Segnalazione problemi
+## 🐛 Segnala un problema
 
-Se trovi un problema con uno dei plugin, puoi aprire una **Issue** su GitHub.
+Hai trovato un plugin che non funziona correttamente?
 
-Per facilitare la risoluzione del problema indica, se possibile:
+<a href="https://github.com/Danix160/Danix-Repository/issues/new">
+  <img src="https://img.shields.io/badge/SEGNALA-UN_PROBLEMA-orange?style=flat-square">
+</a>
 
-- il nome del plugin;
-- il contenuto che stavi tentando di aprire;
-- cosa non funziona;
-- eventuali errori mostrati da CloudStream;
-- eventuale log dell'app.
+Quando apri una segnalazione, indica se possibile:
+
+* 🧩 Plugin interessato
+* 🎬 Film, serie o contenuto interessato
+* ❌ Problema riscontrato
+* 📋 Eventuale errore o log di CloudStream
 
 ---
 
@@ -196,8 +191,7 @@ Per facilitare la risoluzione del problema indica, se possibile:
 
 Questa repository contiene estensioni sviluppate per **CloudStream**.
 
-I plugin non ospitano direttamente contenuti multimediali.  
-Disponibilità, funzionamento e contenuti dipendono dai rispettivi servizi utilizzati dalle estensioni.
+I plugin non ospitano direttamente contenuti multimediali. Disponibilità, funzionamento e contenuti dipendono dai rispettivi servizi utilizzati dalle estensioni.
 
 ---
 
@@ -205,6 +199,20 @@ Disponibilità, funzionamento e contenuti dipendono dai rispettivi servizi utili
 
 ### ☁️ Danix Repository
 
-**Plugin CloudStream in italiano 🇮🇹**
+<sub>Plugin CloudStream in italiano 🇮🇹</sub>
+
+<br><br>
+
+<a href="https://github.com/Danix160/Danix-Repository">
+  <img src="https://img.shields.io/badge/GitHub-Danix160-181717?style=flat-square&logo=github">
+</a>
+
+<a href="https://github.com/Danix160/Danix-Repository/stargazers">
+  <img src="https://img.shields.io/badge/⭐-Lascia_una_stella-yellow?style=flat-square">
+</a>
+
+<br><br>
+
+<sub>⭐ Se la repository ti è utile, lascia una stella!</sub>
 
 </div>
