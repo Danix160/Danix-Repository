@@ -208,10 +208,13 @@
     </div>
 
 </div>
-
-<script>
+    
+  <script>
     const repoUrl =
         "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/repo.json";
+
+    const cloudstreamUrl =
+        "cloudstreamrepo://raw.githubusercontent.com/Danix160/Danix-Repository/builds/repo.json";
 
     async function copyRepo() {
         const message = document.getElementById("message");
@@ -228,6 +231,11 @@
             );
         }
     }
+
+    window.addEventListener("load", () => {
+        window.location.href = cloudstreamUrl;
+    });
+</script>
 </script>
 
 </body>
