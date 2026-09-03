@@ -13,8 +13,6 @@
 ### 📦 Installa la repository
 
 
-**👆 Clicca su Gumball per installare**
-
 <a href="https://danix160.github.io/Danix-Repository/install.html">
   <img
     src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
@@ -22,6 +20,8 @@
     width="150"
   >
 </a>
+
+**👆 Clicca su Gumball per installare**
 
 <br><br>
 
