@@ -2,216 +2,132 @@
 
 # 🇮🇹 Danix Repository
 
-### ☁️ Plugin italiani per CloudStream
+#### ☁️ Plugin italiani per CloudStream
 
-<br>
-
-<img src="https://img.shields.io/badge/CloudStream-Extensions-4A90E2?style=for-the-badge">
-<img src="https://img.shields.io/badge/Lingua-Italiano-009246?style=for-the-badge">
-<img src="https://img.shields.io/badge/Plugin-Attivi-8A2BE2?style=for-the-badge">
+<img src="https://img.shields.io/badge/CloudStream-Extensions-4A90E2?style=flat-square">
+<img src="https://img.shields.io/badge/Lingua-Italiano-009246?style=flat-square">
+<img src="https://img.shields.io/badge/Plugin-Attivi-8A2BE2?style=flat-square">
 
 <br><br>
 
 ### 📦 Installa la repository
 
-<p>
-  <a href="https://danix160.github.io/Danix-Repository/install.html">
-    <img
-      src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
-      alt="Installa Danix Repository"
-      width="200"
-    >
-  </a>
-</p>
+<a href="https://danix160.github.io/Danix-Repository/install.html">
+  <img
+    src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
+    alt="Installa Danix Repository"
+    width="150"
+  >
+</a>
 
-### 👆 Clicca su Gumball per installare
+<br>
+
+**👆 Clicca su Gumball per installare**
+
+<br>
 
 <a href="https://danix160.github.io/Danix-Repository/install.html">
-  <img src="https://img.shields.io/badge/INSTALLA-DANIX_REPOSITORY-success?style=for-the-badge&logo=github">
+  <img src="https://img.shields.io/badge/INSTALLA-DANIX_REPOSITORY-success?style=flat-square">
 </a>
 
 <br><br>
 
-<sub>
-Se Gumball non dovesse funzionare, utilizza il pulsante <b>INSTALLA DANIX REPOSITORY</b>.
-</sub>
+<sub>Se l'immagine non dovesse funzionare, usa il pulsante qui sopra.</sub>
 
 </div>
 
 ---
 
-<h2 align="center">🧩 Plugin disponibili</h2>
+<h3 align="center">🧩 Plugin disponibili</h3>
 
 <p align="center">
-  Estensioni disponibili nella <b>Danix Repository</b>
+  <sub>Estensioni disponibili nella <b>Danix Repository</b></sub>
 </p>
 
 <table>
 <tr>
-
 <td width="50%" valign="top">
 
-<h3>🎬 ALTADEFINIZIONE01</h3>
-
-<img src="https://img.shields.io/badge/STATO-ONLINE-brightgreen">
-<img src="https://img.shields.io/badge/Film-✓-blue">
-<img src="https://img.shields.io/badge/Serie_TV-✓-blue">
-<img src="https://img.shields.io/badge/Cartoni-✓-blue">
-
-<br><br>
-
-🌐 <a href="https://altadefinizione-01.forum"><b>Visita il sito</b></a>
-
-<br><br>
-
-✅ Plugin funzionante.
+<b>🎬 ALTADEFINIZIONE01</b><br>
+<img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square">
+<sub>Film · Serie TV · Cartoni</sub><br>
+<sub>🌐 <a href="https://altadefinizione-01.forum">Sito</a></sub>
 
 </td>
-
 <td width="50%" valign="top">
 
-<h3>🎬 CB01</h3>
-
-<img src="https://img.shields.io/badge/STATO-PARZIALE-yellow">
-<img src="https://img.shields.io/badge/Film-✓-blue">
-<img src="https://img.shields.io/badge/Serie_TV-✓-blue">
-<img src="https://img.shields.io/badge/Cartoni-✓-blue">
-<img src="https://img.shields.io/badge/Anime-✓-blue">
-
-<br><br>
-
-🌐 <a href="https://cb01uno.cam/"><b>Visita il sito</b></a>
-
-<br><br>
-
-⚠️ CAPTCHA da risolvere, ma perfettamente funzionante.
+<b>🎬 CB01</b><br>
+<img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square">
+<sub>Film · Serie TV · Cartoni · Anime</sub><br>
+<sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
 
 </td>
-
 </tr>
 
 <tr>
-
 <td width="50%" valign="top">
 
-<h3>🎥 GUARDAPLAY</h3>
-
-<img src="https://img.shields.io/badge/STATO-OFFLINE-red">
-<img src="https://img.shields.io/badge/Film-✓-blue">
-<img src="https://img.shields.io/badge/Cartoni-✓-blue">
-
-<br><br>
-
-🌐 <a href="https://guardaplay.online"><b>Visita il sito</b></a>
-
-<br><br>
-
-❌ Player del sito momentaneamente offline.
+<b>🎥 GUARDAPLAY</b><br>
+<img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square">
+<sub>Film · Cartoni</sub><br>
+<sub>❌ Player momentaneamente offline</sub>
 
 </td>
-
 <td width="50%" valign="top">
 
-<h3>📺 ONLINESERIETV</h3>
-
-<img src="https://img.shields.io/badge/STATO-ONLINE-brightgreen">
-<img src="https://img.shields.io/badge/Film-✓-blue">
-<img src="https://img.shields.io/badge/Serie_TV-✓-blue">
-<img src="https://img.shields.io/badge/Cartoni-✓-blue">
-<img src="https://img.shields.io/badge/Anime-✓-blue">
-
-<br><br>
-
-🌐 <a href="https://onlineserietv.mom"><b>Visita il sito</b></a>
-
-<br><br>
-
-✅ CAPTCHA da risolvere, ma perfettamente funzionante.
+<b>📺 ONLINESERIETV</b><br>
+<img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square">
+<sub>Film · Serie TV · Cartoni · Anime</sub><br>
+<sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
 
 </td>
-
 </tr>
 
 <tr>
-
 <td width="50%" valign="top">
 
-<h3>🧸 LOONEX</h3>
-
-<img src="https://img.shields.io/badge/STATO-ONLINE-brightgreen">
-<img src="https://img.shields.io/badge/Cartoni-✓-blue">
-<img src="https://img.shields.io/badge/Anime-✓-blue">
-
-<br><br>
-
-🌐 <a href="https://loonex.eu/cartoni/"><b>Visita il sito</b></a>
-
-<br><br>
-
-✅ Plugin funzionante.
+<b>🧸 LOONEX</b><br>
+<img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square">
+<sub>Cartoni · Anime</sub><br>
+<sub>🌐 <a href="https://loonex.eu/cartoni/">Sito</a></sub>
 
 </td>
-
 <td width="50%" valign="top">
 
-<h3>📡 RIVESTREAM</h3>
-
-<img src="https://img.shields.io/badge/STATO-PARZIALE-yellow">
-<img src="https://img.shields.io/badge/Canali_TV-✓-blue">
-
-<br><br>
-
-⚠️ Solo canali, niente eventi per ora.
+<b>📡 RIVESTREAM</b><br>
+<img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square">
+<sub>Canali TV</sub><br>
+<sub>⚠️ Solo canali, niente eventi per ora</sub>
 
 </td>
-
 </tr>
 
 <tr>
-
 <td width="50%" valign="top">
 
-<h3>🌐 UNIVERSAL</h3>
-
-<img src="https://img.shields.io/badge/STATO-PARZIALE-yellow">
-<img src="https://img.shields.io/badge/Film-✓-blue">
-<img src="https://img.shields.io/badge/Serie_TV-✓-blue">
-
-<br><br>
-
-⚠️ Funzionante, ma possibili incongruenze.
+<b>🌐 UNIVERSAL</b><br>
+<img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square">
+<sub>Film · Serie TV</sub><br>
+<sub>⚠️ Funzionante, ma possibili incongruenze</sub>
 
 </td>
-
 <td width="50%" valign="top">
 
-<h3>🐉 TOONITALIA</h3>
-
-<img src="https://img.shields.io/badge/STATO-OFFLINE-red">
-<img src="https://img.shields.io/badge/Film-✓-blue">
-<img src="https://img.shields.io/badge/Serie_TV-✓-blue">
-<img src="https://img.shields.io/badge/Cartoni-✓-blue">
-<img src="https://img.shields.io/badge/Anime-✓-blue">
-
-<br><br>
-
-🌐 <a href="https://toonitalia.xyz/"><b>Visita il sito</b></a>
-
-<br><br>
-
-❌ Struttura del sito soggetta a frequenti variazioni.
+<b>🐉 TOONITALIA</b><br>
+<img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square">
+<sub>Film · Serie TV · Cartoni · Anime</sub><br>
+<sub>❌ Struttura del sito soggetta a variazioni</sub>
 
 </td>
-
 </tr>
 </table>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/ONLINE-Funzionante-brightgreen">
-  &nbsp;
-  <img src="https://img.shields.io/badge/PARZIALE-Con_limitazioni-yellow">
-  &nbsp;
-  <img src="https://img.shields.io/badge/OFFLINE-Non_funzionante-red">
+<sub>
+🟢 Funzionante &nbsp; • &nbsp;
+🟡 Parziale &nbsp; • &nbsp;
+🔴 Offline
+</sub>
 </p>
 
 ## 🚀 Installazione
