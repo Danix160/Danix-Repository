@@ -172,7 +172,6 @@ override val mainPage = mainPageOf(
 "italian-private-tv" to "TV Italiana Privata",
 "sports-live" to "Eventi Live",
 "italian-tv" to "TV Italiana",
-"basketball" to "Basket"
 
 )
 
@@ -215,12 +214,6 @@ override suspend fun getMainPage(
             loadSports(
                 sectionName = request.name,
                 query = "football"
-            )
-
-        "basketball" ->
-            loadSports(
-                sectionName = request.name,
-                query = "basketball"
             )
 
         else ->
