@@ -216,6 +216,12 @@ class LoonexProvider : MainAPI() {
                     println("LOONEX_YT_VIDEO_STREAMS = ${info.videoStreams.size}")
                     println("LOONEX_YT_VIDEO_ONLY_STREAMS = ${info.videoOnlyStreams.size}")
                     println("LOONEX_YT_AUDIO_STREAMS = ${info.audioStreams.size}")
+                    
+                    info.videoStreams.forEach { stream ->
+                        println("LOONEX_YT_STREAM_URL = ${stream.content}")
+                        println("LOONEX_YT_STREAM_FORMAT = ${stream.format}")
+                        println("LOONEX_YT_STREAM_RESOLUTION = ${stream.resolution}")
+                    }
                 }
             } catch (e: Exception) {
                 println("LOONEX_YT_ERROR = ${e.javaClass.name}")
