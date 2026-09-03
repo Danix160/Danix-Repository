@@ -26,16 +26,20 @@ Repository di plugin italiani per **CloudStream**.
 
 Questi sono i plugin attualmente presenti nella repository.
 
-| **Nome** | **Sito** | **Categorie** | **Lingua** | **Stato** | **Note** |
-|---|---|:---:|:---:|:---:|---|
-| **ALTADEFINIZIONE01** | https://altadefinizione-01.forum | Film, Serie TV, Cartoni | 🇮🇹 | 🟢 | |
-| **CB01** | https://cb01uno.cam/ | Film, Serie TV, Cartoni, Anime | 🇮🇹 | 🟡 | CAPTCHA da risolvere, ma perfettamente funzionante |
-| **GUARDAPLAY** | https://guardaplay.online | Film, Cartoni | 🇮🇹 | 🔴 | Player del sito momentaneamente offline |
-| **ONLINESERIETV** | https://onlineserietv.mom | Film, Serie TV, Cartoni, Anime | 🇮🇹 | 🟢 | CAPTCHA da risolvere, ma perfettamente funzionante |
-| **LOONEX** | https://loonex.eu/cartoni/ | Cartoni, Anime | 🇮🇹 | 🟢 | |
-| **RIVESTREAM** | — | Canali TV | 🇮🇹 | 🟡 | Solo canali, niente eventi per ora |
-| **UNIVERSAL** | — | Film, Serie TV | 🇮🇹 | 🟡 | Funzionante, ma possibili incongruenze |
-| **TOONITALIA** | https://toonitalia.xyz/ | Film, Serie TV, Cartoni, Anime | 🇮🇹 | 🔴 | Struttura del sito soggetta a frequenti variazioni |
+## 🧩 Plugin disponibili
+
+| Plugin | Contenuti | Stato | Note |
+|:---|:---|:---:|:---|
+| 🎬 **ALTADEFINIZIONE01** | Film · Serie TV · Cartoni | 🟢 **Online** | — |
+| 🎬 **CB01** | Film · Serie TV · Cartoni · Anime | 🟡 **Parziale** | CAPTCHA da risolvere, ma perfettamente funzionante |
+| 🎥 **GUARDAPLAY** | Film · Cartoni | 🔴 **Offline** | Player del sito momentaneamente offline |
+| 📺 **ONLINESERIETV** | Film · Serie TV · Cartoni · Anime | 🟢 **Online** | CAPTCHA da risolvere, ma perfettamente funzionante |
+| 🧸 **LOONEX** | Cartoni · Anime | 🟢 **Online** | — |
+| 📡 **RIVESTREAM** | Canali TV | 🟡 **Parziale** | Solo canali, niente eventi per ora |
+| 🌐 **UNIVERSAL** | Film · Serie TV | 🟡 **Parziale** | Funzionante, ma possibili incongruenze |
+| 🐉 **TOONITALIA** | Film · Serie TV · Cartoni · Anime | 🔴 **Offline** | Struttura del sito soggetta a frequenti variazioni |
+
+> **Stato:** 🟢 Online &nbsp;•&nbsp; 🟡 Parziale &nbsp;•&nbsp; 🔴 Offline
 
 ### 📊 Legenda
 
