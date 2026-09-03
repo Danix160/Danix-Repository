@@ -26,7 +26,7 @@ cloudstream {
     description = "GuardaPlay"
     authors = listOf("Danix")
     
-    status = 1
+    status = 0
     tvTypes = listOf("Movie")
     requiresResources = false
     language = "it"
