@@ -188,6 +188,15 @@ class LoonexProvider : MainAPI() {
             ?.attr("src")
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+            ?.let { src ->
+                Regex("""embed/([A-Za-z0-9_-]{11})""")
+                    .find(src)
+                    ?.groupValues
+                    ?.getOrNull(1)
+            }
+            ?.let { videoId ->
+                "https://www.youtube.com/watch?v=$videoId"
+            }
 /*
  * =========================================================
  * FILM
