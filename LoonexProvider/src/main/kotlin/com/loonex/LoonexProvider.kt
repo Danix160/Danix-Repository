@@ -197,6 +197,12 @@ class LoonexProvider : MainAPI() {
             ?.let { videoId ->
                 "https://www.youtube.com/watch?v=$videoId"
             }
+
+            val testTrailerUrl = if (trailerUrl?.contains("xm37yTCJQOA") == true) {
+                "https://www.youtube.com/watch?v=ZhdXjPEfoTI"
+            } else {
+                trailerUrl
+            }
 /*
  * =========================================================
  * FILM
@@ -228,7 +234,7 @@ if (movieCard != null) {
             posterUrl = poster
             this.plot = plot
         
-            trailerUrl?.let {
+            testTrailerUrl?.let {
                 trailers.add(
                     TrailerData(
                         extractorUrl = it,
@@ -506,15 +512,15 @@ val originalEpisode = xMatch
     posterUrl = poster
     this.plot = plot
 
-    trailerUrl?.let {
-    trailers.add(
-        TrailerData(
-            extractorUrl = it,
-            referer = null,
-            raw = false
+    testTrailerUrl?.let {
+        trailers.add(
+            TrailerData(
+                extractorUrl = it,
+                referer = null,
+                raw = false
+            )
         )
-    )
-}
+    }
 
     addSeasonNames(seasonsData)
 }
