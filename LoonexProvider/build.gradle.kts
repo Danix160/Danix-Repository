@@ -12,11 +12,16 @@ tasks.withType<KotlinJvmCompile>().configureEach {
     }
 }
 
+dependencies {
+    implementation("com.github.recloudstream.cloudstream:library:-SNAPSHOT")
+    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.25.2")
+}
+
 cloudstream {
     extra["prefix"] = "Loonex"
     extra["displayName"] = "Loonex"
     
-    version = 16
+    version = 17
     description = "Archivio di Anime e Cartoni animati in italiano da Loonex"
     authors = listOf("Danix")
     
