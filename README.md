@@ -8,15 +8,14 @@
 <img src="https://img.shields.io/badge/CloudStream-Extensions-4A90E2?style=flat-square">
 <img src="https://img.shields.io/badge/Lingua-Italiano-009246?style=flat-square">
 
-<br><br>
+<br>
 
 ### 📦 Installa la repository
 
-<br>
 
 **👆 Clicca su Gumball per installare**
 
-<a href="cloudstreamrepo://raw.githubusercontent.com/Danix160/Danix-Repository/builds/repo.json">
+<a href="https://danix160.github.io/Danix-Repository/install.html">
   <img
     src="https://raw.githubusercontent.com/Danix160/Danix-Repository/master/gum.png"
     alt="Installa Danix Repository"
