@@ -197,36 +197,21 @@ class LoonexProvider : MainAPI() {
                     ?.getOrNull(1)
             }
             ?.let { videoId ->
-                if (videoId == "xm37yTCJQOA") {
-                    "https://youtu.be/$videoId"
-                } else {
-                    "https://www.youtube.com/watch?v=$videoId"
-                }
+                "https://www.youtube.com/watch?v=$videoId"
             }
             
-            try {
+            val rawTrailerUrl = try {
                 trailerUrl?.let { youtubeUrl ->
-            
-                    println("LOONEX_YT_TEST_URL = $youtubeUrl")
-            
                     val service = NewPipe.getService(0)
                     val info = StreamInfo.getInfo(service, youtubeUrl)
             
-                    println("LOONEX_YT_TITLE = ${info.name}")
-                    println("LOONEX_YT_VIDEO_STREAMS = ${info.videoStreams.size}")
-                    println("LOONEX_YT_VIDEO_ONLY_STREAMS = ${info.videoOnlyStreams.size}")
-                    println("LOONEX_YT_AUDIO_STREAMS = ${info.audioStreams.size}")
-                    
-                    info.videoStreams.forEach { stream ->
-                        println("LOONEX_YT_STREAM_URL = ${stream.content}")
-                        println("LOONEX_YT_STREAM_FORMAT = ${stream.format}")
-                        println("LOONEX_YT_STREAM_RESOLUTION = ${stream.resolution}")
-                    }
+                    info.videoStreams
+                        .firstOrNull()
+                        ?.content
+                        ?.takeIf { it.isNotBlank() }
                 }
             } catch (e: Exception) {
-                println("LOONEX_YT_ERROR = ${e.javaClass.name}")
-                println("LOONEX_YT_ERROR_MESSAGE = ${e.message}")
-                e.printStackTrace()
+                null
             }
 
 
@@ -261,14 +246,24 @@ if (movieCard != null) {
             posterUrl = poster
             this.plot = plot
         
-            trailerUrl?.let {
+            if (rawTrailerUrl != null) {
                 trailers.add(
                     TrailerData(
-                        extractorUrl = it,
+                        extractorUrl = rawTrailerUrl,
                         referer = null,
-                        raw = false
+                        raw = true
                     )
                 )
+            } else {
+                trailerUrl?.let {
+                    trailers.add(
+                        TrailerData(
+                            extractorUrl = it,
+                            referer = null,
+                            raw = false
+                        )
+                    )
+                }
             }
         }
     }
@@ -539,14 +534,24 @@ val originalEpisode = xMatch
     posterUrl = poster
     this.plot = plot
 
-    trailerUrl?.let {
+    if (rawTrailerUrl != null) {
         trailers.add(
             TrailerData(
-                extractorUrl = it,
+                extractorUrl = rawTrailerUrl,
                 referer = null,
-                raw = false
+                raw = true
             )
         )
+    } else {
+        trailerUrl?.let {
+            trailers.add(
+                TrailerData(
+                    extractorUrl = it,
+                    referer = null,
+                    raw = false
+                )
+            )
+        }
     }
 
     addSeasonNames(seasonsData)
