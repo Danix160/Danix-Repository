@@ -43,12 +43,19 @@ class Uprot : ExtractorApi() {
     Log.d(TAG, "URL ricevuto: $url")
     Log.d(TAG, "Referer ricevuto: $referer")
 
-    val mseUrl = when {
-        url.contains("/msf/") ->
-            url.replace("/msf/", "/mse/")
-
-        else -> url
-    }
+    /*
+     * Manteniamo l'URL Uprot originale.
+     *
+     * IMPORTANTE:
+     * il cookie di sessione ottenuto dopo il CAPTCHA
+     * (uprot_session_pxx) viene creato con Path=/msf.
+     * Convertire /msf/ in /mse/ impedisce quindi al browser
+     * di inviare quel cookie alla richiesta successiva.
+     *
+     * Restando su /msf/ permettiamo alla WebView persistente
+     * di riutilizzare correttamente la sessione già autorizzata.
+     */
+    val uprotUrl = url
     /*
  * Se esiste già una WebView Uprot persistente,
  * usiamo direttamente quella.
@@ -72,7 +79,7 @@ if (UprotWebView.hasPersistentSession()) {
     val webViewResult = try {
 
         UprotWebView.resolve(
-            mseUrl,
+            uprotUrl,
             USER_AGENT
         )
 
@@ -101,7 +108,7 @@ if (UprotWebView.hasPersistentSession()) {
 
         MaxStream().getUrl(
             webViewResult,
-            mseUrl,
+            uprotUrl,
             subtitleCallback,
             callback
         )
@@ -120,7 +127,7 @@ if (UprotWebView.hasPersistentSession()) {
     )
 }
 
-        Log.d(TAG, "URL da richiedere: $mseUrl")
+        Log.d(TAG, "URL da richiedere: $uprotUrl")
 
         val headers = mapOf(
             "User-Agent" to USER_AGENT,
@@ -133,7 +140,7 @@ if (UprotWebView.hasPersistentSession()) {
         try {
 
             val response = app.get(
-                mseUrl,
+                uprotUrl,
                 headers = headers
             )
 
@@ -343,7 +350,7 @@ if (isCaptchaPage) {
 
     val webViewResult = try {
         UprotWebView.resolve(
-            mseUrl,
+            uprotUrl,
             USER_AGENT
         )
     } catch (e: Exception) {
@@ -369,7 +376,7 @@ if (isCaptchaPage) {
 
         MaxStream().getUrl(
             webViewResult,
-            mseUrl,
+            uprotUrl,
             subtitleCallback,
             callback
         )
@@ -442,7 +449,7 @@ if (!maxstreamUrl.isNullOrBlank()) {
 
     MaxStream().getUrl(
         maxstreamUrl,
-        mseUrl,
+        uprotUrl,
         subtitleCallback,
         callback
     )
