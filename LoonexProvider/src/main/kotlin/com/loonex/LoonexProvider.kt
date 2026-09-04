@@ -597,20 +597,27 @@ val originalEpisode = xMatch
 
         val videoUrl = encodeUrlPath(decoded)
 
-        callback(
-            newExtractorLink(
-                source = "Loonex",
-                name = "Loonex",
-                url = videoUrl,
-                type = if (videoUrl.contains(".m3u8", true)) {
-                    ExtractorLinkType.M3U8
-                } else {
-                    ExtractorLinkType.VIDEO
+        val videoHeaders = mapOf(
+            "Referer" to "$mainUrl/",
+            "Origin" to mainUrl,
+            "User-Agent" to (headers["User-Agent"] ?: "")
+            )
+            
+            callback(
+                newExtractorLink(
+                    source = "Loonex",
+                    name = "Loonex",
+                    url = videoUrl,
+                    type = if (videoUrl.contains(".m3u8", true)) {
+                        ExtractorLinkType.M3U8
+                    } else {
+                        ExtractorLinkType.VIDEO
+                    }
+                ) {
+                    referer = "$mainUrl/"
+                    this.headers = videoHeaders
                 }
-            ) {
-                referer = "$mainUrl/"
-            }
-        )
+            )
 
         return true
     }
