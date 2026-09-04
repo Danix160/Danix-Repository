@@ -564,6 +564,117 @@ val originalEpisode = xMatch
         callback: (ExtractorLink) -> Unit
     ): Boolean {
     
+        /*
+         * =========================================================
+         * 1. DRIME
+         * =========================================================
+         *
+         * I film Drime arrivano già a loadLinks() così:
+         *
+         * https://loonex.eu/guarda/?drim=HASH
+         *
+         * Quindi estraiamo l'hash direttamente da "data"
+         * PRIMA di aprire/decodificare la pagina.
+         */
+    
+        val drimeHash = Regex(
+            """[?&]drim=([^&#]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(data)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let {
+                try {
+                    URLDecoder.decode(it, "UTF-8")
+                } catch (_: Exception) {
+                    it
+                }
+            }
+            ?.trim()
+    
+        if (!drimeHash.isNullOrBlank()) {
+    
+            val drimePageUrl = "$mainUrl/guarda/?drim=" +
+                java.net.URLEncoder.encode(
+                    drimeHash,
+                    "UTF-8"
+                )
+    
+            /*
+             * Replica la richiesta effettuata dal player:
+             *
+             * POST /guarda/?drim=HASH
+             *
+             * action=drime_resolve
+             * hash=HASH
+             */
+    
+            val drimeResponse = app.post(
+                drimePageUrl,
+                headers = headers + mapOf(
+                    "Content-Type" to
+                        "application/x-www-form-urlencoded;charset=UTF-8",
+                    "Accept" to "application/json, text/plain, */*",
+                    "X-Requested-With" to "XMLHttpRequest"
+                ),
+                referer = drimePageUrl,
+                data = mapOf(
+                    "action" to "drime_resolve",
+                    "hash" to drimeHash
+                )
+            )
+    
+            val drimeJson = drimeResponse.text
+    
+            val stream = Regex(
+                """"stream"\s*:\s*"([^"]+)""""
+            ).find(drimeJson)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.replace("\\/", "/")
+                ?.replace("\\u0026", "&")
+                ?.replace("\\u003d", "=")
+                ?.trim()
+    
+            if (stream.isNullOrBlank()) {
+                return false
+            }
+    
+            callback(
+                newExtractorLink(
+                    source = "Loonex Drime",
+                    name = "Loonex Drime",
+                    url = stream,
+                    type = if (
+                        stream.contains(".m3u8", true)
+                    ) {
+                        ExtractorLinkType.M3U8
+                    } else {
+                        ExtractorLinkType.VIDEO
+                    }
+                ) {
+                    /*
+                     * Il player Drime usa no-referrer.
+                     */
+                    this.headers = mapOf(
+                        "User-Agent" to
+                            (headers["User-Agent"] ?: "")
+                    )
+                }
+            )
+    
+            return true
+        }
+    
+        /*
+         * =========================================================
+         * 2. LOONEX NORMALE
+         * =========================================================
+         *
+         * Questo è il vecchio percorso usato dagli episodi.
+         * Non lo modifichiamo.
+         */
+    
         val response = app.get(
             data,
             headers = headers,
@@ -571,12 +682,6 @@ val originalEpisode = xMatch
         )
     
         val html = response.text
-    
-        /*
-         * =========================================================
-         * 1. DECODIFICA LINK LOONEX
-         * =========================================================
-         */
     
         val encoded = Regex(
             """var\s+encodedStr\s*=\s*["']([^"']+)["']"""
@@ -601,117 +706,20 @@ val originalEpisode = xMatch
             return false
         }
     
-        var videoUrl = encodeUrlPath(decoded)
+        val videoUrl = encodeUrlPath(decoded)
     
         /*
-         * =========================================================
-         * 2. DRIME
-         * =========================================================
-         *
-         * Esempio:
-         *
-         * https://loonex.eu/guarda/?drim=HASH
-         *
-         * Il player Loonex risolve l'hash facendo:
-         *
-         * POST /guarda/?drim=HASH
-         *
-         * action=drime_resolve
-         * hash=HASH
+         * Evitiamo di mandare accidentalmente
+         * "drime-pending" a ExoPlayer.
          */
-    
-        val drimeHash = Regex(
-            """[?&]drim=([^&#]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(videoUrl)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.let {
-                try {
-                    URLDecoder.decode(it, "UTF-8")
-                } catch (_: Exception) {
-                    it
-                }
-            }
-            ?.replace(
-                Regex("""(?i)\.liveac\."""),
-                ""
+        if (
+            videoUrl.equals(
+                "drime-pending",
+                ignoreCase = true
             )
-            ?.trim('.')
-            ?.trim()
-    
-        if (!drimeHash.isNullOrBlank()) {
-    
-            val drimePageUrl = "$mainUrl/guarda/?drim=" +
-                java.net.URLEncoder.encode(
-                    drimeHash,
-                    "UTF-8"
-                )
-    
-            val drimeResponse = app.post(
-                drimePageUrl,
-                headers = headers + mapOf(
-                    "Content-Type" to
-                        "application/x-www-form-urlencoded;charset=UTF-8"
-                ),
-                referer = drimePageUrl,
-                data = mapOf(
-                    "action" to "drime_resolve",
-                    "hash" to drimeHash
-                )
-            )
-    
-            val drimeJson = drimeResponse.text
-    
-            val stream = Regex(
-                """"stream"\s*:\s*"([^"]+)""""
-            ).find(drimeJson)
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.replace("\\/", "/")
-                ?.replace("\\u0026", "&")
-                ?.trim()
-    
-            if (!stream.isNullOrBlank()) {
-    
-                callback(
-                    newExtractorLink(
-                        source = "Loonex Drime",
-                        name = "Loonex Drime",
-                        url = stream,
-                        type = if (
-                            stream.contains(".m3u8", true)
-                        ) {
-                            ExtractorLinkType.M3U8
-                        } else {
-                            ExtractorLinkType.VIDEO
-                        }
-                    ) {
-                        /*
-                         * Il player originale usa
-                         * referrerpolicy="no-referrer".
-                         *
-                         * Quindi NON passiamo Referer/Origin
-                         * allo storage Drime.
-                         */
-                        this.headers = mapOf(
-                            "User-Agent" to
-                                (headers["User-Agent"] ?: "")
-                        )
-                    }
-                )
-    
-                return true
-            }
-    
+        ) {
             return false
         }
-    
-        /*
-         * =========================================================
-         * 3. SERVER LOONEX NORMALE
-         * =========================================================
-         */
     
         val videoHeaders = mapOf(
             "Referer" to "$mainUrl/",
