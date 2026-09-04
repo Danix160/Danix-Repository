@@ -419,32 +419,32 @@ class OnlineSerieTvProvider : MainAPI() {
 
             val se = parseSeasonAndEpisode(fullText)
             val explicitEpNum = parseEpisodeNumberFromText(fullText)
-
+            
+            val siteHasExplicitSeason = se != null
+            
             val siteSeason = se?.first ?: 1
             val siteEpisode = se?.second ?: explicitEpNum ?: (episodesList.size + 1)
-
-            if (siteSeason > siteMaxSeason) siteMaxSeason = siteSeason
-
+            
             globalIndex++
-
+            
             var seasonNumber = siteSeason
             var epInSeason = siteEpisode
-
-            if (tmdbSeasonsInfo.isNotEmpty() && siteMaxSeason == 1 && tmdbSeasonsInfo.size > 1) {
+            
+            if (
+                !siteHasExplicitSeason &&
+                tmdbSeasonsInfo.isNotEmpty() &&
+                tmdbSeasonsInfo.size > 1
+            ) {
                 var remaining = globalIndex
-                var mapped = false
+            
                 for ((sn, epCount) in tmdbSeasonsInfo) {
                     if (remaining <= epCount) {
                         seasonNumber = sn
                         epInSeason = remaining
-                        mapped = true
                         break
                     }
+            
                     remaining -= epCount
-                }
-                if (!mapped) {
-                    seasonNumber = siteSeason
-                    epInSeason = siteEpisode
                 }
             }
 
