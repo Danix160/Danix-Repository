@@ -1282,6 +1282,29 @@ if (hasExistingSession) {
                     showUprotDialog(
                         "CAPTCHA necessario"
                     )
+
+                    /*
+                     * Fix autoplay/preload Fire TV:
+                     * se questa resolve appartiene al preload e il dialog non
+                     * riesce a restare visibile, non teniamo occupata la WebView
+                     * fino al timeout esterno di 120 secondi.
+                     *
+                     * La WebView persistente e i cookie NON vengono distrutti.
+                     * Il vero caricamento dell'episodio potrà quindi riprovare
+                     * immediatamente e mostrare il CAPTCHA in primo piano.
+                     */
+                    webView.postDelayed(
+                        {
+                            if (!completed && !dialog.isShowing) {
+                                Log.d(
+                                    TAG,
+                                    "CAPTCHA senza dialog visibile: abort resolve/preload"
+                                )
+                                finish(null)
+                            }
+                        },
+                        2500L
+                    )
                 }
 
                 state == "CONTINUE" -> {
