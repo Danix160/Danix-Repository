@@ -563,62 +563,180 @@ val originalEpisode = xMatch
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-
+    
         val response = app.get(
             data,
             headers = headers,
             referer = "$mainUrl/"
         )
-
+    
         val html = response.text
-
+    
+        /*
+         * =========================================================
+         * 1. DECODIFICA LINK LOONEX
+         * =========================================================
+         */
+    
         val encoded = Regex(
             """var\s+encodedStr\s*=\s*["']([^"']+)["']"""
         ).find(html)
             ?.groupValues
             ?.getOrNull(1)
             ?: return false
-
+    
         val key = Regex(
             """var\s+decryptionKey\s*=\s*["']([^"']+)["']"""
         ).find(html)
             ?.groupValues
             ?.getOrNull(1)
             ?: return false
-
+    
         val decoded = decryptLoonexUrl(
             encoded,
             key
         )
-
+    
         if (decoded.isBlank()) {
             return false
         }
-
-        val videoUrl = encodeUrlPath(decoded)
-
+    
+        var videoUrl = encodeUrlPath(decoded)
+    
+        /*
+         * =========================================================
+         * 2. DRIME
+         * =========================================================
+         *
+         * Esempio:
+         *
+         * https://loonex.eu/guarda/?drim=HASH
+         *
+         * Il player Loonex risolve l'hash facendo:
+         *
+         * POST /guarda/?drim=HASH
+         *
+         * action=drime_resolve
+         * hash=HASH
+         */
+    
+        val drimeHash = Regex(
+            """[?&]drim=([^&#]+)""",
+            RegexOption.IGNORE_CASE
+        ).find(videoUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let {
+                try {
+                    URLDecoder.decode(it, "UTF-8")
+                } catch (_: Exception) {
+                    it
+                }
+            }
+            ?.replace(
+                Regex("""(?i)\.liveac\."""),
+                ""
+            )
+            ?.trim('.')
+            ?.trim()
+    
+        if (!drimeHash.isNullOrBlank()) {
+    
+            val drimePageUrl = "$mainUrl/guarda/?drim=" +
+                java.net.URLEncoder.encode(
+                    drimeHash,
+                    "UTF-8"
+                )
+    
+            val drimeResponse = app.post(
+                drimePageUrl,
+                headers = headers + mapOf(
+                    "Content-Type" to
+                        "application/x-www-form-urlencoded;charset=UTF-8"
+                ),
+                referer = drimePageUrl,
+                data = mapOf(
+                    "action" to "drime_resolve",
+                    "hash" to drimeHash
+                )
+            )
+    
+            val drimeJson = drimeResponse.text
+    
+            val stream = Regex(
+                """"stream"\s*:\s*"([^"]+)""""
+            ).find(drimeJson)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.replace("\\/", "/")
+                ?.replace("\\u0026", "&")
+                ?.trim()
+    
+            if (!stream.isNullOrBlank()) {
+    
+                callback(
+                    newExtractorLink(
+                        source = "Loonex Drime",
+                        name = "Loonex Drime",
+                        url = stream,
+                        type = if (
+                            stream.contains(".m3u8", true)
+                        ) {
+                            ExtractorLinkType.M3U8
+                        } else {
+                            ExtractorLinkType.VIDEO
+                        }
+                    ) {
+                        /*
+                         * Il player originale usa
+                         * referrerpolicy="no-referrer".
+                         *
+                         * Quindi NON passiamo Referer/Origin
+                         * allo storage Drime.
+                         */
+                        this.headers = mapOf(
+                            "User-Agent" to
+                                (headers["User-Agent"] ?: "")
+                        )
+                    }
+                )
+    
+                return true
+            }
+    
+            return false
+        }
+    
+        /*
+         * =========================================================
+         * 3. SERVER LOONEX NORMALE
+         * =========================================================
+         */
+    
         val videoHeaders = mapOf(
             "Referer" to "$mainUrl/",
             "Origin" to mainUrl,
             "User-Agent" to (headers["User-Agent"] ?: "")
-            )
-            
-            callback(
-                newExtractorLink(
-                    source = "Loonex",
-                    name = "Loonex",
-                    url = videoUrl,
-                    type = if (videoUrl.contains(".m3u8", true)) {
-                        ExtractorLinkType.M3U8
-                    } else {
-                        ExtractorLinkType.VIDEO
-                    }
+        )
+    
+        callback(
+            newExtractorLink(
+                source = "Loonex",
+                name = "Loonex",
+                url = videoUrl,
+                type = if (
+                    videoUrl.contains(".m3u8", true)
                 ) {
-                    referer = "$mainUrl/"
-                    this.headers = videoHeaders
+                    ExtractorLinkType.M3U8
+                } else {
+                    ExtractorLinkType.VIDEO
                 }
-            )
-
+            ) {
+                referer = "$mainUrl/"
+                this.headers = videoHeaders
+            }
+        )
+    
         return true
     }
 
