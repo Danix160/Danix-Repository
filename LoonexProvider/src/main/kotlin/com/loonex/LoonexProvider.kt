@@ -27,8 +27,10 @@ class LoonexProvider : MainAPI() {
     )
 
     private val headers = mapOf(
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
-    )
+    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    "Accept" to "*/*",
+    "Accept-Language" to "it-IT,it;q=0.6"
+)
 
     private val tmdbApiKey = "e541cb159df14ce70fc51ab75703a1a2"
     
