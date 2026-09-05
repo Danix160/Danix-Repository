@@ -723,11 +723,17 @@ val originalEpisode = xMatch
             return false
         }
     
-        val videoHeaders = mapOf(
-            "Referer" to "$mainUrl/",
-            "Origin" to mainUrl,
-            "User-Agent" to (headers["User-Agent"] ?: "")
-        )
+       val videoHeaders = mapOf(
+        "Referer" to "$mainUrl/",
+        "Origin" to mainUrl,
+        "User-Agent" to (headers["User-Agent"] ?: ""),
+        "Accept" to "*/*",
+        "Accept-Language" to "it-IT,it;q=0.6",
+        "Sec-GPC" to "1",
+        "sec-ch-ua-platform" to "\"Windows\"",
+        "sec-ch-ua" to "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Brave\";v=\"152\"",
+        "sec-ch-ua-mobile" to "?0"
+    )
     
         callback(
             newExtractorLink(
