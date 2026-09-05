@@ -1420,10 +1420,29 @@ private object VidxGoHlsRefreshProxy {
                     else -> writeError(client, 404, "Not Found")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "client error=${e.message}", e)
-                try { writeError(client, 500, "Proxy Error") } catch (_: Exception) {}
+                if (isClientDisconnect(e)) {
+                    Log.d(TAG, "Client locale ha chiuso la richiesta: ${e.message}")
+                } else {
+                    Log.e(TAG, "client error=${e.message}", e)
+                    try { writeError(client, 500, "Proxy Error") } catch (_: Exception) {}
+                }
             }
         }
+    }
+
+    private fun isClientDisconnect(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            val message = current.message?.lowercase().orEmpty()
+            if (
+                message.contains("broken pipe") ||
+                message.contains("connection reset") ||
+                message.contains("socket closed") ||
+                message.contains("connection aborted")
+            ) return true
+            current = current.cause
+        }
+        return false
     }
 
     private fun parseQuery(query: String): Map<String, String> =
@@ -1503,11 +1522,24 @@ private object VidxGoHlsRefreshProxy {
                 while (true) {
                     val n = input.read(buffer)
                     if (n <= 0) break
-                    out.write(buffer, 0, n)
+                    try {
+                        out.write(buffer, 0, n)
+                    } catch (e: Exception) {
+                        if (isClientDisconnect(e)) {
+                            Log.d(TAG, "Segmento annullato dal player: $relativePath")
+                            break
+                        }
+                        throw e
+                    }
                 }
             }
         }
-        out.flush()
+        try {
+            out.flush()
+        } catch (e: Exception) {
+            if (!isClientDisconnect(e)) throw e
+            Log.d(TAG, "Flush annullato dal player: $relativePath")
+        }
         conn.disconnect()
     }
 
