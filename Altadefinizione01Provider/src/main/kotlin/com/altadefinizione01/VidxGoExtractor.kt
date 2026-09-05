@@ -12,6 +12,18 @@ import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.Jsoup
 import java.net.URI
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import kotlinx.coroutines.runBlocking
 
 class VidxGoExtractor : ExtractorApi() {
 
@@ -315,6 +327,36 @@ class VidxGoExtractor : ExtractorApi() {
 
         emitVideo(
             videoUrl = cleanVideoUrl,
+            refreshProvider = {
+                try {
+                    Log.d(TAG, "REFRESH SERIE: richiedo nuovo currentSrc")
+
+                    val freshResponse =
+                        app.get(
+                            episodePageUrl,
+                            headers = pageHeaders
+                        )
+
+                    Log.d(
+                        TAG,
+                        "REFRESH SERIE STATUS = ${freshResponse.code}"
+                    )
+
+                    if (freshResponse.code !in 200..299) {
+                        null
+                    } else {
+                        extractCurrentSrc(freshResponse.text)
+                            ?.let(::cleanUrl)
+                    }
+                } catch (e: Exception) {
+                    Log.e(
+                        TAG,
+                        "REFRESH SERIE ERROR = ${e.message}",
+                        e
+                    )
+                    null
+                }
+            },
             callback = callback
         )
     }
@@ -453,6 +495,36 @@ class VidxGoExtractor : ExtractorApi() {
 
         emitVideo(
             videoUrl = cleanVideoUrl,
+            refreshProvider = {
+                try {
+                    Log.d(TAG, "REFRESH FILM: richiedo nuovo currentSrc")
+
+                    val freshResponse =
+                        app.get(
+                            url,
+                            headers = headers
+                        )
+
+                    Log.d(
+                        TAG,
+                        "REFRESH FILM STATUS = ${freshResponse.code}"
+                    )
+
+                    if (freshResponse.code !in 200..299) {
+                        null
+                    } else {
+                        extractCurrentSrc(freshResponse.text)
+                            ?.let(::cleanUrl)
+                    }
+                } catch (e: Exception) {
+                    Log.e(
+                        TAG,
+                        "REFRESH FILM ERROR = ${e.message}",
+                        e
+                    )
+                    null
+                }
+            },
             callback = callback
         )
     }
@@ -704,6 +776,7 @@ class VidxGoExtractor : ExtractorApi() {
 
     private suspend fun emitVideo(
         videoUrl: String,
+        refreshProvider: suspend () -> String?,
         callback: (ExtractorLink) -> Unit
     ) {
 
@@ -744,6 +817,55 @@ class VidxGoExtractor : ExtractorApi() {
              */
 
             logSignedUrlInfo(videoUrl)
+
+            /*
+             * Il link firmato VidxGo scade dopo pochi minuti.
+             * Un ExtractorLink normale non ha un callback di refresh
+             * durante la riproduzione, quindi esponiamo al player una
+             * playlist locale che rinnova currentSrc tramite il normale
+             * flusso VidxGo quando la scadenza è vicina.
+             */
+            try {
+
+                val proxyUrl =
+                    VidxGoHlsRefreshProxy.register(
+                        initialUrl = videoUrl,
+                        headers = streamHeaders,
+                        refreshProvider = refreshProvider
+                    )
+
+                Log.d(
+                    TAG,
+                    "HLS REFRESH PROXY = $proxyUrl"
+                )
+
+                callback(
+                    newExtractorLink(
+                        source = name,
+                        name = "$name Refresh",
+                        url = proxyUrl,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "$mainUrl/"
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+
+                return
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    TAG,
+                    "HLS REFRESH PROXY ERROR = ${e.message}",
+                    e
+                )
+
+                Log.w(
+                    TAG,
+                    "Uso fallback HLS originale senza refresh"
+                )
+            }
 
             try {
 
@@ -1190,4 +1312,308 @@ class VidxGoExtractor : ExtractorApi() {
         }
     }
 
+}
+
+/**
+ * Proxy HLS locale per i link VidxGo a breve scadenza.
+ *
+ * Non calcola/modifica token t/e/b. Quando il token sta per scadere
+ * richiama refreshProvider, che deve ottenere un nuovo currentSrc
+ * tramite il normale flusso VidxGo.
+ */
+private object VidxGoHlsRefreshProxy {
+    private const val TAG = "VIDXGO_PROXY"
+    private const val VERSION = "integrated-v1"
+    private const val REFRESH_MARGIN_MS = 60_000L
+    private const val CONNECT_TIMEOUT_MS = 15_000
+    private const val READ_TIMEOUT_MS = 30_000
+
+    private data class Session(
+        @Volatile var currentUrl: String,
+        val headers: Map<String, String>,
+        val refreshProvider: suspend () -> String?
+    )
+
+    private val sessions = ConcurrentHashMap<String, Session>()
+    private val executor = Executors.newCachedThreadPool()
+
+    @Volatile private var serverSocket: ServerSocket? = null
+    @Volatile private var port: Int = -1
+
+    @Synchronized
+    private fun ensureServer() {
+        val current = serverSocket
+        if (current != null && !current.isClosed) return
+
+        val socket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+        serverSocket = socket
+        port = socket.localPort
+        Log.d(TAG, "Server locale avviato su 127.0.0.1:$port version=$VERSION")
+
+        executor.execute {
+            while (!socket.isClosed) {
+                try {
+                    val client = socket.accept()
+                    executor.execute { handleClient(client) }
+                } catch (e: Exception) {
+                    if (!socket.isClosed) Log.e(TAG, "accept error=${e.message}")
+                }
+            }
+        }
+    }
+
+    fun register(
+        initialUrl: String,
+        headers: Map<String, String>,
+        refreshProvider: suspend () -> String?
+    ): String {
+        ensureServer()
+        val id = UUID.randomUUID().toString().replace("-", "")
+        sessions[id] = Session(initialUrl, headers, refreshProvider)
+        Log.d(TAG, "Sessione creata id=$id remaining=${remainingMs(initialUrl)}ms")
+        return "http://127.0.0.1:$port/v/$id/master.m3u8"
+    }
+
+    private fun handleClient(socket: Socket) {
+        socket.use { client ->
+            try {
+                client.soTimeout = READ_TIMEOUT_MS
+                val reader = client.getInputStream().bufferedReader(Charsets.ISO_8859_1)
+                val requestLine = reader.readLine() ?: return
+                val parts = requestLine.split(" ")
+                if (parts.size < 2) return writeError(client, 400, "Bad Request")
+
+                val method = parts[0]
+                val target = parts[1]
+                val requestHeaders = mutableMapOf<String, String>()
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (line.isBlank()) break
+                    val idx = line.indexOf(':')
+                    if (idx > 0) requestHeaders[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
+                }
+
+                val path = target.substringBefore('?')
+                val query = target.substringAfter('?', "")
+                val match = Regex("""^/v/([A-Za-z0-9]+)/(.+)$""").find(path)
+                    ?: return writeError(client, 404, "Not Found")
+
+                val id = match.groupValues[1]
+                val resource = match.groupValues[2]
+                val session = sessions[id] ?: return writeError(client, 404, "Session expired")
+
+                when {
+                    resource == "master.m3u8" -> {
+                        val masterName = URI(session.currentUrl).path.substringAfterLast('/')
+                        servePlaylist(client, method, id, session, masterName)
+                    }
+                    resource == "file" -> {
+                        val encoded = parseQuery(query)["p"]
+                            ?: return writeError(client, 400, "Missing path")
+                        val relative = URLDecoder.decode(encoded, "UTF-8")
+                        if (relative.contains(".m3u8", ignoreCase = true)) {
+                            servePlaylist(client, method, id, session, relative)
+                        } else {
+                            serveBinary(client, method, session, relative, requestHeaders)
+                        }
+                    }
+                    else -> writeError(client, 404, "Not Found")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "client error=${e.message}", e)
+                try { writeError(client, 500, "Proxy Error") } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun parseQuery(query: String): Map<String, String> =
+        if (query.isBlank()) emptyMap() else query.split('&').mapNotNull { item ->
+            val k = item.substringBefore('=', "")
+            val v = item.substringAfter('=', "")
+            k.takeIf { it.isNotBlank() }?.let { it to v }
+        }.toMap()
+
+    private fun servePlaylist(
+        client: Socket,
+        method: String,
+        id: String,
+        session: Session,
+        relativePath: String
+    ) {
+        val conn = fetchWithRefresh(session, relativePath, null)
+        val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        conn.disconnect()
+
+        val rewritten = rewritePlaylist(id, body)
+        val bytes = rewritten.toByteArray(Charsets.UTF_8)
+        val out = BufferedOutputStream(client.getOutputStream())
+        writeHeaders(out, 200, "application/vnd.apple.mpegurl", bytes.size.toLong())
+        if (!method.equals("HEAD", true)) out.write(bytes)
+        out.flush()
+    }
+
+    private fun rewritePlaylist(id: String, body: String): String =
+        body.lineSequence().map { raw ->
+            val line = raw.trim()
+            when {
+                line.isBlank() -> raw
+                line.startsWith("#") -> Regex("""URI=\"([^\"]+)\"""").replace(raw) { m ->
+                    "URI=\"${localFileUrl(id, extractRelativePath(m.groupValues[1]))}\""
+                }
+                else -> localFileUrl(id, extractRelativePath(line))
+            }
+        }.joinToString("\n")
+
+    private fun localFileUrl(id: String, path: String): String =
+        "http://127.0.0.1:$port/v/$id/file?p=${URLEncoder.encode(path, "UTF-8")}" 
+
+    private fun extractRelativePath(urlOrPath: String): String = try {
+        val clean = urlOrPath.substringBefore('?')
+        if (clean.startsWith("http://", true) || clean.startsWith("https://", true)) {
+            URI(clean).path.substringAfterLast('/')
+        } else clean.substringAfterLast('/')
+    } catch (_: Exception) {
+        urlOrPath.substringBefore('?').substringAfterLast('/')
+    }
+
+    private fun serveBinary(
+        client: Socket,
+        method: String,
+        session: Session,
+        relativePath: String,
+        requestHeaders: Map<String, String>
+    ) {
+        val range = requestHeaders.entries.firstOrNull { it.key.equals("Range", true) }?.value
+        val conn = fetchWithRefresh(session, relativePath, range)
+        val status = conn.responseCode
+        val contentType = conn.contentType ?: guessContentType(relativePath)
+        val out = BufferedOutputStream(client.getOutputStream())
+        writeHeaders(
+            out = out,
+            status = status,
+            contentType = contentType,
+            contentLength = conn.contentLengthLong,
+            contentRange = conn.getHeaderField("Content-Range"),
+            acceptRanges = conn.getHeaderField("Accept-Ranges")
+        )
+
+        if (!method.equals("HEAD", true)) {
+            BufferedInputStream(conn.inputStream).use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n <= 0) break
+                    out.write(buffer, 0, n)
+                }
+            }
+        }
+        out.flush()
+        conn.disconnect()
+    }
+
+    private fun guessContentType(path: String): String = when {
+        path.endsWith(".ts", true) -> "video/mp2t"
+        path.endsWith(".aac", true) -> "audio/aac"
+        path.endsWith(".mp4", true) || path.endsWith(".m4s", true) -> "video/mp4"
+        else -> "application/octet-stream"
+    }
+
+    private fun fetchWithRefresh(session: Session, relativePath: String, range: String?): HttpURLConnection {
+        ensureFresh(session, force = false)
+        var conn = openRemote(session, relativePath, range)
+        if (conn.responseCode == 403) {
+            Log.w(TAG, "CDN 403 su $relativePath: forzo refresh")
+            conn.disconnect()
+            ensureFresh(session, force = true)
+            conn = openRemote(session, relativePath, range)
+        }
+        return conn
+    }
+
+    private fun openRemote(session: Session, relativePath: String, range: String?): HttpURLConnection {
+        val remoteUrl = buildRemoteUrl(session.currentUrl, relativePath)
+        val conn = URI(remoteUrl).toURL().openConnection() as HttpURLConnection
+        conn.instanceFollowRedirects = true
+        conn.connectTimeout = CONNECT_TIMEOUT_MS
+        conn.readTimeout = READ_TIMEOUT_MS
+        conn.requestMethod = "GET"
+        session.headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+        if (!range.isNullOrBlank()) conn.setRequestProperty("Range", range)
+        conn.connect()
+        return conn
+    }
+
+    private fun buildRemoteUrl(currentUrl: String, relativePath: String): String {
+        val current = URI(currentUrl)
+        val directory = current.path.substringBeforeLast('/', "")
+        return URI(current.scheme, current.authority, "$directory/$relativePath", current.rawQuery, null).toString()
+    }
+
+    private fun ensureFresh(session: Session, force: Boolean) {
+        val remaining = remainingMs(session.currentUrl)
+        if (!force && remaining != null && remaining > REFRESH_MARGIN_MS) return
+
+        synchronized(session) {
+            val inside = remainingMs(session.currentUrl)
+            if (!force && inside != null && inside > REFRESH_MARGIN_MS) return
+
+            Log.d(TAG, "REFRESH necessario force=$force remaining=${inside}ms")
+            val fresh = try {
+                runBlocking { session.refreshProvider() }
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshProvider error=${e.message}", e)
+                null
+            }
+
+            if (fresh.isNullOrBlank()) {
+                Log.e(TAG, "REFRESH fallito: currentSrc nullo")
+                return
+            }
+
+            session.currentUrl = fresh
+            Log.d(TAG, "REFRESH OK remaining=${remainingMs(fresh)}ms")
+        }
+    }
+
+    private fun remainingMs(url: String): Long? {
+        val raw = Regex("""[?&]e=(\d+)""").find(url)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: return null
+        val expiry = if (raw < 10_000_000_000L) raw * 1000L else raw
+        return expiry - System.currentTimeMillis()
+    }
+
+    private fun writeHeaders(
+        out: BufferedOutputStream,
+        status: Int,
+        contentType: String,
+        contentLength: Long,
+        contentRange: String? = null,
+        acceptRanges: String? = null
+    ) {
+        val reason = when (status) {
+            200 -> "OK"
+            206 -> "Partial Content"
+            400 -> "Bad Request"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            500 -> "Internal Server Error"
+            else -> "OK"
+        }
+        val h = StringBuilder()
+        h.append("HTTP/1.1 $status $reason\r\n")
+        h.append("Content-Type: $contentType\r\n")
+        if (contentLength >= 0) h.append("Content-Length: $contentLength\r\n")
+        if (!contentRange.isNullOrBlank()) h.append("Content-Range: $contentRange\r\n")
+        if (!acceptRanges.isNullOrBlank()) h.append("Accept-Ranges: $acceptRanges\r\n")
+        h.append("Cache-Control: no-store\r\n")
+        h.append("Connection: close\r\n\r\n")
+        out.write(h.toString().toByteArray(Charsets.ISO_8859_1))
+    }
+
+    private fun writeError(client: Socket, status: Int, message: String) {
+        val bytes = message.toByteArray(Charsets.UTF_8)
+        val out = BufferedOutputStream(client.getOutputStream())
+        writeHeaders(out, status, "text/plain; charset=utf-8", bytes.size.toLong())
+        out.write(bytes)
+        out.flush()
+    }
 }
