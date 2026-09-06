@@ -333,13 +333,24 @@ object UprotWebView {
 
                         activity.runOnUiThread {
 
+                            /*
+                             * Una resolve cancellata non deve più poter reagire
+                             * ai callback asincroni già accodati.
+                             */
+                            completed = true
+
                             Log.d(
                                 TAG,
-                                "Coroutine Uprot cancellata"
+                                "Coroutine Uprot cancellata: callback della resolve invalidati"
                             )
 
+                            try {
+                                webView.stopLoading()
+                            } catch (_: Exception) {
+                            }
+
                             /*
-                             * Non distruggiamo la WebView nemmeno qui.
+                             * Manteniamo viva la WebView e la sessione.
                              */
                             try {
 
