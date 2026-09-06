@@ -7,8 +7,6 @@ import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -35,7 +33,7 @@ object UprotWebView {
      * La prima volta non mostriamo il dialog e restituiamo subito; alla
      * successiva richiesta dello stesso episodio il CAPTCHA viene mostrato.
      */
-    private val deferredCaptchaFirstSeen = mutableMapOf<String, Long>()
+    private val deferredCaptchaUrls = mutableSetOf<String>()
 
     private var activityRef: WeakReference<Activity>? = null
 
@@ -161,8 +159,6 @@ object UprotWebView {
                 var completed =
                     false
 
-                var captchaDialogScheduled = false
-
                 val dialog =
                     Dialog(activity)
 
@@ -272,10 +268,6 @@ object UprotWebView {
                         TAG,
                         "Risultato WebView = $result"
                     )
-
-                    if (!result.isNullOrBlank() && result != CAPTCHA_DEFERRED_RESULT) {
-                        deferredCaptchaFirstSeen.remove(url)
-                    }
                    
                     /*
                      * Fermiamo solo il caricamento corrente.
@@ -1296,7 +1288,7 @@ if (hasExistingSession) {
                         "FAST PATH MaxStream = $maxstreamUrl"
                     )
 
-                    deferredCaptchaFirstSeen.remove(url)
+                    deferredCaptchaUrls.remove(url)
 
                     finish(
                         maxstreamUrl
@@ -1326,94 +1318,27 @@ if (hasExistingSession) {
                      * In questo modo il preload non interrompe la visione
                      * dell'episodio corrente.
                      */
-                    val now = System.currentTimeMillis()
-                    val firstSeen = deferredCaptchaFirstSeen[url]
+                    if (!deferredCaptchaUrls.contains(url)) {
 
-                    if (firstSeen == null) {
-
-                        deferredCaptchaFirstSeen[url] = now
+                        deferredCaptchaUrls.add(url)
 
                         Log.e(
                             TAG,
-                            ">>> CAPTCHA PRELOAD 80% DIFFERITO: $url <<<"
+                            ">>> CAPTCHA PRELOAD DIFFERITO: $url <<<"
                         )
 
                         finish(CAPTCHA_DEFERRED_RESULT)
 
-                    } else if (!captchaDialogScheduled) {
+                    } else {
 
-                        val elapsed = (now - firstSeen).coerceAtLeast(0L)
+                        Log.e(
+                            TAG,
+                            ">>> CAPTCHA SECONDA RICHIESTA: mostro dialog per $url <<<"
+                        )
 
-                        /*
-                         * CloudStream nel log richiama il preload circa all'80%
-                         * e poi al 90% dell'episodio. L'intervallo tra le due
-                         * richieste corrisponde quindi, approssimativamente, al
-                         * tempo che manca dal secondo preload alla fine.
-                         *
-                         * Se la seconda richiesta arriva quasi subito (< 15 s),
-                         * la trattiamo come vero avvio/manuale e mostriamo subito.
-                         * Altrimenti teniamo questa resolve aperta e mostriamo il
-                         * CAPTCHA solo quando stimiamo che l'episodio corrente sia
-                         * terminato.
-                         */
-                        if (elapsed < 15_000L) {
-                            Log.e(
-                                TAG,
-                                ">>> CAPTCHA RICHIESTA REALE/RAPIDA: mostro subito ($elapsed ms) <<<"
-                            )
-
-                            captchaDialogScheduled = true
-                            showUprotDialog(
-                                "CAPTCHA necessario per avviare il prossimo episodio"
-                            )
-                        } else {
-                            // L'intervallo 80% -> 90% stima il tempo 90% -> fine.
-                            // Mostriamo il CAPTCHA 10 secondi PRIMA della fine stimata,
-                            // così c'è tempo per risolverlo e completare il preload prima
-                            // che CloudStream effettui il cambio episodio.
-                            val estimatedRemaining = elapsed.coerceIn(15_000L, 5 * 60_000L)
-                            val delay = (estimatedRemaining - 10_000L).coerceAtLeast(1_000L)
-                            captchaDialogScheduled = true
-
-                            Log.e(
-                                TAG,
-                                ">>> CAPTCHA PRELOAD 90%: fine stimata tra ${estimatedRemaining}ms; " +
-                                    "mostro CAPTCHA tra ${delay}ms (10s prima) per $url <<<"
-                            )
-
-                            /*
-                             * IMPORTANTE:
-                             * il timer NON viene più accodato sulla WebView.
-                             * Durante preload/navigazioni la WebView può essere staccata,
-                             * ricaricata o riutilizzata e i callback della View possono
-                             * non essere affidabili per questo caso.
-                             *
-                             * Usiamo quindi il main Looper Android: il countdown resta
-                             * indipendente dalla navigazione della WebView e non viene
-                             * ricalcolato dai successivi pageStateChecker della stessa resolve.
-                             */
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                Log.e(
-                                    TAG,
-                                    ">>> TIMER -10s SCATTATO per $url | completed=$completed | active=${continuation.isActive} <<<"
-                                )
-
-                                if (!completed) {
-                                    Log.e(
-                                        TAG,
-                                        ">>> -10 SECONDI DALLA FINE STIMATA: mostro CAPTCHA per $url <<<"
-                                    )
-                                    showUprotDialog(
-                                        "CAPTCHA: mancano circa 10 secondi alla fine dell’episodio"
-                                    )
-                                } else {
-                                    Log.e(
-                                        TAG,
-                                        ">>> TIMER -10s IGNORATO: resolve già completata per $url <<<"
-                                    )
-                                }
-                            }, delay)
-                        }
+                        showUprotDialog(
+                            "CAPTCHA necessario per avviare il prossimo episodio"
+                        )
                     }
                 }
 
