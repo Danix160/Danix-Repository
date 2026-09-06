@@ -7,6 +7,8 @@ import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -1379,14 +1381,35 @@ if (hasExistingSession) {
                                     "mostro CAPTCHA tra ${delay}ms (10s prima) per $url <<<"
                             )
 
-                            webView.postDelayed({
-                                if (!completed && continuation.isActive) {
+                            /*
+                             * IMPORTANTE:
+                             * il timer NON viene più accodato sulla WebView.
+                             * Durante preload/navigazioni la WebView può essere staccata,
+                             * ricaricata o riutilizzata e i callback della View possono
+                             * non essere affidabili per questo caso.
+                             *
+                             * Usiamo quindi il main Looper Android: il countdown resta
+                             * indipendente dalla navigazione della WebView e non viene
+                             * ricalcolato dai successivi pageStateChecker della stessa resolve.
+                             */
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                Log.e(
+                                    TAG,
+                                    ">>> TIMER -10s SCATTATO per $url | completed=$completed | active=${continuation.isActive} <<<"
+                                )
+
+                                if (!completed) {
                                     Log.e(
                                         TAG,
                                         ">>> -10 SECONDI DALLA FINE STIMATA: mostro CAPTCHA per $url <<<"
                                     )
                                     showUprotDialog(
                                         "CAPTCHA: mancano circa 10 secondi alla fine dell’episodio"
+                                    )
+                                } else {
+                                    Log.e(
+                                        TAG,
+                                        ">>> TIMER -10s IGNORATO: resolve già completata per $url <<<"
                                     )
                                 }
                             }, delay)
