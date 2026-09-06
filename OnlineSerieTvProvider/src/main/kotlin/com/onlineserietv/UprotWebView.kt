@@ -1365,22 +1365,28 @@ if (hasExistingSession) {
                                 "CAPTCHA necessario per avviare il prossimo episodio"
                             )
                         } else {
-                            val delay = elapsed.coerceIn(15_000L, 5 * 60_000L)
+                            // L'intervallo 80% -> 90% stima il tempo 90% -> fine.
+                            // Mostriamo il CAPTCHA 10 secondi PRIMA della fine stimata,
+                            // così c'è tempo per risolverlo e completare il preload prima
+                            // che CloudStream effettui il cambio episodio.
+                            val estimatedRemaining = elapsed.coerceIn(15_000L, 5 * 60_000L)
+                            val delay = (estimatedRemaining - 10_000L).coerceAtLeast(1_000L)
                             captchaDialogScheduled = true
 
                             Log.e(
                                 TAG,
-                                ">>> CAPTCHA PRELOAD 90%: dialog rimandato di ${delay}ms per $url <<<"
+                                ">>> CAPTCHA PRELOAD 90%: fine stimata tra ${estimatedRemaining}ms; " +
+                                    "mostro CAPTCHA tra ${delay}ms (10s prima) per $url <<<"
                             )
 
                             webView.postDelayed({
                                 if (!completed && continuation.isActive) {
                                     Log.e(
                                         TAG,
-                                        ">>> FINE EPISODIO STIMATA: mostro CAPTCHA per $url <<<"
+                                        ">>> -10 SECONDI DALLA FINE STIMATA: mostro CAPTCHA per $url <<<"
                                     )
                                     showUprotDialog(
-                                        "CAPTCHA necessario per avviare il prossimo episodio"
+                                        "CAPTCHA: mancano circa 10 secondi alla fine dell’episodio"
                                     )
                                 }
                             }, delay)
