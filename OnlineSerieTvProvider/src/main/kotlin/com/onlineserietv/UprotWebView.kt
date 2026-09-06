@@ -33,7 +33,7 @@ object UprotWebView {
      * La prima volta non mostriamo il dialog e restituiamo subito; alla
      * successiva richiesta dello stesso episodio il CAPTCHA viene mostrato.
      */
-    private val deferredCaptchaUrls = mutableSetOf<String>()
+    private val deferredCaptchaFirstSeen = mutableMapOf<String, Long>()
 
     private var activityRef: WeakReference<Activity>? = null
 
@@ -159,6 +159,8 @@ object UprotWebView {
                 var completed =
                     false
 
+                var captchaDialogScheduled = false
+
                 val dialog =
                     Dialog(activity)
 
@@ -268,6 +270,10 @@ object UprotWebView {
                         TAG,
                         "Risultato WebView = $result"
                     )
+
+                    if (!result.isNullOrBlank() && result != CAPTCHA_DEFERRED_RESULT) {
+                        deferredCaptchaFirstSeen.remove(url)
+                    }
                    
                     /*
                      * Fermiamo solo il caricamento corrente.
@@ -1318,27 +1324,67 @@ if (hasExistingSession) {
                      * In questo modo il preload non interrompe la visione
                      * dell'episodio corrente.
                      */
-                    if (!deferredCaptchaUrls.contains(url)) {
+                    val now = System.currentTimeMillis()
+                    val firstSeen = deferredCaptchaFirstSeen[url]
 
-                        deferredCaptchaUrls.add(url)
+                    if (firstSeen == null) {
+
+                        deferredCaptchaFirstSeen[url] = now
 
                         Log.e(
                             TAG,
-                            ">>> CAPTCHA PRELOAD DIFFERITO: $url <<<"
+                            ">>> CAPTCHA PRELOAD 80% DIFFERITO: $url <<<"
                         )
 
                         finish(CAPTCHA_DEFERRED_RESULT)
 
-                    } else {
+                    } else if (!captchaDialogScheduled) {
 
-                        Log.e(
-                            TAG,
-                            ">>> CAPTCHA SECONDA RICHIESTA: mostro dialog per $url <<<"
-                        )
+                        val elapsed = (now - firstSeen).coerceAtLeast(0L)
 
-                        showUprotDialog(
-                            "CAPTCHA necessario per avviare il prossimo episodio"
-                        )
+                        /*
+                         * CloudStream nel log richiama il preload circa all'80%
+                         * e poi al 90% dell'episodio. L'intervallo tra le due
+                         * richieste corrisponde quindi, approssimativamente, al
+                         * tempo che manca dal secondo preload alla fine.
+                         *
+                         * Se la seconda richiesta arriva quasi subito (< 15 s),
+                         * la trattiamo come vero avvio/manuale e mostriamo subito.
+                         * Altrimenti teniamo questa resolve aperta e mostriamo il
+                         * CAPTCHA solo quando stimiamo che l'episodio corrente sia
+                         * terminato.
+                         */
+                        if (elapsed < 15_000L) {
+                            Log.e(
+                                TAG,
+                                ">>> CAPTCHA RICHIESTA REALE/RAPIDA: mostro subito ($elapsed ms) <<<"
+                            )
+
+                            captchaDialogScheduled = true
+                            showUprotDialog(
+                                "CAPTCHA necessario per avviare il prossimo episodio"
+                            )
+                        } else {
+                            val delay = elapsed.coerceIn(15_000L, 5 * 60_000L)
+                            captchaDialogScheduled = true
+
+                            Log.e(
+                                TAG,
+                                ">>> CAPTCHA PRELOAD 90%: dialog rimandato di ${delay}ms per $url <<<"
+                            )
+
+                            webView.postDelayed({
+                                if (!completed && continuation.isActive) {
+                                    Log.e(
+                                        TAG,
+                                        ">>> FINE EPISODIO STIMATA: mostro CAPTCHA per $url <<<"
+                                    )
+                                    showUprotDialog(
+                                        "CAPTCHA necessario per avviare il prossimo episodio"
+                                    )
+                                }
+                            }, delay)
+                        }
                     }
                 }
 
