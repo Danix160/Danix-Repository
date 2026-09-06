@@ -382,6 +382,14 @@ if (isCaptchaPage) {
         ">>> UprotWebView TERMINATA: $webViewResult <<<"
     )
 
+    if (webViewResult == UprotWebView.CAPTCHA_DEFERRED_RESULT) {
+        Log.e(
+            TAG,
+            ">>> PRELOAD UPROT DIFFERITO: nessun MaxStream/fallback <<<"
+        )
+        return
+    }
+
     if (!webViewResult.isNullOrBlank()) {
 
         Log.e(
