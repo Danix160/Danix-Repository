@@ -1294,7 +1294,7 @@ if (hasExistingSession) {
                         "FAST PATH MaxStream = $maxstreamUrl"
                     )
 
-                    deferredCaptchaUrls.remove(url)
+                    deferredCaptchaFirstSeen.remove(url)
 
                     finish(
                         maxstreamUrl
