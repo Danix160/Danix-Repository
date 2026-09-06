@@ -25,6 +25,16 @@ object UprotWebView {
 
     private const val TAG = "UPROT_WEBVIEW"
 
+    const val CAPTCHA_DEFERRED_RESULT = "__UPROT_CAPTCHA_DEFERRED__"
+
+    /*
+     * URL per cui abbiamo già intercettato il CAPTCHA durante la prima
+     * resolve con sessione persistente (tipicamente il preload di CloudStream).
+     * La prima volta non mostriamo il dialog e restituiamo subito; alla
+     * successiva richiesta dello stesso episodio il CAPTCHA viene mostrato.
+     */
+    private val deferredCaptchaUrls = mutableSetOf<String>()
+
     private var activityRef: WeakReference<Activity>? = null
 
     /*
@@ -1278,6 +1288,8 @@ if (hasExistingSession) {
                         "FAST PATH MaxStream = $maxstreamUrl"
                     )
 
+                    deferredCaptchaUrls.remove(url)
+
                     finish(
                         maxstreamUrl
                     )
@@ -1290,32 +1302,44 @@ if (hasExistingSession) {
                         "FAST PATH: CAPTCHA rilevato"
                     )
 
-                    showUprotDialog(
-                        "CAPTCHA necessario"
-                    )
-
                     /*
-                     * Fix autoplay/preload Fire TV:
-                     * se questa resolve appartiene al preload e il dialog non
-                     * riesce a restare visibile, non teniamo occupata la WebView
-                     * fino al timeout esterno di 120 secondi.
+                     * CloudStream chiama loadLinks() in anticipo con
+                     * preLoadNextLinks mentre l'episodio corrente sta ancora
+                     * andando. L'API degli extractor non espone un flag
+                     * esplicito "isPreload", quindi usiamo una strategia
+                     * conservativa per le resolve con WebView già persistente:
                      *
-                     * La WebView persistente e i cookie NON vengono distrutti.
-                     * Il vero caricamento dell'episodio potrà quindi riprovare
-                     * immediatamente e mostrare il CAPTCHA in primo piano.
+                     * 1) primo CAPTCHA visto per questo URL -> non apriamo il
+                     *    dialog, chiudiamo subito la resolve con un risultato
+                     *    speciale;
+                     * 2) richiesta successiva dello stesso URL -> mostriamo il
+                     *    CAPTCHA normalmente.
+                     *
+                     * In questo modo il preload non interrompe la visione
+                     * dell'episodio corrente.
                      */
-                    webView.postDelayed(
-                        {
-                            if (!completed && !dialog.isShowing) {
-                                Log.d(
-                                    TAG,
-                                    "CAPTCHA senza dialog visibile: abort resolve/preload"
-                                )
-                                finish(null)
-                            }
-                        },
-                        2500L
-                    )
+                    if (!deferredCaptchaUrls.contains(url)) {
+
+                        deferredCaptchaUrls.add(url)
+
+                        Log.e(
+                            TAG,
+                            ">>> CAPTCHA PRELOAD DIFFERITO: $url <<<"
+                        )
+
+                        finish(CAPTCHA_DEFERRED_RESULT)
+
+                    } else {
+
+                        Log.e(
+                            TAG,
+                            ">>> CAPTCHA SECONDA RICHIESTA: mostro dialog per $url <<<"
+                        )
+
+                        showUprotDialog(
+                            "CAPTCHA necessario per avviare il prossimo episodio"
+                        )
+                    }
                 }
 
                 state == "CONTINUE" -> {
