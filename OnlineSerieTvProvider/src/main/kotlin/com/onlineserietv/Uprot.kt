@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.Jsoup
+import kotlinx.coroutines.CancellationException
 
 class Uprot : ExtractorApi() {
 
@@ -76,6 +77,9 @@ if (UprotWebView.hasPersistentSession()) {
             USER_AGENT
         )
 
+    } catch (e: CancellationException) {
+        Log.d(TAG, "UprotWebView sessione persistente cancellata: $mseUrl")
+        throw e
     } catch (e: Exception) {
 
         Log.e(
@@ -346,6 +350,9 @@ if (isCaptchaPage) {
             mseUrl,
             USER_AGENT
         )
+    } catch (e: CancellationException) {
+        Log.d(TAG, "UprotWebView CAPTCHA cancellata: $mseUrl")
+        throw e
     } catch (e: Exception) {
         Log.e(
             TAG,
@@ -455,6 +462,9 @@ if (!maxstreamUrl.isNullOrBlank()) {
     )
 }
 
+        } catch (e: CancellationException) {
+            Log.d(TAG, "Richiesta Uprot cancellata: $mseUrl")
+            throw e
         } catch (e: Exception) {
             Log.e(
                 TAG,
