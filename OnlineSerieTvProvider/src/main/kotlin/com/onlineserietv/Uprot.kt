@@ -96,6 +96,21 @@ if (UprotWebView.hasPersistentSession()) {
         ">>> RISULTATO SESSIONE PERSISTENTE: $webViewResult <<<"
     )
 
+    /*
+     * Il primo CAPTCHA del nuovo episodio può essere stato intercettato
+     * durante preLoadNextLinks. In quel caso NON facciamo fallback HTTP e
+     * NON apriamo un'altra WebView: lasciamo terminare il preload senza link.
+     * Alla richiesta successiva dello stesso episodio UprotWebView mostrerà
+     * il CAPTCHA normalmente.
+     */
+    if (webViewResult == UprotWebView.CAPTCHA_DEFERRED_RESULT) {
+        Log.e(
+            TAG,
+            ">>> PRELOAD UPROT DIFFERITO: nessun fallback HTTP <<<"
+        )
+        return
+    }
+
     if (!webViewResult.isNullOrBlank()) {
 
         Log.e(
