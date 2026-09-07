@@ -1,217 +1,658 @@
 package com.toonitalia
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.TvType
-import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 
 class ToonItaliaProvider : MainAPI() {
 
     override var mainUrl = "https://toonitalia.xyz"
     override var name = "ToonItalia"
-    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Anime, TvType.Cartoon)
     override var lang = "it"
+
     override val hasMainPage = true
+    override val hasQuickSearch = false
 
-    private val placeholderPoster = "https://toonitalia.xyz/wp-content/uploads/2023/11/toonitalia-logo-1.png"
-
-    private val headers = mapOf(
-        "Referer" to "$mainUrl/",
-        "User-Agent" to "Mozilla/5.0"
+    override val supportedTypes = setOf(
+        TvType.Anime,
+        TvType.Cartoon,
+        TvType.AnimeMovie,
+        TvType.Movie,
+        TvType.TvSeries
     )
 
-    /** Normalizzazione host */
-    private fun fixHost(url: String): String {
-        return url
-            .replace("chuckle-tube.com", "voe.sx")
-            .replace("luluvdo.com", "lulustream.com")
-            .replace("luluvideo.com", "lulustream.com")
-            .replace("minochinos.com", "vidhidehub.com")
-            .replace("megavido.com", "vidhidehub.com")
-            .replace("vidhidepro.com", "vidhidehub.com")
-            .replace("vidhide.com", "vidhidehub.com")
-            .replace("smoothpre.com", "vidhidehub.com")
-            .replace("streamup.ws", "streamwish.to")
-    }
+    
+ // ============================================================
+// HOMEPAGE
+// ============================================================
 
-    // ============================
-    // MAIN PAGE
-    // ============================
-
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val doc = app.get(mainUrl, headers = headers).document
-        val sections = mutableListOf<HomePageList>()
-
-        doc.select("div.col, div.card, section").forEach { block ->
-            val title = block.selectFirst("h2, h3, h4")?.text()?.trim() ?: return@forEach
-            val items = block.select("a[href]").mapNotNull { a ->
-                val href = a.attr("href")
-                val img = a.selectFirst("img")?.attr("src")
-                val name = a.text().trim()
-                if (name.isEmpty() || !href.startsWith("http")) return@mapNotNull null
-
-                newTvSeriesSearchResponse(name, href, TvType.TvSeries) {
-                    posterUrl = img ?: placeholderPoster
-                    posterHeaders = headers
-                }
-            }
-
-            if (items.isNotEmpty()) sections.add(HomePageList(title, items))
-        }
-
-        return newHomePageResponse(sections, false)
-    }
-
-    // ============================
-    // SEARCH
-    // ============================
-
-    override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/?s=$query"
-        val doc = app.get(url, headers = headers).document
-
-        return doc.select("article, div.post, div.card").mapNotNull { art ->
-            val a = art.selectFirst("a[href]") ?: return@mapNotNull null
-            val href = a.attr("href")
-            val title = a.text().trim()
-
-            val inner = app.get(href, headers = headers).document
-            val poster = inner.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")
-                ?.attr("src") ?: placeholderPoster
-
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                posterUrl = poster
-                posterHeaders = headers
-            }
-        }
-    }
-
-    // ============================
-    // LOAD (EPISODI + FILM)
-    // ============================
-
-    override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(url, headers = headers).document
-
-        val title = doc.selectFirst("h1.entry-title")?.text()?.trim()
-            ?.replace(Regex("(?i)streaming|sub\\s?ita|film"), "")
-            ?.trim() ?: "Senza titolo"
-
-        val poster = doc.selectFirst("img.attachment-post-thumbnail, .post-thumbnail img, .entry-content img")
-            ?.attr("src") ?: placeholderPoster
-
-        val plot = doc.select("div.entry-content p")
-            .map { it.text() }
-            .firstOrNull { it.length > 60 }
-
-        val categories = doc.select(".entry-categories-inner a, .cat-links a")
-            .map { it.text().lowercase() }
-
-        val isMovie = categories.any { it.contains("film") }
-
-        val episodes = parseEpisodes(doc, poster)
-
-        return if (isMovie) {
-            newMovieLoadResponse(title, url, TvType.Movie, episodes.firstOrNull()?.data ?: "") {
-                this.posterUrl = poster
-                this.plot = plot
-                this.posterHeaders = headers
-            }
-        } else {
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster
-                this.plot = plot
-                this.posterHeaders = headers
-            }
-        }
-    }
-
-    // ============================
-    // PARSER EPISODI UNIVERSALE
-    // ============================
-
-    private fun parseEpisodes(doc: org.jsoup.nodes.Document, poster: String): List<Episode> {
-        val episodes = mutableListOf<Episode>()
-
-        val rawHtml = doc.selectFirst("div.entry-content")?.html() ?: return episodes
-
-        val lines = rawHtml.split(Regex("<br\\s*/?>|</p>|</div>|\\n"))
-
-        for (line in lines) {
-            val clean = Jsoup.parse(line).text().trim()
-            if (clean.isEmpty()) continue
-
-            val links = Jsoup.parse(line).select("a[href]").map { it.attr("href") }
-                .filter { link ->
-                    link.startsWith("http") &&
-                    !link.contains("toonitalia.xyz") &&
-                    !link.contains("lulu") &&
-                    !link.contains("lulu.st") &&
-                    !link.contains("lulustream")
-                }
-
-            if (links.isEmpty()) continue
-
-            val matchAB = Regex("""(\d+)x(\d+)([A-Za-z]?)""").find(clean)
-            val matchSimple = Regex("""^(\d{1,3})\s*[–-]""").find(clean)
-
-            var season = 1
-            var episode: Int? = null
-            var subEp: String? = null
-
-            if (matchAB != null) {
-                season = matchAB.groupValues[1].toInt()
-                val epNum = matchAB.groupValues[2].toInt()
-                subEp = matchAB.groupValues[3].uppercase().ifEmpty { null }
-
-                episode = if (subEp == null) {
-                    epNum
-                } else {
-                    val offset = (subEp[0] - 'A' + 1)
-                    epNum * 10 + offset
-                }
-
-            } else if (matchSimple != null) {
-                episode = matchSimple.groupValues[1].toInt()
-            }
-
-            val titleParts = clean.split("–").map { it.trim() }
-            val epTitle = if (titleParts.size >= 2) titleParts[1] else "Episodio"
-
-            val finalName = buildString {
-                append("${season}x${episode ?: "?"}")
-                if (!subEp.isNullOrEmpty()) append(subEp)
-                append(" – $epTitle")
-            }
-
-            episodes.add(
-                newEpisode(links.joinToString("###")) {
-                    this.name = finalName
-                    this.season = season
-                    this.episode = episode
-                    this.posterUrl = poster
-                }
+    override val mainPage = mainPageOf(
+        mainUrl to "Home"
+    )
+    
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
+    
+        if (page > 1) {
+            return newHomePageResponse(
+                emptyList(),
+                hasNext = false
             )
         }
-
-        return episodes
+    
+        val document = app.get(mainUrl).document
+    
+        val sections = document
+            .select(".grid > .col")
+            .mapNotNull { column ->
+    
+                val sectionTitle = column
+                    .selectFirst("h2")
+                    ?.text()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+    
+                val type = getTypeFromHomeSection(sectionTitle)
+    
+                val items = column
+                    .select(".item a.card-link[href]")
+                    .mapNotNull { card ->
+                        card.toHomeSearchResponse(type)
+                    }
+                    .distinctBy { it.url }
+    
+                if (items.isEmpty()) {
+                    null
+                } else {
+                    HomePageList(
+                        name = cleanSectionTitle(sectionTitle),
+                        list = items
+                    )
+                }
+            }
+    
+        return newHomePageResponse(
+            sections,
+            hasNext = false
+        )
+    }
+    
+    private fun getTypeFromHomeSection(
+        title: String
+    ): TvType? {
+    
+        val normalized = normalize(title)
+    
+        return when {
+    
+            normalized.contains("serie tv") ->
+                TvType.TvSeries
+    
+            normalized.contains("film animazione") ->
+                TvType.AnimeMovie
+    
+            normalized.contains("anime") ->
+                TvType.Anime
+    
+            else ->
+                null
+        }
     }
 
-    // ============================
-    // LOAD LINKS
-    // ============================
-
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        data.split("###").forEach { link ->
-            loadExtractor(fixHost(link), subtitleCallback, callback)
+    private fun Element.toHomeSearchResponse(
+        forcedType: TvType?
+    ): SearchResponse? {
+    
+        val href = attr("abs:href")
+            .takeIf { it.isNotBlank() }
+            ?: return null
+    
+        if (!href.startsWith(mainUrl)) {
+            return null
         }
-        return true
+    
+        val title = selectFirst(".title")
+            ?.text()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+    
+        val poster = selectFirst("img")
+            ?.attr("abs:src")
+            ?.takeIf { it.isNotBlank() }
+    
+        val type = forcedType ?: TvType.TvSeries
+    
+        return when (type) {
+    
+            TvType.Anime -> {
+                newAnimeSearchResponse(
+                    title,
+                    href,
+                    TvType.Anime
+                ) {
+                    posterUrl = poster
+                }
+            }
+    
+            TvType.AnimeMovie -> {
+                newMovieSearchResponse(
+                    title,
+                    href,
+                    TvType.AnimeMovie
+                ) {
+                    posterUrl = poster
+                }
+            }
+    
+            TvType.TvSeries -> {
+                newTvSeriesSearchResponse(
+                    title,
+                    href,
+                    TvType.TvSeries
+                ) {
+                    posterUrl = poster
+                }
+            }
+    
+            else -> {
+                newMovieSearchResponse(
+                    title,
+                    href,
+                    type
+                ) {
+                    posterUrl = poster
+                }
+            }
+        }
+    }
+
+    private fun cleanSectionTitle(
+        title: String
+    ): String {
+    
+        return title
+            .replace(
+                Regex("""^[^\p{L}\p{N}]+"""),
+                ""
+            )
+            .trim()
+    }
+
+    // ============================================================
+// SEARCH
+// ============================================================
+
+    override suspend fun search(
+        query: String
+    ): List<SearchResponse> {
+    
+        val cleanQuery = query.trim()
+    
+        if (cleanQuery.isBlank()) {
+            return emptyList()
+        }
+    
+        val document = runCatching {
+            app.get(
+                "$mainUrl/",
+                params = mapOf(
+                    "s" to cleanQuery
+                )
+            ).document
+        }.getOrNull() ?: return emptyList()
+    
+        return document
+            .select("article.post")
+            .mapNotNull { article ->
+                article.toSearchResult()
+            }
+            .distinctBy { it.url }
+    }
+
+    // ============================================================
+    // CONVERSIONE ELEMENTI TOONITALIA
+    // ============================================================
+
+    private fun Element.toSearchResult(): SearchResponse? {
+
+        val link = selectFirst(
+            "h2.entry-title a[href], .entry-title a[href]"
+        ) ?: return null
+    
+        val href = link
+            .attr("abs:href")
+            .takeIf { it.isNotBlank() }
+            ?: return null
+    
+        val title = link
+            .text()
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?: return null
+    
+        if (!href.startsWith(mainUrl)) {
+            return null
+        }
+    
+        if (isNavigationUrl(href)) {
+            return null
+        }
+    
+        val classes = classNames()
+            .map { it.lowercase() }
+            .toSet()
+    
+        val type = when {
+    
+            classes.any {
+                it == "category-serie-tv" ||
+                it == "category-serie"
+            } -> TvType.TvSeries
+    
+            classes.any {
+                it == "category-film-animazione" ||
+                it == "category-film"
+            } -> TvType.AnimeMovie
+    
+            classes.any {
+                it == "category-anime"
+            } -> TvType.Anime
+    
+            else -> TvType.TvSeries
+        }
+    
+        val poster = selectFirst("img")
+            ?.let { img ->
+    
+                img.attr("abs:src")
+                    .takeIf { it.isNotBlank() }
+    
+                    ?: img.attr("abs:data-src")
+                        .takeIf { it.isNotBlank() }
+            }
+    
+        return when (type) {
+    
+            TvType.Anime -> {
+                newAnimeSearchResponse(
+                    title,
+                    href,
+                    TvType.Anime
+                ) {
+                    posterUrl = poster
+                }
+            }
+    
+            TvType.AnimeMovie -> {
+                newMovieSearchResponse(
+                    title,
+                    href,
+                    TvType.AnimeMovie
+                ) {
+                    posterUrl = poster
+                }
+            }
+    
+            TvType.TvSeries -> {
+                newTvSeriesSearchResponse(
+                    title,
+                    href,
+                    TvType.TvSeries
+                ) {
+                    posterUrl = poster
+                }
+            }
+    
+            else -> {
+                newTvSeriesSearchResponse(
+                    title,
+                    href,
+                    TvType.TvSeries
+                ) {
+                    posterUrl = poster
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // LOAD
+    // ============================================================
+    
+    override suspend fun load(
+        url: String
+    ): LoadResponse? {
+    
+        val document = runCatching {
+            app.get(url).document
+        }.getOrNull() ?: return null
+    
+        val article = document.selectFirst("article")
+        val content = document.selectFirst(".entry-content")
+    
+        // --------------------------------------------------------
+        // TITOLO
+        // --------------------------------------------------------
+    
+        val title = document
+            .selectFirst("h1.entry-title")
+            ?.text()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    
+            ?: content
+                ?.selectFirst("h2")
+                ?.text()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+    
+            ?: document
+                .selectFirst("meta[property=og:title]")
+                ?.attr("content")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+    
+            ?: return null
+    
+        // --------------------------------------------------------
+        // POSTER
+        // --------------------------------------------------------
+    
+        val poster = content
+            ?.selectFirst("img")
+            ?.let { img ->
+    
+                img.attr("abs:src")
+                    .takeIf { it.isNotBlank() }
+    
+                    ?: img.attr("abs:data-src")
+                        .takeIf { it.isNotBlank() }
+            }
+    
+        // --------------------------------------------------------
+        // ANNO
+        // --------------------------------------------------------
+    
+        val year = extractYear(content)
+    
+        // --------------------------------------------------------
+        // TRAMA
+        // --------------------------------------------------------
+    
+        val plot = extractPlot(content)
+    
+        // --------------------------------------------------------
+        // TIPO
+        // --------------------------------------------------------
+    
+        val type = detectLoadType(
+            article = article,
+            content = content
+        )
+    
+        // --------------------------------------------------------
+        // LOAD RESPONSE
+        // --------------------------------------------------------
+    
+        return when (type) {
+    
+            TvType.Anime -> {
+                newAnimeLoadResponse(
+                    title,
+                    url,
+                    TvType.Anime
+                ) {
+                    posterUrl = poster
+                    this.year = year
+                    this.plot = plot
+                }
+            }
+    
+            TvType.TvSeries -> {
+                newTvSeriesLoadResponse(
+                    title,
+                    url,
+                    TvType.TvSeries,
+                    emptyList()
+                ) {
+                    posterUrl = poster
+                    this.year = year
+                    this.plot = plot
+                }
+            }
+    
+            TvType.AnimeMovie -> {
+                newMovieLoadResponse(
+                    title,
+                    url,
+                    TvType.AnimeMovie,
+                    url
+                ) {
+                    posterUrl = poster
+                    this.year = year
+                    this.plot = plot
+                }
+            }
+    
+            else -> {
+                newMovieLoadResponse(
+                    title,
+                    url,
+                    TvType.Movie,
+                    url
+                ) {
+                    posterUrl = poster
+                    this.year = year
+                    this.plot = plot
+                }
+            }
+        }
+    }
+
+    private fun detectLoadType(
+        article: Element?,
+        content: Element?
+    ): TvType {
+    
+        val classes = article
+            ?.classNames()
+            ?.map { it.lowercase() }
+            ?.toSet()
+            ?: emptySet()
+    
+        return when {
+    
+            classes.any {
+                it == "category-film-animazione" ||
+                it == "category-film"
+            } -> TvType.AnimeMovie
+    
+            classes.any {
+                it == "category-serie-tv" ||
+                it == "category-serie"
+            } -> TvType.TvSeries
+    
+            classes.any {
+                it == "category-anime"
+            } -> TvType.Anime
+    
+            else -> {
+                detectTypeFromContent(content)
+            }
+        }
+    }
+
+    private fun detectTypeFromContent(
+        content: Element?
+    ): TvType {
+    
+        val text = normalize(
+            content
+                ?.text()
+                .orEmpty()
+        )
+    
+        return when {
+    
+            text.contains("film animazione") ->
+                TvType.AnimeMovie
+    
+            text.contains("serie tv") ->
+                TvType.TvSeries
+    
+            text.contains("anime") ->
+                TvType.Anime
+    
+            else ->
+                TvType.TvSeries
+        }
+    }
+
+    private fun extractYear(
+        content: Element?
+    ): Int? {
+    
+        if (content == null) {
+            return null
+        }
+    
+        val text = content.text()
+    
+        val publicationRegex = Regex(
+            """Data\s+di\s+pubblicazione\s*:?\s*(?:Jap\s*:?\s*)?(\d{4})""",
+            RegexOption.IGNORE_CASE
+        )
+    
+        publicationRegex
+            .find(text)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.let {
+                return it
+            }
+    
+        val genericYearRegex = Regex(
+            """\b(19\d{2}|20\d{2})\b"""
+        )
+    
+        return genericYearRegex
+            .find(text)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+    }
+
+    private fun extractPlot(
+        content: Element?
+    ): String? {
+    
+        if (content == null) {
+            return null
+        }
+    
+        val plotHeader = content
+            .select("h2, h3, h4")
+            .firstOrNull { element ->
+    
+                normalize(element.text())
+                    .startsWith("trama")
+            }
+    
+        if (plotHeader != null) {
+    
+            val paragraph = plotHeader
+                .nextElementSibling()
+    
+            if (paragraph != null) {
+    
+                val clone = paragraph.clone()
+    
+                clone
+                    .select("a")
+                    .filter {
+                        normalize(it.text()) == "wikipedia"
+                    }
+                    .forEach {
+                        it.remove()
+                    }
+    
+                var text = clone
+                    .text()
+                    .trim()
+    
+                text = text
+                    .replace(
+                        Regex(
+                            """Fonte\s*:?.*$""",
+                            setOf(
+                                RegexOption.IGNORE_CASE,
+                                RegexOption.DOT_MATCHES_ALL
+                            )
+                        ),
+                        ""
+                    )
+                    .trim()
+    
+                if (text.isNotBlank()) {
+                    return text
+                }
+            }
+        }
+    
+        return null
+    }
+    
+    // ============================================================
+    // FILTRI
+    // ============================================================
+
+    private fun isNavigationUrl(
+        url: String
+    ): Boolean {
+
+        val clean = url
+            .substringBefore("#")
+            .trimEnd('/')
+
+        val excluded = setOf(
+            mainUrl,
+            "$mainUrl/anime-ita",
+            "$mainUrl/contatti",
+            "$mainUrl/film-animazione",
+            "$mainUrl/serie-tv"
+        )
+
+        return clean in excluded
+    }
+
+    // ============================================================
+    // RICERCA
+    // ============================================================
+
+    private fun normalize(
+        text: String
+    ): String {
+
+        return text
+            .lowercase()
+            .replace("à", "a")
+            .replace("è", "e")
+            .replace("é", "e")
+            .replace("ì", "i")
+            .replace("ò", "o")
+            .replace("ù", "u")
+            .replace(
+                Regex("""[^\p{L}\p{N}\s]"""),
+                " "
+            )
+            .replace(
+                Regex("""\s+"""),
+                " "
+            )
+            .trim()
     }
 }
