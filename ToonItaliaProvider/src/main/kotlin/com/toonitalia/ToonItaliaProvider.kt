@@ -339,27 +339,83 @@ class ToonItaliaProvider : MainAPI() {
             .mapNotNull { fragment ->
     
                 val fragmentDocument =
-                    org.jsoup.Jsoup.parse(fragment, mainUrl)
+                    org.jsoup.Jsoup.parse(
+                        fragment,
+                        element.baseUri()
+                            .ifBlank { mainUrl }
+                    )
     
-                val text = fragmentDocument
-                    .text()
-                    .trim()
-    
-                if (text.isBlank()) {
-                    return@mapNotNull null
-                }
+                // ------------------------------------------------
+                // PLAYER
+                // ------------------------------------------------
     
                 val links = fragmentDocument
                     .select("a[href]")
                     .mapNotNull { link ->
     
-                        link.attr("abs:href")
+                        val url = link
+                            .attr("abs:href")
                             .trim()
                             .takeIf {
                                 it.isNotBlank()
                             }
+                            ?: return@mapNotNull null
+    
+                        val label = link
+                            .text()
+                            .trim()
+                            .takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: runCatching {
+                                java.net.URI(url)
+                                    .host
+                                    ?.substringBefore(".")
+                                    ?.uppercase()
+                            }.getOrNull()
+                            ?: "PLAYER"
+    
+                        ToonPlayerLink(
+                            label = label,
+                            url = url
+                        )
                     }
-                    .distinct()
+                    .distinctBy {
+                        it.url
+                    }
+    
+                // ------------------------------------------------
+                // TESTO EPISODIO
+                //
+                // Rimuoviamo gli <a> dal clone in modo che:
+                //
+                // "01 - Titolo - VOE - RPMShare"
+                //
+                // diventi:
+                //
+                // "01 - Titolo"
+                // ------------------------------------------------
+    
+                val textDocument =
+                    fragmentDocument.clone()
+    
+                textDocument
+                    .select("a")
+                    .remove()
+    
+                val text = textDocument
+                    .text()
+                    .trim()
+                    .trimEnd(
+                        '-',
+                        '–',
+                        '—'
+                    )
+                    .trim()
+    
+                if (text.isBlank()) {
+                    return@mapNotNull null
+                }
     
                 ToonLine(
                     text = text,
@@ -372,9 +428,14 @@ class ToonItaliaProvider : MainAPI() {
     // LOAD
     // ============================================================
 
-    private data class ToonLine(
+    private data class ToonPlayerLink(
+    val label: String,
+    val url: String
+)
+
+private data class ToonLine(
     val text: String,
-    val links: List<String>
+    val links: List<ToonPlayerLink>
 )
 
     private data class ToonEpisode(
@@ -384,7 +445,7 @@ class ToonItaliaProvider : MainAPI() {
     val originalEpisode: Int?,
     val suffix: String?,
     val title: String,
-    val links: List<String> = emptyList()
+    val links: List<ToonPlayerLink> = emptyList()
 )
 
     override suspend fun load(
@@ -549,22 +610,53 @@ class ToonItaliaProvider : MainAPI() {
     
         val playerLinks = encodedPart
             .split("|")
-            .mapNotNull { encodedUrl ->
-    
-                runCatching {
+            .mapNotNull { encodedPlayer ->
+        
+                val parts =
+                    encodedPlayer.split(
+                        "@@",
+                        limit = 2
+                    )
+        
+                if (parts.size != 2) {
+                    return@mapNotNull null
+                }
+        
+                val label = runCatching {
                     java.net.URLDecoder.decode(
-                        encodedUrl,
+                        parts[0],
                         "UTF-8"
                     )
-                }
-                    .getOrNull()
+                }.getOrNull()
                     ?.trim()
-                    ?.takeIf {
-                        it.startsWith("http://") ||
-                            it.startsWith("https://")
-                    }
+                    .orEmpty()
+        
+                val url = runCatching {
+                    java.net.URLDecoder.decode(
+                        parts[1],
+                        "UTF-8"
+                    )
+                }.getOrNull()
+                    ?.trim()
+                    ?: return@mapNotNull null
+        
+                if (
+                    !url.startsWith("http://") &&
+                    !url.startsWith("https://")
+                ) {
+                    return@mapNotNull null
+                }
+        
+                ToonPlayerLink(
+                    label = label.ifBlank {
+                        "PLAYER"
+                    },
+                    url = url
+                )
             }
-            .distinct()
+            .distinctBy {
+                it.url
+            }
     
         if (playerLinks.isEmpty()) {
             return false
@@ -572,11 +664,11 @@ class ToonItaliaProvider : MainAPI() {
     
         var loaded = false
     
-        playerLinks.forEach { playerUrl ->
-    
+        playerLinks.forEach { player ->
+
             val result = runCatching {
                 loadExtractor(
-                    url = playerUrl,
+                    url = player.url,
                     referer = mainUrl,
                     subtitleCallback = subtitleCallback,
                     callback = callback
@@ -1517,11 +1609,21 @@ class ToonItaliaProvider : MainAPI() {
             .map { item ->
 
                 val encodedLinks = item.links
-                    .map { link ->
-                        java.net.URLEncoder.encode(
-                            link,
-                            "UTF-8"
-                        )
+                    .map { player ->
+                
+                        val encodedLabel =
+                            java.net.URLEncoder.encode(
+                                player.label,
+                                "UTF-8"
+                            )
+                
+                        val encodedUrl =
+                            java.net.URLEncoder.encode(
+                                player.url,
+                                "UTF-8"
+                            )
+                
+                        "$encodedLabel@@$encodedUrl"
                     }
 
                 val episodeId = buildString {
