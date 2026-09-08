@@ -861,15 +861,11 @@ class ToonItaliaProvider : MainAPI() {
                     
                     if (
                         normalizedLine == "speciali" ||
-                        normalizedLine.startsWith("speciali ") ||
                         normalizedLine == "special" ||
-                        normalizedLine.startsWith("special ") ||
                         normalizedLine == "speciali tv" ||
-                        normalizedLine.startsWith("speciali tv ") ||
+                        normalizedLine == "special tv" ||
                         normalizedLine == "ova" ||
-                        normalizedLine.startsWith("ova ") ||
-                        normalizedLine == "oav" ||
-                        normalizedLine.startsWith("oav ")
+                        normalizedLine == "oav"
                     ) {
                         currentSeason = 0
                         seasonFirstAbsolute = null
