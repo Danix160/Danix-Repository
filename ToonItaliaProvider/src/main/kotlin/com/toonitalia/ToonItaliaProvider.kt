@@ -703,6 +703,13 @@ class ToonItaliaProvider : MainAPI() {
         )
 
         // Esempio:
+        // Special-Tv-01 – Avventura nell'ombelico dell'oceano
+        val specialTvRegex = Regex(
+            """^\s*Special[\s-]*Tv[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""",
+            RegexOption.IGNORE_CASE
+        )
+
+        // Esempio:
         // 1x01A – Bugie pericolose
         // 1x01B – Al lupo al lupo
         // 2x03 – Titolo episodio
@@ -909,6 +916,44 @@ class ToonItaliaProvider : MainAPI() {
                                 append(diskTitle)
                             }
                         }
+                    
+                        return@lineLoop
+                    }
+
+                    // ====================================================
+                    // SPECIALI TV
+                    // ====================================================
+                    
+                    val specialMatch = specialTvRegex.find(cleanLine)
+                    
+                    if (specialMatch != null) {
+                    
+                        val specialNumber = specialMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        var specialTitle = specialMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        specialTitle = cleanEpisodeTitle(specialTitle)
+                    
+                        if (specialTitle.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = 0,
+                            episode = specialNumber,
+                            absoluteEpisode = null,
+                            originalEpisode = specialNumber,
+                            suffix = "TV",
+                            title = specialTitle
+                        )
                     
                         return@lineLoop
                     }
