@@ -1,6 +1,7 @@
 package com.toonitalia
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class ToonItaliaProvider : MainAPI() {
@@ -524,6 +525,68 @@ class ToonItaliaProvider : MainAPI() {
                 }
             }
         }
+    }
+
+    // ============================================================
+    // LOAD LINKS
+    // ============================================================
+    
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+    
+        val encodedPart = data
+            .substringAfter("||", "")
+            .trim()
+    
+        if (encodedPart.isBlank()) {
+            return false
+        }
+    
+        val playerLinks = encodedPart
+            .split("|")
+            .mapNotNull { encodedUrl ->
+    
+                runCatching {
+                    java.net.URLDecoder.decode(
+                        encodedUrl,
+                        "UTF-8"
+                    )
+                }
+                    .getOrNull()
+                    ?.trim()
+                    ?.takeIf {
+                        it.startsWith("http://") ||
+                            it.startsWith("https://")
+                    }
+            }
+            .distinct()
+    
+        if (playerLinks.isEmpty()) {
+            return false
+        }
+    
+        var loaded = false
+    
+        playerLinks.forEach { playerUrl ->
+    
+            val result = runCatching {
+                loadExtractor(
+                    playerUrl,
+                    subtitleCallback,
+                    callback
+                )
+            }.getOrDefault(false)
+    
+            if (result) {
+                loaded = true
+            }
+        }
+    
+        return loaded
     }
 
     // ============================================================
