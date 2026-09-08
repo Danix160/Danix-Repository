@@ -688,6 +688,8 @@ class ToonItaliaProvider : MainAPI() {
 
         val explicitCounters = mutableMapOf<Int, Int>()
 
+        val unnumberedSpecialCounters = mutableMapOf<String, Int>()
+
         // Esempio:
         // 1° Stagione
         // Stagione 1
@@ -711,6 +713,11 @@ class ToonItaliaProvider : MainAPI() {
 
         val specialGenericRegex = Regex(
             """^\s*(OVA|OAV|Special|Extra)[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""",
+            RegexOption.IGNORE_CASE
+        )
+
+        val unnumberedSpecialRegex = Regex(
+            """^\s*(OVA|OAV|Special|Extra)\s*[-–—]\s*(.+?)\s*$""",
             RegexOption.IGNORE_CASE
         )
 
@@ -1018,6 +1025,54 @@ class ToonItaliaProvider : MainAPI() {
                     
                         return@lineLoop
                     }
+
+                    val unnumberedSpecialMatch =
+                            unnumberedSpecialRegex.find(cleanLine)
+                        
+                        if (unnumberedSpecialMatch != null) {
+                        
+                            val specialType = unnumberedSpecialMatch
+                                .groupValues
+                                .getOrNull(1)
+                                ?.uppercase()
+                                .orEmpty()
+                        
+                            var specialTitle = unnumberedSpecialMatch
+                                .groupValues
+                                .getOrNull(2)
+                                ?.trim()
+                                .orEmpty()
+                        
+                            specialTitle = cleanEpisodeTitle(specialTitle)
+                        
+                            if (specialTitle.isBlank()) {
+                                return@lineLoop
+                            }
+                        
+                            val label = when (specialType) {
+                                "OAV" -> "OAV"
+                                "OVA" -> "OVA"
+                                "SPECIAL" -> "Special"
+                                "EXTRA" -> "Extra"
+                                else -> specialType
+                            }
+                        
+                            val specialNumber =
+                                (unnumberedSpecialCounters[specialType] ?: 0) + 1
+                        
+                            unnumberedSpecialCounters[specialType] = specialNumber
+                        
+                            parsedEpisodes += ToonEpisode(
+                                season = 0,
+                                episode = specialNumber,
+                                absoluteEpisode = null,
+                                originalEpisode = specialNumber,
+                                suffix = "${label.uppercase()}UN",
+                                title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
+                            )
+                        
+                            return@lineLoop
+                        }
 
                     // ====================================================
                     // FORMATO MULTI-EPISODIO
