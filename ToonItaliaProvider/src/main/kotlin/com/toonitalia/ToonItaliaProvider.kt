@@ -940,144 +940,150 @@ class ToonItaliaProvider : MainAPI() {
                         return@lineLoop
                     }
 
-                    // ====================================================
-                    // SPECIALI TV
-                    // ====================================================
-                    
-                    val specialMatch = specialTvRegex.find(cleanLine)
-                    
-                    if (specialMatch != null) {
-                    
-                        val specialType = unnumberedSpecialMatch
-                            .groupValues
-                            .getOrNull(2)
-                            ?.uppercase()
-                            .orEmpty()
-                        
-                        var specialTitle = unnumberedSpecialMatch
-                            .groupValues
-                            .getOrNull(3)
-                            ?.trim()
-                            .orEmpty()
-                    
-                        specialTitle = cleanEpisodeTitle(specialTitle)
-                    
-                        if (specialTitle.isBlank()) {
-                            return@lineLoop
-                        }
-                    
-                        parsedEpisodes += ToonEpisode(
-                            season = 0,
-                            episode = specialNumber,
-                            absoluteEpisode = null,
-                            originalEpisode = specialNumber,
-                            suffix = "TV",
-                            title = specialTitle
-                        )
-                    
+                // ====================================================
+                // SPECIALI TV
+                // ====================================================
+                
+                val specialMatch = specialTvRegex.find(cleanLine)
+                
+                if (specialMatch != null) {
+                
+                    val specialNumber = specialMatch
+                        .groupValues
+                        .getOrNull(1)
+                        ?.toIntOrNull()
+                        ?: return@lineLoop
+                
+                    var specialTitle = specialMatch
+                        .groupValues
+                        .getOrNull(2)
+                        ?.trim()
+                        .orEmpty()
+                
+                    specialTitle = cleanEpisodeTitle(specialTitle)
+                
+                    if (specialTitle.isBlank()) {
                         return@lineLoop
                     }
-
-                    // ====================================================
-                    // OVA / OAV / SPECIAL / EXTRA
-                    // ====================================================
-                    
-                    val genericSpecialMatch = specialGenericRegex.find(cleanLine)
-                    
-                    if (genericSpecialMatch != null) {
-                    
-                        val specialType = genericSpecialMatch
-                            .groupValues
-                            .getOrNull(1)
-                            ?.uppercase()
-                            .orEmpty()
-                    
-                        val specialNumber = genericSpecialMatch
-                            .groupValues
-                            .getOrNull(2)
-                            ?.toIntOrNull()
-                            ?: return@lineLoop
-                    
-                        var specialTitle = genericSpecialMatch
-                            .groupValues
-                            .getOrNull(3)
-                            ?.trim()
-                            .orEmpty()
-                    
-                        specialTitle = cleanEpisodeTitle(specialTitle)
-                    
-                        if (specialTitle.isBlank()) {
-                            return@lineLoop
-                        }
-                    
-                        val label = when (specialType) {
-                            "OAV" -> "OAV"
-                            "OVA" -> "OVA"
-                            "SPECIALE" -> "Speciale"
-                            "SPECIAL" -> "Special"
-                            "EXTRA" -> "Extra"
-                            else -> specialType
-                        }
-                    
-                        parsedEpisodes += ToonEpisode(
-                            season = 0,
-                            episode = specialNumber,
-                            absoluteEpisode = null,
-                            originalEpisode = specialNumber,
-                            suffix = label.uppercase(),
-                            title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
-                        )
-                    
+                
+                    parsedEpisodes += ToonEpisode(
+                        season = 0,
+                        episode = specialNumber,
+                        absoluteEpisode = null,
+                        originalEpisode = specialNumber,
+                        suffix = "TV",
+                        title = specialTitle
+                    )
+                
+                    return@lineLoop
+                }
+                
+                
+                // ====================================================
+                // OVA / OAV / SPECIAL / EXTRA NUMERATI
+                // ====================================================
+                
+                val genericSpecialMatch = specialGenericRegex.find(cleanLine)
+                
+                if (genericSpecialMatch != null) {
+                
+                    val specialType = genericSpecialMatch
+                        .groupValues
+                        .getOrNull(1)
+                        ?.uppercase()
+                        .orEmpty()
+                
+                    val specialNumber = genericSpecialMatch
+                        .groupValues
+                        .getOrNull(2)
+                        ?.toIntOrNull()
+                        ?: return@lineLoop
+                
+                    var specialTitle = genericSpecialMatch
+                        .groupValues
+                        .getOrNull(3)
+                        ?.trim()
+                        .orEmpty()
+                
+                    specialTitle = cleanEpisodeTitle(specialTitle)
+                
+                    if (specialTitle.isBlank()) {
                         return@lineLoop
                     }
-
-                    val unnumberedSpecialMatch =
-                            unnumberedSpecialRegex.find(cleanLine)
-                        
-                        if (unnumberedSpecialMatch != null) {
-                        
-                            val specialType = unnumberedSpecialMatch
-                                .groupValues
-                                .getOrNull(1)
-                                ?.uppercase()
-                                .orEmpty()
-                        
-                            var specialTitle = unnumberedSpecialMatch
-                                .groupValues
-                                .getOrNull(2)
-                                ?.trim()
-                                .orEmpty()
-                        
-                            specialTitle = cleanEpisodeTitle(specialTitle)
-                        
-                            if (specialTitle.isBlank()) {
-                                return@lineLoop
-                            }
-                        
-                            val label = when (specialType) {
-                                "OAV" -> "OAV"
-                                "OVA" -> "OVA"
-                                "SPECIAL" -> "Special"
-                                "EXTRA" -> "Extra"
-                                else -> specialType
-                            }
-                        
-                            val specialNumber =
-                                (unnumberedSpecialCounters[specialType] ?: 0) + 1
-                        
-                            unnumberedSpecialCounters[specialType] = specialNumber
-                        
-                            parsedEpisodes += ToonEpisode(
-                                season = 0,
-                                episode = specialNumber,
-                                absoluteEpisode = null,
-                                originalEpisode = specialNumber,
-                                suffix = "${label.uppercase()}UN",
-                                title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
-                            )
-                        
-                            return@lineLoop
-                        }
+                
+                    val label = when (specialType) {
+                        "OAV" -> "OAV"
+                        "OVA" -> "OVA"
+                        "SPECIAL" -> "Special"
+                        "EXTRA" -> "Extra"
+                        else -> specialType
+                    }
+                
+                    parsedEpisodes += ToonEpisode(
+                        season = 0,
+                        episode = specialNumber,
+                        absoluteEpisode = null,
+                        originalEpisode = specialNumber,
+                        suffix = label.uppercase(),
+                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
+                    )
+                
+                    return@lineLoop
+                }
+                
+                
+                // ====================================================
+                // OVA / OAV / SPECIAL / SPECIALE / EXTRA SENZA NUMERO
+                // ====================================================
+                
+                val unnumberedSpecialMatch =
+                    unnumberedSpecialRegex.find(cleanLine)
+                
+                if (unnumberedSpecialMatch != null) {
+                
+                    val specialType = unnumberedSpecialMatch
+                        .groupValues
+                        .getOrNull(2)
+                        ?.uppercase()
+                        .orEmpty()
+                
+                    var specialTitle = unnumberedSpecialMatch
+                        .groupValues
+                        .getOrNull(3)
+                        ?.trim()
+                        .orEmpty()
+                
+                    specialTitle = cleanEpisodeTitle(specialTitle)
+                
+                    if (specialTitle.isBlank()) {
+                        return@lineLoop
+                    }
+                
+                    val label = when (specialType) {
+                        "OAV" -> "OAV"
+                        "OVA" -> "OVA"
+                        "SPECIALE" -> "Speciale"
+                        "SPECIAL" -> "Special"
+                        "EXTRA" -> "Extra"
+                        else -> specialType
+                    }
+                
+                    val specialNumber =
+                        (unnumberedSpecialCounters[specialType] ?: 0) + 1
+                
+                    unnumberedSpecialCounters[specialType] = specialNumber
+                
+                    parsedEpisodes += ToonEpisode(
+                        season = 0,
+                        episode = specialNumber,
+                        absoluteEpisode = null,
+                        originalEpisode = specialNumber,
+                        suffix = "${label.uppercase()}UN",
+                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
+                    )
+                
+                    return@lineLoop
+                }
 
                     // ====================================================
                     // FORMATO MULTI-EPISODIO
