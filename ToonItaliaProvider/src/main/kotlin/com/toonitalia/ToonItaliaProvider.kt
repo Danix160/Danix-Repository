@@ -841,6 +841,78 @@ class ToonItaliaProvider : MainAPI() {
                         " "
                     )
 
+                    // ====================================================
+                    // CAMBIO SEZIONE DENTRO I PARAGRAFI
+                    // ====================================================
+                    
+                    val normalizedLine = normalize(cleanLine)
+                    
+                    // ----------------------------------------------------
+                    // SPECIALI / OVA
+                    // Esempio: <span>Speciali Tv:</span>
+                    // ----------------------------------------------------
+                    
+                    if (
+                        normalizedLine == "speciali" ||
+                        normalizedLine.startsWith("speciali ") ||
+                        normalizedLine == "special" ||
+                        normalizedLine.startsWith("special ") ||
+                        normalizedLine == "speciali tv" ||
+                        normalizedLine.startsWith("speciali tv ") ||
+                        normalizedLine == "ova" ||
+                        normalizedLine.startsWith("ova ") ||
+                        normalizedLine == "oav" ||
+                        normalizedLine.startsWith("oav ")
+                    ) {
+                        currentSeason = 0
+                        seasonFirstAbsolute = null
+                        currentGroupName = null
+                    
+                        return@lineLoop
+                    }
+                    
+                    // ----------------------------------------------------
+                    // DISK / DISC / DISCO
+                    // ----------------------------------------------------
+                    
+                    val paragraphDiskMatch = diskRegex.find(cleanLine)
+                    
+                    if (paragraphDiskMatch != null) {
+                    
+                        val diskNumber = paragraphDiskMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                    
+                        val diskTitle = paragraphDiskMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                    
+                        groupSeasonCounter++
+                    
+                        currentSeason = groupSeasonCounter
+                        seasonFirstAbsolute = null
+                    
+                        currentGroupName = buildString {
+                    
+                            append("Disk")
+                    
+                            if (diskNumber != null) {
+                                append(" ")
+                                append(diskNumber)
+                            }
+                    
+                            if (diskTitle != null) {
+                                append(" - ")
+                                append(diskTitle)
+                            }
+                        }
+                    
+                        return@lineLoop
+                    }
+
                 // ====================================================
                 // FORMATO ESPLICITO SxE / SxEA-B
                 // ====================================================
