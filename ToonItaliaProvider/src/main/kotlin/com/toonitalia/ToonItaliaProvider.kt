@@ -704,6 +704,10 @@ class ToonItaliaProvider : MainAPI() {
             """^\s*(\d{1,4})\s*[-–—]\s*(.+?)\s*$"""
         )
 
+        val decimalEpisodeRegex = Regex(
+            """^\s*(\d{1,4})\.(\d+)\s*[-–—]\s*(.+?)\s*$"""
+        )
+
         // Esempio:
         // Special-Tv-01 – Avventura nell'ombelico dell'oceano
         val specialTvRegex = Regex(
@@ -1235,7 +1239,51 @@ class ToonItaliaProvider : MainAPI() {
 
                     return@lineLoop
                 }
-
+                
+                val decimalMatch = decimalEpisodeRegex.find(cleanLine)
+                    
+                    if (decimalMatch != null) {
+                    
+                        val whole = decimalMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        val decimal = decimalMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        var title = decimalMatch
+                            .groupValues
+                            .getOrNull(3)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        title = cleanEpisodeTitle(title)
+                    
+                        if (title.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        val specialNumber = parsedEpisodes.count {
+                            it.season == 0 &&
+                                it.suffix?.startsWith("DECIMAL") == true
+                        } + 1
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = 0,
+                            episode = specialNumber,
+                            absoluteEpisode = null,
+                            originalEpisode = whole,
+                            suffix = "DECIMAL${whole}_${decimal}",
+                            title = "$whole.$decimal - $title"
+                        )
+                    
+                        return@lineLoop
+                    }
                 // ====================================================
                 // FORMATO NUMERICO ASSOLUTO
                 // ====================================================
