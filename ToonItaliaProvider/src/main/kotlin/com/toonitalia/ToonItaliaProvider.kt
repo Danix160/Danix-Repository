@@ -683,6 +683,9 @@ class ToonItaliaProvider : MainAPI() {
         var currentSeason: Int? = null
         var seasonFirstAbsolute: Int? = null
 
+        var currentGroupName: String? = null
+        var groupSeasonCounter = 0
+
         val explicitCounters = mutableMapOf<Int, Int>()
 
         // Esempio:
@@ -707,17 +710,87 @@ class ToonItaliaProvider : MainAPI() {
             """^\s*(\d+)\s*[xX×]\s*(\d+)([A-Za-z])?\s*[-–—]\s*(.+?)\s*$"""
         )
 
+        val diskRegex = Regex(
+            """^(?:Disk|Disc|Disco)\s*(\d+)\s*[-–—]?\s*(.*)$""",
+            RegexOption.IGNORE_CASE
+        )
+
         content.children().forEach elementLoop@ { element ->
 
             // ----------------------------------------------------
             // CAMBIO STAGIONE
             // ----------------------------------------------------
-
             if (
                 element.tagName() == "h2" ||
                 element.tagName() == "h3" ||
                 element.tagName() == "h4"
             ) {
+                
+                val rawHeadingText = element.text().trim()
+                val headingText = normalize(rawHeadingText)
+
+                // ----------------------------------------------------
+                // SPECIALI / OVA
+                // ----------------------------------------------------
+
+                if (
+                    headingText.contains("speciali") ||
+                    headingText.contains("special") ||
+                    headingText.contains("ova") ||
+                    headingText.contains("oav")
+                ) {
+                    currentSeason = 0
+                    seasonFirstAbsolute = null
+                    currentGroupName = null
+                
+                    return@elementLoop
+                }
+
+                // ----------------------------------------------------
+                // DISK / DISC / DISCO
+                // ----------------------------------------------------
+
+                val diskMatch = diskRegex.find(rawHeadingText)
+                
+                if (diskMatch != null) {
+                
+                    val diskNumber = diskMatch
+                        .groupValues
+                        .getOrNull(1)
+                        ?.toIntOrNull()
+                
+                    val diskTitle = diskMatch
+                        .groupValues
+                        .getOrNull(2)
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                
+                    groupSeasonCounter++
+                
+                    currentSeason = groupSeasonCounter
+                    seasonFirstAbsolute = null
+                
+                    currentGroupName = buildString {
+                
+                        append("Disk")
+                
+                        if (diskNumber != null) {
+                            append(" ")
+                            append(diskNumber)
+                        }
+                
+                        if (diskTitle != null) {
+                            append(" - ")
+                            append(diskTitle)
+                        }
+                    }
+                
+                    return@elementLoop
+                }
+
+                // ----------------------------------------------------
+                // STAGIONI NORMALI
+                // ----------------------------------------------------
 
                 val match = seasonRegex.find(
                     element.text()
@@ -734,6 +807,8 @@ class ToonItaliaProvider : MainAPI() {
                                 ?.toIntOrNull()
 
                     if (seasonNumber != null) {
+
+                        currentGroupName = null
 
                         // Se l'HTML ripete due volte la stessa stagione,
                         // non azzeriamo inutilmente il riferimento.
@@ -883,13 +958,19 @@ class ToonItaliaProvider : MainAPI() {
                     return@lineLoop
                 }
 
+                val finalTitle = if (currentGroupName != null) {
+                    "${currentGroupName} - $title"
+                } else {
+                    title
+                }
+                
                 parsedEpisodes += ToonEpisode(
                     season = season,
                     episode = relativeEpisode,
                     absoluteEpisode = absoluteEpisode,
                     originalEpisode = absoluteEpisode,
                     suffix = null,
-                    title = title
+                    title = finalTitle
                 )
             }
         }
