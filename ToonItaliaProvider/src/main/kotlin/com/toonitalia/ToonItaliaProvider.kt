@@ -753,7 +753,8 @@ class ToonItaliaProvider : MainAPI() {
                     headingText.contains("speciali") ||
                     headingText.contains("special") ||
                     headingText.contains("ova") ||
-                    headingText.contains("oav")
+                    headingText.contains("oav") ||
+                    headingText.contains("extra")
                 ) {
                     currentSeason = 0
                     seasonFirstAbsolute = null
@@ -873,8 +874,11 @@ class ToonItaliaProvider : MainAPI() {
                         normalizedLine == "special" ||
                         normalizedLine == "speciali tv" ||
                         normalizedLine == "special tv" ||
+                        normalizedLine == "episodi speciali" ||
                         normalizedLine == "ova" ||
-                        normalizedLine == "oav"
+                        normalizedLine == "oav" ||
+                        normalizedLine == "extra" ||
+                        normalizedLine == "episodi extra"
                     ) {
                         currentSeason = 0
                         seasonFirstAbsolute = null
