@@ -947,7 +947,7 @@ class ToonItaliaProvider : MainAPI() {
                         }
                     
                         parsedEpisodes += ToonEpisode(
-                            season = 0,
+                            season = 99,
                             episode = specialNumber,
                             absoluteEpisode = null,
                             originalEpisode = specialNumber,
