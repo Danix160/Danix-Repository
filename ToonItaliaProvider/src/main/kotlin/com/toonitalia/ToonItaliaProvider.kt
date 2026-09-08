@@ -721,7 +721,7 @@ class ToonItaliaProvider : MainAPI() {
         )
 
         val unnumberedSpecialRegex = Regex(
-            """^\s*(OVA|OAV|Special|Extra)\s*[-–—]\s*(.+?)\s*$""",
+            """^\s*(?:(.+?)\s+)?(OVA|OAV|Speciale|Special|Extra)\s*[-–—]\s*(.+?)\s*$""",
             RegexOption.IGNORE_CASE
         )
 
@@ -948,15 +948,15 @@ class ToonItaliaProvider : MainAPI() {
                     
                     if (specialMatch != null) {
                     
-                        val specialNumber = specialMatch
-                            .groupValues
-                            .getOrNull(1)
-                            ?.toIntOrNull()
-                            ?: return@lineLoop
-                    
-                        var specialTitle = specialMatch
+                        val specialType = unnumberedSpecialMatch
                             .groupValues
                             .getOrNull(2)
+                            ?.uppercase()
+                            .orEmpty()
+                        
+                        var specialTitle = unnumberedSpecialMatch
+                            .groupValues
+                            .getOrNull(3)
                             ?.trim()
                             .orEmpty()
                     
@@ -1013,6 +1013,7 @@ class ToonItaliaProvider : MainAPI() {
                         val label = when (specialType) {
                             "OAV" -> "OAV"
                             "OVA" -> "OVA"
+                            "SPECIALE" -> "Speciale"
                             "SPECIAL" -> "Special"
                             "EXTRA" -> "Extra"
                             else -> specialType
