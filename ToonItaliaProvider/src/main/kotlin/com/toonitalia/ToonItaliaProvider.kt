@@ -661,6 +661,27 @@ private data class ToonLine(
         if (playerLinks.isEmpty()) {
             return false
         }
+
+        println("========== TOONITALIA PLAYERS ==========")
+
+        playerLinks.forEach { player ->
+        
+            val host = runCatching {
+                java.net.URI(player.url)
+                    .host
+                    ?.lowercase()
+                    .orEmpty()
+            }.getOrDefault("")
+        
+            println(
+                "[ToonItalia] " +
+                    "LABEL=${player.label} | " +
+                    "HOST=$host | " +
+                    "URL=${player.url}"
+            )
+        }
+        
+        println("=========================================")
     
         var loaded = false
     
