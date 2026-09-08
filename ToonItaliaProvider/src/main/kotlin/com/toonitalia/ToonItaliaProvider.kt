@@ -2,6 +2,7 @@ package com.toonitalia
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 
 class ToonItaliaProvider : MainAPI() {
