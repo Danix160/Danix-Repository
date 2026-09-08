@@ -1307,7 +1307,6 @@ class ToonItaliaProvider : MainAPI() {
                     
                         append("-")
                         append(item.episode)
-                      }
                     }
                 }
 
