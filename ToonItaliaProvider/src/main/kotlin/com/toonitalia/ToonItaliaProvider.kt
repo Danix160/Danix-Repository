@@ -709,6 +709,10 @@ class ToonItaliaProvider : MainAPI() {
             RegexOption.IGNORE_CASE
         )
 
+        val multiEpisodeRegex = Regex(
+            """^\s*(\d+)\s*[xX×]\s*(\d+(?:\s*-\s*\d+)+)\s*[-–—]\s*(.+?)\s*$"""
+        )
+
         // Esempio:
         // 1x01A – Bugie pericolose
         // 1x01B – Al lupo al lupo
@@ -949,6 +953,66 @@ class ToonItaliaProvider : MainAPI() {
                             originalEpisode = specialNumber,
                             suffix = "TV",
                             title = specialTitle
+                        )
+                    
+                        return@lineLoop
+                    }
+
+                    // ====================================================
+                    // FORMATO MULTI-EPISODIO
+                    // Esempio:
+                    // 2x05-06-07 – Carly va in Giappone
+                    // 3x08-09 – Lascio iCarly
+                    // ====================================================
+                    
+                    val multiMatch = multiEpisodeRegex.find(cleanLine)
+                    
+                    if (multiMatch != null) {
+                    
+                        val explicitSeason = multiMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        val episodeNumbers = multiMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.split(Regex("""\s*-\s*"""))
+                            ?.mapNotNull { it.toIntOrNull() }
+                            .orEmpty()
+                    
+                        var title = multiMatch
+                            .groupValues
+                            .getOrNull(3)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        title = cleanEpisodeTitle(title)
+                    
+                        if (episodeNumbers.isEmpty() || title.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        val firstEpisode = episodeNumbers.first()
+                    
+                        val sourceLabel = buildString {
+                            append(explicitSeason)
+                            append("x")
+                            append(
+                                episodeNumbers.joinToString("-") {
+                                    it.toString().padStart(2, '0')
+                                }
+                            )
+                        }
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = explicitSeason,
+                            episode = firstEpisode,
+                            absoluteEpisode = null,
+                            originalEpisode = firstEpisode,
+                            suffix = "MULTI",
+                            title = "$sourceLabel - $title"
                         )
                     
                         return@lineLoop
