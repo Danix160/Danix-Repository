@@ -1277,7 +1277,9 @@ class ToonItaliaProvider : MainAPI() {
                         "-" +
                         item.originalEpisode +
                         "-" +
-                        item.suffix
+                        item.suffix +
+                        "-" +
+                        item.episode
                 }
             }
             .map { item ->
@@ -1298,10 +1300,14 @@ class ToonItaliaProvider : MainAPI() {
                             item.originalEpisode
                                 ?: item.episode
                         )
-
+                    
                         if (item.suffix != null) {
                             append(item.suffix)
                         }
+                    
+                        append("-")
+                        append(item.episode)
+                      }
                     }
                 }
 
