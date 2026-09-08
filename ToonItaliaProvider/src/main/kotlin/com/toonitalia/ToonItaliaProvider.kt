@@ -709,6 +709,11 @@ class ToonItaliaProvider : MainAPI() {
             RegexOption.IGNORE_CASE
         )
 
+        val specialGenericRegex = Regex(
+            """^\s*(OVA|OAV|Special|Extra)[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""",
+            RegexOption.IGNORE_CASE
+        )
+
         val multiEpisodeRegex = Regex(
             """^\s*(\d+)\s*[xX×]\s*(\d+(?:\s*-\s*\d+)+)\s*[-–—]\s*(.+?)\s*$"""
         )
@@ -953,6 +958,58 @@ class ToonItaliaProvider : MainAPI() {
                             originalEpisode = specialNumber,
                             suffix = "TV",
                             title = specialTitle
+                        )
+                    
+                        return@lineLoop
+                    }
+
+                    // ====================================================
+                    // OVA / OAV / SPECIAL / EXTRA
+                    // ====================================================
+                    
+                    val genericSpecialMatch = specialGenericRegex.find(cleanLine)
+                    
+                    if (genericSpecialMatch != null) {
+                    
+                        val specialType = genericSpecialMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.uppercase()
+                            .orEmpty()
+                    
+                        val specialNumber = genericSpecialMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        var specialTitle = genericSpecialMatch
+                            .groupValues
+                            .getOrNull(3)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        specialTitle = cleanEpisodeTitle(specialTitle)
+                    
+                        if (specialTitle.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        val label = when (specialType) {
+                            "OAV" -> "OAV"
+                            "OVA" -> "OVA"
+                            "SPECIAL" -> "Special"
+                            "EXTRA" -> "Extra"
+                            else -> specialType
+                        }
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = 0,
+                            episode = specialNumber,
+                            absoluteEpisode = null,
+                            originalEpisode = specialNumber,
+                            suffix = label.uppercase(),
+                            title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
                         )
                     
                         return@lineLoop
