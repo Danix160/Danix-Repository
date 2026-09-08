@@ -1096,6 +1096,32 @@ class ToonItaliaProvider : MainAPI() {
                         ?.toIntOrNull()
                         ?: return@lineLoop
 
+                    if (originalEpisode == 0) {
+
+                        var specialTitle = explicitMatch
+                            .groupValues
+                            .getOrNull(4)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        specialTitle = cleanEpisodeTitle(specialTitle)
+                    
+                        if (specialTitle.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = 0,
+                            episode = 1,
+                            absoluteEpisode = null,
+                            originalEpisode = 0,
+                            suffix = "S${explicitSeason}E00",
+                            title = "${explicitSeason}x00 - $specialTitle"
+                        )
+                    
+                        return@lineLoop
+                    }
+
                     val suffix = explicitMatch
                         .groupValues
                         .getOrNull(3)
@@ -1165,6 +1191,32 @@ class ToonItaliaProvider : MainAPI() {
                     .getOrNull(1)
                     ?.toIntOrNull()
                     ?: return@lineLoop
+
+                if (absoluteEpisode == 0) {
+
+                    var specialTitle = match
+                        .groupValues
+                        .getOrNull(2)
+                        ?.trim()
+                        .orEmpty()
+                
+                    specialTitle = cleanEpisodeTitle(specialTitle)
+                
+                    if (specialTitle.isBlank()) {
+                        return@lineLoop
+                    }
+                
+                    parsedEpisodes += ToonEpisode(
+                        season = 0,
+                        episode = 1,
+                        absoluteEpisode = null,
+                        originalEpisode = 0,
+                        suffix = "ZERO",
+                        title = "00 - $specialTitle"
+                    )
+                
+                    return@lineLoop
+                }
 
                 var title = match
                     .groupValues
