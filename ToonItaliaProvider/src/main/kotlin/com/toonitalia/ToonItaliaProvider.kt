@@ -576,9 +576,10 @@ class ToonItaliaProvider : MainAPI() {
     
             val result = runCatching {
                 loadExtractor(
-                    playerUrl,
-                    subtitleCallback,
-                    callback
+                    url = playerUrl,
+                    referer = mainUrl,
+                    subtitleCallback = subtitleCallback,
+                    callback = callback
                 )
             }.getOrDefault(false)
     
