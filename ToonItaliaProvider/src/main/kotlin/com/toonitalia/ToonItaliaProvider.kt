@@ -943,7 +943,7 @@ class ToonItaliaProvider : MainAPI() {
                         }
                     
                         parsedEpisodes += ToonEpisode(
-                            season = 99,
+                            season = 0,
                             episode = specialNumber,
                             absoluteEpisode = null,
                             originalEpisode = specialNumber,
@@ -1034,8 +1034,7 @@ class ToonItaliaProvider : MainAPI() {
                 // FORMATO NUMERICO ASSOLUTO
                 // ====================================================
 
-                val season = currentSeason
-                    ?: return@lineLoop
+                val season = currentSeason ?: 1
 
                 val match = episodeRegex.find(cleanLine)
                     ?: return@lineLoop
