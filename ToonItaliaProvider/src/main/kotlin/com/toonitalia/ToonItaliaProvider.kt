@@ -323,10 +323,10 @@ class ToonItaliaProvider : MainAPI() {
 
     private fun splitByBr(
         element: Element
-    ): List<String> {
-
+    ): List<ToonLine> {
+    
         val html = element.html()
-
+    
         return html
             .split(
                 Regex(
@@ -334,15 +334,35 @@ class ToonItaliaProvider : MainAPI() {
                     RegexOption.IGNORE_CASE
                 )
             )
-            .map { fragment ->
-
-                org.jsoup.Jsoup
-                    .parse(fragment)
+            .mapNotNull { fragment ->
+    
+                val fragmentDocument =
+                    org.jsoup.Jsoup.parse(fragment, mainUrl)
+    
+                val text = fragmentDocument
                     .text()
                     .trim()
-            }
-            .filter {
-                it.isNotBlank()
+    
+                if (text.isBlank()) {
+                    return@mapNotNull null
+                }
+    
+                val links = fragmentDocument
+                    .select("a[href]")
+                    .mapNotNull { link ->
+    
+                        link.attr("abs:href")
+                            .trim()
+                            .takeIf {
+                                it.isNotBlank()
+                            }
+                    }
+                    .distinct()
+    
+                ToonLine(
+                    text = text,
+                    links = links
+                )
             }
     }
 
@@ -350,14 +370,20 @@ class ToonItaliaProvider : MainAPI() {
     // LOAD
     // ============================================================
 
+    private data class ToonLine(
+    val text: String,
+    val links: List<String>
+)
+
     private data class ToonEpisode(
-        val season: Int,
-        val episode: Int,
-        val absoluteEpisode: Int?,
-        val originalEpisode: Int?,
-        val suffix: String?,
-        val title: String
-    )
+    val season: Int,
+    val episode: Int,
+    val absoluteEpisode: Int?,
+    val originalEpisode: Int?,
+    val suffix: String?,
+    val title: String,
+    val links: List<String> = emptyList()
+)
 
     override suspend fun load(
         url: String
@@ -861,14 +887,16 @@ class ToonItaliaProvider : MainAPI() {
 
             val lines = splitByBr(element)
 
-            lines.forEach lineLoop@ { line ->
-
-                val cleanLine = line
+            lines.forEach lineLoop@ { lineData ->
+            
+                val cleanLine = lineData.text
                     .trim()
                     .replace(
                         Regex("""\s+"""),
                         " "
                     )
+            
+                val playerLinks = lineData.links
 
                     // ====================================================
                     // CAMBIO SEZIONE DENTRO I PARAGRAFI
@@ -973,7 +1001,8 @@ class ToonItaliaProvider : MainAPI() {
                         absoluteEpisode = null,
                         originalEpisode = specialNumber,
                         suffix = "TV",
-                        title = specialTitle
+                        title = specialTitle,
+                        links = playerLinks
                     )
                 
                     return@lineLoop
@@ -1026,7 +1055,8 @@ class ToonItaliaProvider : MainAPI() {
                         absoluteEpisode = null,
                         originalEpisode = specialNumber,
                         suffix = label.uppercase(),
-                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
+                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle",
+                        links = playerLinks
                     )
                 
                     return@lineLoop
@@ -1080,7 +1110,8 @@ class ToonItaliaProvider : MainAPI() {
                         absoluteEpisode = null,
                         originalEpisode = specialNumber,
                         suffix = "${label.uppercase()}UN",
-                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle"
+                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle",
+                        links = playerLinks
                     )
                 
                     return@lineLoop
@@ -1140,7 +1171,8 @@ class ToonItaliaProvider : MainAPI() {
                             absoluteEpisode = null,
                             originalEpisode = firstEpisode,
                             suffix = "MULTI",
-                            title = "$sourceLabel - $title"
+                            title = "$sourceLabel - $title",
+                            links = playerLinks
                         )
                     
                         return@lineLoop
@@ -1187,7 +1219,8 @@ class ToonItaliaProvider : MainAPI() {
                             absoluteEpisode = null,
                             originalEpisode = 0,
                             suffix = "S${explicitSeason}E00",
-                            title = "${explicitSeason}x00 - $specialTitle"
+                            title = "${explicitSeason}x00 - $specialTitle",
+                            links = playerLinks
                         )
                     
                         return@lineLoop
@@ -1257,7 +1290,8 @@ class ToonItaliaProvider : MainAPI() {
                         absoluteEpisode = null,
                         originalEpisode = originalEpisode,
                         suffix = suffix,
-                        title = "$originalLabel - $title"
+                        title = "$originalLabel - $title",
+                        links = playerLinks
                     )
 
                     return@lineLoop
@@ -1302,7 +1336,8 @@ class ToonItaliaProvider : MainAPI() {
                             absoluteEpisode = null,
                             originalEpisode = whole,
                             suffix = "DECIMAL${whole}_${decimal}",
-                            title = "$whole.$decimal - $title"
+                            title = "$whole.$decimal - $title",
+                            links = playerLinks
                         )
                     
                         return@lineLoop
@@ -1342,7 +1377,8 @@ class ToonItaliaProvider : MainAPI() {
                         absoluteEpisode = null,
                         originalEpisode = 0,
                         suffix = "ZERO",
-                        title = "00 - $specialTitle"
+                        title = "00 - $specialTitle",
+                        links = playerLinks
                     )
                 
                     return@lineLoop
@@ -1385,7 +1421,8 @@ class ToonItaliaProvider : MainAPI() {
                     absoluteEpisode = absoluteEpisode,
                     originalEpisode = absoluteEpisode,
                     suffix = null,
-                    title = finalTitle
+                    title = finalTitle,
+                    links = playerLinks
                 )
             }
         }
@@ -1414,6 +1451,14 @@ class ToonItaliaProvider : MainAPI() {
             }
             .map { item ->
 
+                val encodedLinks = item.links
+                    .map { link ->
+                        java.net.URLEncoder.encode(
+                            link,
+                            "UTF-8"
+                        )
+                    }
+
                 val episodeId = buildString {
 
                     append("toonitalia://")
@@ -1440,8 +1485,21 @@ class ToonItaliaProvider : MainAPI() {
                     }
                 }
 
+                val episodeData = buildString {
+
+                    append(episodeId)
+                
+                    if (encodedLinks.isNotEmpty()) {
+                        append("||")
+                
+                        append(
+                            encodedLinks.joinToString("|")
+                        )
+                    }
+                }
+
                 newEpisode(
-                    episodeId
+                    episodeData
                 ) {
                     name = item.title
                     season = item.season
