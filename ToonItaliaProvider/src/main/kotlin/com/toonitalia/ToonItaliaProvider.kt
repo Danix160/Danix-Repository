@@ -686,7 +686,8 @@ class ToonItaliaProvider : MainAPI() {
         var currentGroupName: String? = null
         var groupSeasonCounter = 0
 
-        val explicitCounters = mutableMapOf<Int, Int>()
+        val explicitSeenCounts = mutableMapOf<Pair<Int, Int>, Int>()
+        val explicitDuplicateOffsets = mutableMapOf<Int, Int>()
 
         val unnumberedSpecialCounters = mutableMapOf<String, Int>()
 
@@ -1213,11 +1214,26 @@ class ToonItaliaProvider : MainAPI() {
                         return@lineLoop
                     }
 
-                    val nextEpisode =
-                        (explicitCounters[explicitSeason] ?: 0) + 1
+                    val episodeKey = explicitSeason to originalEpisode
 
-                    explicitCounters[explicitSeason] =
-                        nextEpisode
+                    val seenCount =
+                        explicitSeenCounts[episodeKey] ?: 0
+                    
+                    var duplicateOffset =
+                        explicitDuplicateOffsets[explicitSeason] ?: 0
+                    
+                    if (seenCount > 0) {
+                        duplicateOffset++
+                    
+                        explicitDuplicateOffsets[explicitSeason] =
+                            duplicateOffset
+                    }
+                    
+                    val nextEpisode =
+                        originalEpisode + duplicateOffset
+                    
+                    explicitSeenCounts[episodeKey] =
+                        seenCount + 1
 
                     val originalLabel = buildString {
 
