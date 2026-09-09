@@ -1,0 +1,28 @@
+name: 🩺 Controllo Provider
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # Ogni 6 ore
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  provider-status:
+    name: Controlla provider
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🐍 Configura Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: 🩺 Controlla i provider
+        run: python .github/scripts/check_providers.py
