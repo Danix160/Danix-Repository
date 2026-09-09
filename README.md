@@ -70,6 +70,26 @@
 
 ---
 
+### 🐉 TOONITALIA
+
+![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
+
+**Contenuti:** Film · Serie TV · Cartoni · Anime
+🌐 [Visita il sito](https://toonitalia.xyz/)
+
+**Funzioni principali:**
+
+* 🔎 Ricerca con poster
+* 🎬 Supporto Film
+* 📺 Supporto Serie TV
+* 🧸 Supporto Cartoni e Anime
+* 🗂️ Gestione stagioni, episodi, speciali, OVA/OAV e numerazioni particolari
+* 🖼️ Poster e immagini episodi
+* ℹ️ Metadati tramite TMDB
+* ▶️ Supporto a più player
+
+---
+
 ### 🎬 CB01
 
 ![Parziale](https://img.shields.io/badge/STATO-PARZIALE-yellow?style=flat-square)
@@ -129,26 +149,6 @@
 **Contenuti:** Film · Serie TV
 
 > ⚠️ Plugin funzionante basato sull'integrazione di più fonti. Alcuni contenuti possono presentare incongruenze o CAPTCHA.
-
----
-
-### 🐉 TOONITALIA
-
-![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
-
-**Contenuti:** Film · Serie TV · Cartoni · Anime
-🌐 [Visita il sito](https://toonitalia.xyz/)
-
-**Funzioni principali:**
-
-* 🔎 Ricerca con poster
-* 🎬 Supporto Film
-* 📺 Supporto Serie TV
-* 🧸 Supporto Cartoni e Anime
-* 🗂️ Gestione stagioni, episodi, speciali, OVA/OAV e numerazioni particolari
-* 🖼️ Poster e immagini episodi
-* ℹ️ Metadati tramite TMDB
-* ▶️ Supporto a più player
 
 ---
 
