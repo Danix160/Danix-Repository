@@ -26,3 +26,6 @@ jobs:
 
       - name: 🩺 Controlla i provider
         run: python .github/scripts/check_providers.py
+      
+      - name: 🧪 Controlla funzionamento plugin
+        run: python .github/scripts/check_plugin_health.py
