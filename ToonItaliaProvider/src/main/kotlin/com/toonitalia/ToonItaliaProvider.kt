@@ -424,6 +424,89 @@ class ToonItaliaProvider : MainAPI() {
             }
     }
 
+    private fun extractMoviePlayerLinks(
+        content: Element?
+    ): List<ToonPlayerLink> {
+    
+        if (content == null) {
+            return emptyList()
+        }
+    
+        val streamingBlock = content
+            .select("p")
+            .firstOrNull { paragraph ->
+    
+                val text = normalize(paragraph.text())
+    
+                text.startsWith("link streaming") ||
+                    text.contains("link streaming")
+            }
+            ?: return emptyList()
+    
+        return streamingBlock
+            .select("a[href]")
+            .mapNotNull { link ->
+    
+                val url = link
+                    .attr("abs:href")
+                    .trim()
+                    .takeIf {
+                        it.startsWith("http://") ||
+                            it.startsWith("https://")
+                    }
+                    ?: return@mapNotNull null
+    
+                val label = link
+                    .text()
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+                    ?: runCatching {
+                        java.net.URI(url)
+                            .host
+                            ?.substringBefore(".")
+                            ?.uppercase()
+                    }.getOrNull()
+                    ?: "PLAYER"
+    
+                ToonPlayerLink(
+                    label = label,
+                    url = url
+                )
+            }
+            .distinctBy {
+                it.url
+            }
+    }
+
+    private fun buildMovieData(
+        pageUrl: String,
+        links: List<ToonPlayerLink>
+    ): String {
+    
+        if (links.isEmpty()) {
+            return pageUrl
+        }
+    
+        val encodedLinks = links.joinToString("|") { player ->
+    
+            val encodedLabel =
+                java.net.URLEncoder.encode(
+                    player.label,
+                    "UTF-8"
+                )
+    
+            val encodedUrl =
+                java.net.URLEncoder.encode(
+                    player.url,
+                    "UTF-8"
+                )
+    
+            "$encodedLabel@@$encodedUrl"
+        }
+    
+        return "$pageUrl||$encodedLinks"
+    }
+
     // ============================================================
     // LOAD
     // ============================================================
@@ -517,6 +600,19 @@ private data class ToonLine(
         val episodes = parseEpisodes(content)
 
         // --------------------------------------------------------
+        // PLAYER FILM
+        // --------------------------------------------------------
+
+        val moviePlayerLinks =
+            extractMoviePlayerLinks(content)
+        
+        val movieData =
+            buildMovieData(
+                url,
+                moviePlayerLinks
+            )
+
+        // --------------------------------------------------------
         // TIPO
         // --------------------------------------------------------
 
@@ -566,7 +662,7 @@ private data class ToonLine(
                     title,
                     url,
                     TvType.AnimeMovie,
-                    url
+                    movieData
                 ) {
                     posterUrl = poster
                     this.year = year
@@ -579,7 +675,7 @@ private data class ToonLine(
                     title,
                     url,
                     TvType.Movie,
-                    url
+                    movieData
                 ) {
                     posterUrl = poster
                     this.year = year
