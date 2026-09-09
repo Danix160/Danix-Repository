@@ -110,25 +110,6 @@
 
 ---
 
-### 🎥 GUARDAPLAY
-
-![Offline](https://img.shields.io/badge/STATO-OFFLINE-red?style=flat-square)
-
-**Contenuti:** Film · Cartoni
-🌐 [Visita il sito](https://guardaplay.online/)
-
-**Funzioni principali:**
-
-* 🔎 Ricerca dei contenuti
-* 🎬 Supporto Film
-* 🧸 Supporto Cartoni
-* 🖼️ Gestione dei poster
-* ▶️ Integrazione con i player del sito
-
-> ❌ Player momentaneamente offline.
-
----
-
 ### 📡 RIVESTREAM
 
 ![Parziale](https://img.shields.io/badge/STATO-PARZIALE-yellow?style=flat-square)
@@ -164,6 +145,25 @@
 
 > ⚠️ Plugin funzionante basato sull'integrazione di più fonti.
 > ⚠️ Alcuni contenuti possono presentare incongruenze o CAPTCHA.
+
+---
+
+### 🎥 GUARDAPLAY
+
+![Offline](https://img.shields.io/badge/STATO-OFFLINE-red?style=flat-square)
+
+**Contenuti:** Film · Cartoni
+🌐 [Visita il sito](https://guardaplay.online/)
+
+**Funzioni principali:**
+
+* 🔎 Ricerca dei contenuti
+* 🎬 Supporto Film
+* 🧸 Supporto Cartoni
+* 🖼️ Gestione dei poster
+* ▶️ Integrazione con i player del sito
+
+> ❌ Player momentaneamente offline.
 
 ---
 
