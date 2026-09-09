@@ -822,7 +822,7 @@ try {
         "LOGOS CHANNELS HTTP = ${channelsResponse.code}"
     )
 
-    val channelsJson = channelsResponse.textLarge
+    val channelsJson = channelsResponse.text
 
      Log.d(
      TAG,
@@ -846,7 +846,7 @@ try {
         "LOGOS LOGOS HTTP = ${logosResponse.code}"
     )
 
-    val logosJson = logosResponse.textLarge
+    val logosJson = logosResponse.text
 
     Log.d(
     TAG,
