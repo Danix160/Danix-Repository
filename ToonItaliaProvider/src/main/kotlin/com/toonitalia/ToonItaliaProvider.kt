@@ -3,6 +3,7 @@ package com.toonitalia
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.amap
 import org.jsoup.nodes.Element
 
 class ToonItaliaProvider : MainAPI() {
@@ -209,141 +210,131 @@ class ToonItaliaProvider : MainAPI() {
                 .select("article.post")
                 .toList()
         
-            return kotlinx.coroutines.coroutineScope {
-        
-                articles
-                    .map { article ->
-        
-                        kotlinx.coroutines.async {
-        
-                            val link = article.selectFirst(
-                                "h2.entry-title a[href], .entry-title a[href]"
-                            ) ?: return@async null
-        
-                            val href = link
-                                .attr("abs:href")
-                                .takeIf { it.isNotBlank() }
-                                ?: return@async null
-        
-                            val title = link
-                                .text()
-                                .trim()
-                                .takeIf { it.isNotBlank() }
-                                ?: return@async null
-        
-                            if (!href.startsWith(mainUrl)) {
-                                return@async null
+            return articles
+                .amap { article ->
+            
+                    val link = article.selectFirst(
+                        "h2.entry-title a[href], .entry-title a[href]"
+                    ) ?: return@amap null
+            
+                    val href = link
+                        .attr("abs:href")
+                        .takeIf { it.isNotBlank() }
+                        ?: return@amap null
+            
+                    val title = link
+                        .text()
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                        ?: return@amap null
+            
+                    if (!href.startsWith(mainUrl)) {
+                        return@amap null
+                    }
+            
+                    if (isNavigationUrl(href)) {
+                        return@amap null
+                    }
+            
+                    val classes = article
+                        .classNames()
+                        .map { it.lowercase() }
+                        .toSet()
+            
+                    val type = when {
+            
+                        classes.any {
+                            it == "category-serie-tv" ||
+                                it == "category-serie"
+                        } -> TvType.TvSeries
+            
+                        classes.any {
+                            it == "category-film-animazione" ||
+                                it == "category-film"
+                        } -> TvType.AnimeMovie
+            
+                        classes.any {
+                            it == "category-anime"
+                        } -> TvType.Anime
+            
+                        else -> TvType.TvSeries
+                    }
+            
+                    // Poster preso direttamente dalla pagina
+                    // della serie/film su ToonItalia.
+                    val poster = runCatching {
+            
+                        val detailDocument =
+                            app.get(href).document
+            
+                        val content =
+                            detailDocument.selectFirst(
+                                ".entry-content"
+                            )
+            
+                        content
+                            ?.selectFirst("img")
+                            ?.let { img ->
+            
+                                img.attr("abs:src")
+                                    .takeIf { it.isNotBlank() }
+            
+                                    ?: img.attr("abs:data-src")
+                                        .takeIf { it.isNotBlank() }
+            
+                                    ?: img.attr("abs:data-lazy-src")
+                                        .takeIf { it.isNotBlank() }
                             }
-        
-                            if (isNavigationUrl(href)) {
-                                return@async null
+            
+                    }.getOrNull()
+            
+                    when (type) {
+            
+                        TvType.Anime -> {
+                            newAnimeSearchResponse(
+                                title,
+                                href,
+                                TvType.Anime
+                            ) {
+                                posterUrl = poster
                             }
-        
-                            val classes = article
-                                .classNames()
-                                .map { it.lowercase() }
-                                .toSet()
-        
-                            val type = when {
-        
-                                classes.any {
-                                    it == "category-serie-tv" ||
-                                        it == "category-serie"
-                                } -> TvType.TvSeries
-        
-                                classes.any {
-                                    it == "category-film-animazione" ||
-                                        it == "category-film"
-                                } -> TvType.AnimeMovie
-        
-                                classes.any {
-                                    it == "category-anime"
-                                } -> TvType.Anime
-        
-                                else -> TvType.TvSeries
+                        }
+            
+                        TvType.AnimeMovie -> {
+                            newMovieSearchResponse(
+                                title,
+                                href,
+                                TvType.AnimeMovie
+                            ) {
+                                posterUrl = poster
                             }
-        
-                            // --------------------------------------------
-                            // POSTER DALLA PAGINA TOONITALIA DEL RISULTATO
-                            // --------------------------------------------
-        
-                            val poster = runCatching {
-        
-                                val detailDocument =
-                                    app.get(href).document
-        
-                                val content =
-                                    detailDocument.selectFirst(
-                                        ".entry-content"
-                                    )
-        
-                                content
-                                    ?.selectFirst("img")
-                                    ?.let { img ->
-        
-                                        img.attr("abs:src")
-                                            .takeIf {
-                                                it.isNotBlank()
-                                            }
-        
-                                            ?: img.attr(
-                                                "abs:data-src"
-                                            ).takeIf {
-                                                it.isNotBlank()
-                                            }
-                                    }
-        
-                            }.getOrNull()
-        
-                            when (type) {
-        
-                                TvType.Anime -> {
-                                    newAnimeSearchResponse(
-                                        title,
-                                        href,
-                                        TvType.Anime
-                                    ) {
-                                        posterUrl = poster
-                                    }
-                                }
-        
-                                TvType.AnimeMovie -> {
-                                    newMovieSearchResponse(
-                                        title,
-                                        href,
-                                        TvType.AnimeMovie
-                                    ) {
-                                        posterUrl = poster
-                                    }
-                                }
-        
-                                TvType.TvSeries -> {
-                                    newTvSeriesSearchResponse(
-                                        title,
-                                        href,
-                                        TvType.TvSeries
-                                    ) {
-                                        posterUrl = poster
-                                    }
-                                }
-        
-                                else -> {
-                                    newMovieSearchResponse(
-                                        title,
-                                        href,
-                                        type
-                                    ) {
-                                        posterUrl = poster
-                                    }
-                                }
+                        }
+            
+                        TvType.TvSeries -> {
+                            newTvSeriesSearchResponse(
+                                title,
+                                href,
+                                TvType.TvSeries
+                            ) {
+                                posterUrl = poster
+                            }
+                        }
+            
+                        else -> {
+                            newMovieSearchResponse(
+                                title,
+                                href,
+                                type
+                            ) {
+                                posterUrl = poster
                             }
                         }
                     }
-                    .awaitAll()
-                    .filterNotNull()
-                    .distinctBy { it.url }
+            
+                }
+                .filterNotNull()
+                .distinctBy { it.url 
             }
-        }
 
     // ============================================================
     // CONVERSIONE ELEMENTI TOONITALIA
