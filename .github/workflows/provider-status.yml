@@ -26,6 +26,29 @@ jobs:
 
       - name: 🩺 Controlla i provider
         run: python .github/scripts/check_providers.py
+
+      - name: 🌐 Test ToonItalia con curl
+        run: |
+         echo "=== HEAD ==="
+          curl -I -L \
+          -A "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36" \
+          --max-time 20 \
+          https://toonitalia.xyz/
+
+          echo ""
+          echo "=== GET ==="
+          curl -L \
+          -A "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Mobile Safari/537.36" \
+          -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+          -H "Accept-Language: it-IT,it;q=0.9,en;q=0.8" \
+          --max-time 20 \
+          -o /tmp/toonitalia.html \
+          -w "HTTP=%{http_code}\nFINAL_URL=%{url_effective}\nSIZE=%{size_download}\n" \
+           https://toonitalia.xyz/
+
+          echo ""
+          echo "=== PRIME RIGHE HTML ==="
+          head -n 20 /tmp/toonitalia.html || true
       
       - name: 🧪 Controlla funzionamento plugin
         run: python .github/scripts/check_plugin_health.py
