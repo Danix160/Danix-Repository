@@ -101,7 +101,7 @@
 </td>
 <td width="50%" valign="top">
 
-<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>❌ Struttura del sito soggetta a variazioni</sub>
+<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>
 
 </td>
 </tr>
