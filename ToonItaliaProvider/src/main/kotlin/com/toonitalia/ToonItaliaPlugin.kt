@@ -12,6 +12,5 @@ class ToonItaliaPlugin: Plugin() {
         registerExtractorAPI(Voe())
         registerExtractorAPI(Checktube())
         registerExtractorAPI(Uqloadvc())
-        registerExtractorAPI(Uqload())
     }
 }
