@@ -3,14 +3,17 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 android {
     namespace = "com.toonitalia"
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
 }
 
 tasks.withType<KotlinJvmCompile>().configureEach {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_1_8)
-        freeCompilerArgs.add("-Xskip-metadata-version-check")
+        jvmTarget.set(JvmTarget.JVM_11)
     }
-}
 
 cloudstream {
     extra["prefix"] = "ToonItalia"
