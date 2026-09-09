@@ -132,7 +132,6 @@ open class Uqload : ExtractorApi() {
             println("[Uqload] PACKED SCRIPT NON TROVATO")
         } else {
             println("[Uqload] PACKED LENGTH = ${packedScript.length}")
-            println(packedScript)
         } 
                 println("========== END UQLOAD PACKED ==========")
 
@@ -140,15 +139,49 @@ open class Uqload : ExtractorApi() {
             unpackPacker(it)
         }
 
-        println("========== UQLOAD UNPACKED ==========")
+     println("========== UQLOAD UNPACKED ==========")
 
         if (unpacked == null) {
             println("[Uqload] UNPACK FALLITO")
-        } else {
-            println("[Uqload] UNPACKED LENGTH = ${unpacked.length}")
-            println(unpacked)
+            println("========== END UQLOAD UNPACKED ==========")
+            return
         }
-         println("========== END UQLOAD UNPACKED ==========")
+
+        println("[Uqload] UNPACKED LENGTH = ${unpacked.length}")
+
+        val streamUrl = Regex(
+            """sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+)["']""",
+            setOf(
+                RegexOption.IGNORE_CASE,
+                RegexOption.DOT_MATCHES_ALL
+            )
+        ).find(unpacked)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.replace("\\/", "/")
+            ?.trim()
+
+        if (streamUrl.isNullOrBlank()) {
+            println("[Uqload] STREAM URL NON TROVATO")
+            println("========== END UQLOAD UNPACKED ==========")
+            return
+        }
+
+        println("[Uqload] STREAM TROVATO = $streamUrl")
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = "$name HLS",
+                url = streamUrl
+            ) {
+                this.referer = "$mainUrl/"
+                this.type = ExtractorLinkType.M3U8
+            }
+        )
+
+        println("[Uqload] ExtractorLink inviato")
+        println("========== END UQLOAD UNPACKED ==========")
     }
 
     private fun unpackPacker(script: String): String? {
