@@ -684,24 +684,50 @@ private data class ToonLine(
         println("=========================================")
     
         var loaded = false
-    
-        playerLinks.forEach { player ->
 
-            val result = runCatching {
-                loadExtractor(
-                    url = player.url,
-                    referer = mainUrl,
-                    subtitleCallback = subtitleCallback,
-                    callback = callback
+            playerLinks.forEach { player ->
+            
+                // LuluStream lo ignoriamo
+                if (player.label.equals("LuluStream", ignoreCase = true)) {
+                    println("[ToonItalia] LuluStream ignorato")
+                    return@forEach
+                }
+            
+                println(
+                    "[ToonItalia] provo extractor: " +
+                        "${player.label} -> ${player.url}"
                 )
-            }.getOrDefault(false)
-    
-            if (result) {
-                loaded = true
+            
+                val result = runCatching {
+            
+                    loadExtractor(
+                        player.url,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+            
+                }.onFailure { error ->
+            
+                    println(
+                        "[ToonItalia] extractor ERROR: " +
+                            "${player.label} -> " +
+                            "${error.javaClass.simpleName}: ${error.message}"
+                    )
+            
+                }.getOrDefault(false)
+            
+                println(
+                    "[ToonItalia] extractor result: " +
+                        "${player.label} -> $result"
+                )
+            
+                if (result) {
+                    loaded = true
+                }
             }
-        }
-    
-        return loaded
+            
+            return loaded
     }
 
     // ============================================================
