@@ -2,7 +2,6 @@ package com.toonitalia
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.utils.parsedSafe
 import java.net.URLEncoder
 
 object Tmdb {
@@ -185,7 +184,7 @@ object Tmdb {
         var response =
             runCatching {
                 app.get(searchUrl)
-                    .parsedSafe<SearchResponse>()
+                    .parsed<SearchResponse>()
             }.getOrNull()
 
         /*
@@ -210,7 +209,7 @@ object Tmdb {
             response =
                 runCatching {
                     app.get(fallbackUrl)
-                        .parsedSafe<SearchResponse>()
+                        .parsed<SearchResponse>()
                 }.getOrNull()
         }
 
@@ -264,7 +263,7 @@ object Tmdb {
         val details =
             runCatching {
                 app.get(url)
-                    .parsedSafe<DetailsResponse>()
+                    .parsed<DetailsResponse>()
             }.getOrNull()
                 ?: return null
 
