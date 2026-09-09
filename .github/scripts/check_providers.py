@@ -154,11 +154,27 @@ def check_url(url):
         # Redirect: il dominio risponde, quindi non è offline.
         if e.code in (301, 302, 303, 307, 308):
 
-            location = e.headers.get(
-                "Location",
-                ""
-            )
+    location = e.headers.get(
+        "Location",
+        ""
+    )
 
+    normalized_original = url.rstrip("/")
+    normalized_location = location.rstrip("/")
+
+    # Se cambia solo lo slash finale, consideriamolo ONLINE
+            if (
+                location
+                and normalized_original == normalized_location
+            ):
+                return {
+                    "status": "✅ ONLINE",
+                    "code": e.code,
+                    "time": elapsed,
+                    "final_url": location,
+                    "note": "Redirect interno per normalizzazione URL"
+                }
+        
             return {
                 "status": "🔀 REDIRECT",
                 "code": e.code,
