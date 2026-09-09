@@ -57,12 +57,12 @@
 <tr>
 <td width="50%" valign="top">
 
-<b>🎬 ALTADEFINIZIONE01</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni</sub><br> <sub>🌐 <a href="https://altadefinizione-01.forum">Sito</a></sub>
+<b>🎬 ALTADEFINIZIONE01</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni</sub><br> <sub>🌐 <a href="https://altadefinizione-01.fun">Sito</a></sub>
 
 </td>
 <td width="50%" valign="top">
 
-<b>🎬 CB01</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, Serie TV poco funzionanti </sub>
+<b>🎬 CB01</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, Serie TV poco funzionanti <a href="https://cb01uno.homes/">Sito</a></sub> 
 
 </td>
 </tr>
@@ -70,12 +70,12 @@
 <tr>
 <td width="50%" valign="top">
 
-<b>🎥 GUARDAPLAY</b><br> <img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square"> <sub>Film · Cartoni</sub><br> <sub>❌ Player momentaneamente offline</sub>
+<b>🎥 GUARDAPLAY</b><br> <img src="https://img.shields.io/badge/OFFLINE-red?style=flat-square"> <sub>Film · Cartoni</sub><br> <sub>❌ Player momentaneamente offline<a href="https://guardaplay.online/">Sito</a></sub>
 
 </td>
 <td width="50%" valign="top">
 
-<b>📺 ONLINESERIETV</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, ma funzionante</sub>
+<b>📺 ONLINESERIETV</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, ma funzionante<a href="https://onlineserietv.mom/">Sito</a></sub>
 
 </td>
 </tr>
@@ -101,7 +101,7 @@
 </td>
 <td width="50%" valign="top">
 
-<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>
+<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime<a href="https://toonitalia.xyz/">Sito</a></sub><br> <sub>
 
 </td>
 </tr>
