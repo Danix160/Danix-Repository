@@ -1,6 +1,5 @@
 package com.toonitalia
 
-import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.USER_AGENT
@@ -30,59 +29,38 @@ class Uqloadbz : Uqload() {
 }
 
 open class Uqload : ExtractorApi() {
-    override var name: String = "Uqload"
-    override var mainUrl: String = "https://www.uqload.com"
+
+    override var name = "Uqload"
+    override var mainUrl = "https://www.uqload.com"
     override val requiresReferer = true
 
-    private val srcRegex = Regex(
-    """sources\s*:\s*\[\s*["']([^"']+)["']""",
-    setOf(
-        RegexOption.IGNORE_CASE,
-        RegexOption.DOT_MATCHES_ALL
-    )
-)
-
     override suspend fun getUrl(
-                url: String,
-                referer: String?,
-                subtitleCallback: (SubtitleFile) -> Unit,
-                callback: (ExtractorLink) -> Unit
-            ) {
-                println("[Uqload] URL ricevuto: $url")
-            
-                val response = app.get(
-                    url,
-                    referer = referer
-                )
-            
-                println("[Uqload] status=${response.code}")
-                println("[Uqload] finalUrl=${response.url}")
-            
-                val match = srcRegex.find(response.text)
-            
-                if (match == null) {
-                    println("[Uqload] SOURCES NON TROVATO")
-                    println(
-                        "[Uqload] HTML sample=" +
-                            response.text.take(1000)
-                    )
-                    return
-                }
-            
-                val link = match.groupValues[1]
-            
-                println("[Uqload] VIDEO TROVATO: $link")
-            
-                callback(
-                    newExtractorLink(
-                        source = name,
-                        name = name,
-                        url = link
-                    ) {
-                        this.referer = "$mainUrl/"
-                    }
-                )
-            }
+        url: String,
+        referer: String?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        println("[Uqload] URL = $url")
+
+        val response = app.get(
+            url,
+            referer = referer
+        )
+
+        println("[Uqload] STATUS = ${response.code}")
+        println("[Uqload] FINAL URL = ${response.url}")
+
+        val document = response.document
+
+        val form = document.selectFirst("form[name=F1]")
+
+        if (form == null) {
+            println("[Uqload] FORM F1 NON TROVATO")
+            return
         }
+
+        println("========== UQLOAD FORM F1 ==========")
+        println(form.outerHtml())
+        println("========== END UQLOAD FORM F1 ==========")
     }
 }
