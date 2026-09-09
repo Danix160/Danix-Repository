@@ -62,7 +62,7 @@
 </td>
 <td width="50%" valign="top">
 
-<b>🎬 CB01</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br><a href="https://cb01uno.homes/">Sito</a><br><sub>⚠️ CAPTCHA da risolvere, Serie TV poco funzionanti</sub> 
+<b>🎬 CB01</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br><Center> 🌐 <a href="https://cb01uno.homes/">Sito</a></Center><br><sub>⚠️ CAPTCHA da risolvere, Serie TV poco funzionanti</sub> 
 
 </td>
 </tr>
