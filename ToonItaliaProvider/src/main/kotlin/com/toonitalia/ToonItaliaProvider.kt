@@ -81,6 +81,9 @@ class ToonItaliaProvider : MainAPI() {
         )
     }
 
+    private val posterCache =
+        mutableMapOf<String, String?>()
+
     private fun getTypeFromHomeSection(
         title: String
     ): TvType? {
@@ -262,31 +265,43 @@ class ToonItaliaProvider : MainAPI() {
             
                     // Poster preso direttamente dalla pagina
                     // della serie/film su ToonItalia.
-                    val poster = runCatching {
-            
-                        val detailDocument =
-                            app.get(href).document
-            
-                        val content =
-                            detailDocument.selectFirst(
-                                ".entry-content"
-                            )
-            
-                        content
-                            ?.selectFirst("img")
-                            ?.let { img ->
-            
-                                img.attr("abs:src")
-                                    .takeIf { it.isNotBlank() }
-            
-                                    ?: img.attr("abs:data-src")
-                                        .takeIf { it.isNotBlank() }
-            
-                                    ?: img.attr("abs:data-lazy-src")
-                                        .takeIf { it.isNotBlank() }
-                            }
-            
-                    }.getOrNull()
+                    val poster =
+                        if (posterCache.containsKey(href)) {
+                    
+                            posterCache[href]
+                    
+                        } else {
+                    
+                            val loadedPoster = runCatching {
+                    
+                                val detailDocument =
+                                    app.get(href).document
+                    
+                                val content =
+                                    detailDocument.selectFirst(
+                                        ".entry-content"
+                                    )
+                    
+                                content
+                                    ?.selectFirst("img")
+                                    ?.let { img ->
+                    
+                                        img.attr("abs:src")
+                                            .takeIf { it.isNotBlank() }
+                    
+                                            ?: img.attr("abs:data-src")
+                                                .takeIf { it.isNotBlank() }
+                    
+                                            ?: img.attr("abs:data-lazy-src")
+                                                .takeIf { it.isNotBlank() }
+                                    }
+                    
+                            }.getOrNull()
+                    
+                            posterCache[href] = loadedPoster
+                    
+                            loadedPoster
+                        }
             
                     when (type) {
             
