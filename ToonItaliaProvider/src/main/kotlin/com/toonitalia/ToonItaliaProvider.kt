@@ -564,6 +564,42 @@ class ToonItaliaProvider : MainAPI() {
             }
     }
 
+    /////////////////////////////////////////
+    /////         TRAILER         //////////
+    ///////////////////////////////////////
+
+    private fun extractSeriesTrailer(
+            content: Element?
+        ): String? {
+        
+            if (content == null) {
+                return null
+            }
+        
+            val trailerBlock =
+                content.select("p, div, span")
+                    .firstOrNull { element ->
+        
+                        val text =
+                            normalize(element.text())
+        
+                        text.contains("sigla iniziale") ||
+                            text.contains("opening") ||
+                            text.contains("intro")
+                    }
+                    ?: return null
+        
+            return trailerBlock
+                .selectFirst("a[href]")
+                ?.attr("abs:href")
+                ?.trim()
+                ?.takeIf {
+                    it.startsWith("http://") ||
+                        it.startsWith("https://")
+                }
+        }
+    
+
     private fun extractMoviePlayerLinks(
         content: Element?
     ): List<ToonPlayerLink> {
@@ -921,6 +957,8 @@ private data class ToonLine(
         // --------------------------------------------------------
 
         val plot = extractPlot(content)
+        val trailerUrl =
+                   extractSeriesTrailer(content)
 
         // --------------------------------------------------------
         // PLAYER FILM
@@ -1057,6 +1095,13 @@ private data class ToonLine(
                     tmdb?.score?.let {
                         score = Score.from10(it / 10.0)
                     }
+
+                    trailerUrl?.let {
+                        addTrailer(
+                            it,
+                            mainUrl
+                        )
+                    }
                 
                     addEpisodes(
                         DubStatus.Dubbed,
@@ -1092,6 +1137,13 @@ private data class ToonLine(
                 
                     tmdb?.score?.let {
                         score = Score.from10(it / 10.0)
+                    }
+
+                    trailerUrl?.let {
+                        addTrailer(
+                            it,
+                            mainUrl
+                        )
                     }
                 }
             }
