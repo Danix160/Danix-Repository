@@ -336,6 +336,8 @@ class ToonItaliaProvider : MainAPI() {
                 .distinctBy { it.url 
             }
 
+    }
+
     // ============================================================
     // CONVERSIONE ELEMENTI TOONITALIA
     // ============================================================
