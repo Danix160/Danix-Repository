@@ -218,7 +218,7 @@ def test_toonitalia_homepage():
     if response["blocked"]:
         return {
             "status":
-                "🛡️ BLOCCATO",
+        "⏭️ NON TESTABILE",
             "details":
                 response["error"],
             "time":
@@ -326,7 +326,7 @@ def test_toonitalia_search():
     if response["blocked"]:
         return {
             "status":
-                "🛡️ BLOCCATO",
+    "⏭️ NON TESTABILE",
             "details":
                 response["error"],
             "time":
@@ -442,7 +442,7 @@ def test_toonitalia_load():
     if response["blocked"]:
         return {
             "status":
-                "🛡️ BLOCCATO",
+    "⏭️ NON TESTABILE",
             "details":
                 response["error"],
             "time":
