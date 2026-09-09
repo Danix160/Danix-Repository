@@ -671,6 +671,195 @@ private data class ToonLine(
     val links: List<ToonPlayerLink> = emptyList()
 )
 
+    private suspend fun remapAbsoluteEpisodesWithTmdb(
+        episodes: List<Episode>,
+        tmdbId: Int?
+    ): List<Episode> {
+    
+        if (
+            tmdbId == null ||
+            episodes.isEmpty()
+        ) {
+            return episodes
+        }
+    
+        // ------------------------------------------------------------
+        // PROTEZIONE 1
+        //
+        // Questa funzione interviene SOLTANTO quando ToonItalia
+        // ha interpretato tutti gli episodi come una singola stagione.
+        //
+        // Serie che hanno già S1, S2, S3... restano completamente
+        // invariate.
+        // ------------------------------------------------------------
+    
+        val normalEpisodes =
+            episodes.filter {
+                (it.season ?: 1) > 0
+            }
+    
+        val specials =
+            episodes.filter {
+                it.season == 0
+            }
+    
+        if (normalEpisodes.isEmpty()) {
+            return episodes
+        }
+    
+        val toonSeasons =
+            normalEpisodes
+                .map {
+                    it.season ?: 1
+                }
+                .distinct()
+    
+        if (toonSeasons.size != 1) {
+            println(
+                "[TMDB REMAP] Ignorato: ToonItalia possiede già " +
+                    "${toonSeasons.size} stagioni"
+            )
+    
+            return episodes
+        }
+    
+        // ------------------------------------------------------------
+        // PROTEZIONE 2
+        //
+        // Gli episodi devono essere 1,2,3,4...N senza buchi.
+        // ------------------------------------------------------------
+    
+        val sortedEpisodes =
+            normalEpisodes.sortedBy {
+                it.episode ?: Int.MAX_VALUE
+            }
+    
+        val episodeNumbers =
+            sortedEpisodes.mapNotNull {
+                it.episode
+            }
+    
+        if (episodeNumbers.size != sortedEpisodes.size) {
+            return episodes
+        }
+    
+        val expectedNumbers =
+            (1..sortedEpisodes.size).toList()
+    
+        if (episodeNumbers != expectedNumbers) {
+    
+            println(
+                "[TMDB REMAP] Ignorato: numerazione ToonItalia " +
+                    "non consecutiva"
+            )
+    
+            return episodes
+        }
+    
+        // ------------------------------------------------------------
+        // STAGIONI TMDB
+        // ------------------------------------------------------------
+    
+        val tmdbSeasons =
+            Tmdb.getTvSeasons(tmdbId)
+    
+        if (tmdbSeasons.size <= 1) {
+    
+            println(
+                "[TMDB REMAP] Ignorato: TMDB non possiede " +
+                    "più stagioni"
+            )
+    
+            return episodes
+        }
+    
+        val tmdbTotal =
+            tmdbSeasons.sumOf {
+                it.episodeCount
+            }
+    
+        // ------------------------------------------------------------
+        // PROTEZIONE PRINCIPALE
+        //
+        // Il totale deve coincidere ESATTAMENTE.
+        // ------------------------------------------------------------
+    
+        if (tmdbTotal != sortedEpisodes.size) {
+    
+            println(
+                "[TMDB REMAP] Ignorato: " +
+                    "ToonItalia=${sortedEpisodes.size}, " +
+                    "TMDB=$tmdbTotal"
+            )
+    
+            return episodes
+        }
+    
+        println(
+            "[TMDB REMAP] Match perfetto: " +
+                "${sortedEpisodes.size} episodi"
+        )
+    
+        println(
+            "[TMDB REMAP] Stagioni TMDB: " +
+                tmdbSeasons.joinToString {
+                    "S${it.season}=${it.episodeCount}"
+                }
+        )
+    
+        // ------------------------------------------------------------
+        // REMAPPING
+        // ------------------------------------------------------------
+    
+        var absoluteIndex = 0
+
+        val mapping =
+            mutableListOf<Triple<Episode, Int, Int>>()
+        
+        tmdbSeasons.forEach { season ->
+        
+            for (
+                episodeNumber in
+                1..season.episodeCount
+            ) {
+        
+                val original =
+                    sortedEpisodes.getOrNull(
+                        absoluteIndex
+                    ) ?: return episodes
+        
+                mapping += Triple(
+                    original,
+                    season.season,
+                    episodeNumber
+                )
+        
+                absoluteIndex++
+            }
+        }
+        
+        // Ultima verifica PRIMA di modificare gli Episode.
+        if (
+            absoluteIndex != sortedEpisodes.size ||
+            mapping.size != sortedEpisodes.size
+        ) {
+            return episodes
+        }
+        
+        // Da questo punto sappiamo che il mapping è completo.
+        val remapped =
+            mapping.map {
+                (episode, seasonNumber, episodeNumber) ->
+        
+                episode.apply {
+                    season = seasonNumber
+                    this.episode = episodeNumber
+                }
+            }
+        
+        return remapped + specials
+    }
+
     override suspend fun load(
         url: String
     ): LoadResponse? {
@@ -776,8 +965,24 @@ private data class ToonLine(
             else -> null
         }
 
-        val rawEpisodes =
+        val parsedEpisodes =
             parseEpisodes(content)
+        
+        val rawEpisodes =
+            if (
+                tmdb != null &&
+                (
+                    type == TvType.TvSeries ||
+                    type == TvType.Anime
+                )
+            ) {
+                remapAbsoluteEpisodesWithTmdb(
+                    episodes = parsedEpisodes,
+                    tmdbId = tmdb.id
+                )
+            } else {
+                parsedEpisodes
+            }
         
         val seriesPoster =
             tmdb?.posterUrl
