@@ -13,7 +13,6 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 }
 
 dependencies {
-    implementation("com.github.recloudstream.cloudstream:library:-SNAPSHOT")
     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.25.2")
 }
 
