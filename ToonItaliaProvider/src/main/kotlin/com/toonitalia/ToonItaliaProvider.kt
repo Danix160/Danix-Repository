@@ -594,12 +594,6 @@ private data class ToonLine(
         val plot = extractPlot(content)
 
         // --------------------------------------------------------
-        // EPISODI
-        // --------------------------------------------------------
-
-        val episodes = parseEpisodes(content)
-
-        // --------------------------------------------------------
         // PLAYER FILM
         // --------------------------------------------------------
 
@@ -641,6 +635,49 @@ private data class ToonLine(
         
             else -> null
         }
+
+        val rawEpisodes =
+            parseEpisodes(content)
+        
+        val seriesPoster =
+            tmdb?.posterUrl
+                ?: poster
+        
+        val tmdbEpisodeImages =
+            if (
+                tmdb != null &&
+                (
+                    type == TvType.TvSeries ||
+                    type == TvType.Anime
+                )
+            ) {
+        
+                Tmdb.getEpisodeImages(
+                    tvId = tmdb.id,
+                    seasons = rawEpisodes
+                        .mapNotNull { it.season }
+                        .toSet()
+                )
+        
+            } else {
+                emptyMap()
+            }
+        
+        val episodes =
+            rawEpisodes.map { ep ->
+        
+                val episodePoster =
+                    tmdbEpisodeImages[
+                        (ep.season ?: 1) to
+                            (ep.episode ?: 1)
+                    ]
+        
+                ep.apply {
+                    posterUrl =
+                        episodePoster
+                            ?: seriesPoster
+                }
+            }
 
         // --------------------------------------------------------
         // LOAD RESPONSE
