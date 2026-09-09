@@ -114,9 +114,26 @@ open class Uqload : ExtractorApi() {
         println("[Uqload] DL STATUS = ${dlResponse.code}")
         println("[Uqload] DL FINAL URL = ${dlResponse.url}")
         println("[Uqload] DL LENGTH = ${dlResponse.text.length}")
-    
-        println("========== UQLOAD DL HTML ==========")
-        println(dlResponse.text.take(10000))
-        println("========== END UQLOAD DL HTML ==========")
+
+        val packedScript = Regex(
+            """eval\(function\(p,a,c,k,e,d\).*?</script>""",
+            setOf(
+                RegexOption.IGNORE_CASE,
+                RegexOption.DOT_MATCHES_ALL
+            )
+        ).find(dlResponse.text)
+            ?.value
+            ?.substringBefore("</script>")
+            ?.trim()
+        
+        println("========== UQLOAD PACKED ==========")
+        
+        if (packedScript == null) {
+            println("[Uqload] PACKED SCRIPT NON TROVATO")
+        } else {
+            println("[Uqload] PACKED LENGTH = ${packedScript.length}")
+            println(packedScript)
+        } 
+        println("========== END UQLOAD PACKED ==========")
     }
 }
