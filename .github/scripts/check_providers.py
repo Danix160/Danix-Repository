@@ -147,37 +147,57 @@ def check_url(url):
 
     except urllib.error.HTTPError as e:
 
-        elapsed = round(
-            (time.time() - start) * 1000
+    elapsed = round(
+        (time.time() - start) * 1000
+    )
+
+    # Redirect: il dominio risponde, quindi non è offline.
+    if e.code in (301, 302, 303, 307, 308):
+
+        location = e.headers.get(
+            "Location",
+            ""
         )
 
-        # Molti siti CloudStream usano Cloudflare/CAPTCHA.
-        # 403/429 significa che il dominio esiste comunque.
-        if e.code in (401, 403, 429):
-            return {
-                "status": "🛡️ PROTETTO",
-                "code": e.code,
-                "time": elapsed,
-                "final_url": url,
-                "note": "Possibile CAPTCHA / Cloudflare"
-            }
-
-        if 400 <= e.code < 500:
-            return {
-                "status": "⚠️ PARZIALE",
-                "code": e.code,
-                "time": elapsed,
-                "final_url": url,
-                "note": "Errore HTTP"
-            }
-
         return {
-            "status": "❌ OFFLINE",
+            "status": "🔀 REDIRECT",
+            "code": e.code,
+            "time": elapsed,
+            "final_url": location or url,
+            "note": (
+                f"Redirect verso {location}"
+                if location
+                else "Redirect HTTP"
+            )
+        }
+
+    # Cloudflare, CAPTCHA, rate limit o autenticazione.
+    # Il dominio esiste e sta rispondendo.
+    if e.code in (401, 403, 429):
+        return {
+            "status": "🛡️ PROTETTO",
             "code": e.code,
             "time": elapsed,
             "final_url": url,
-            "note": "Errore server"
+            "note": "Possibile CAPTCHA / Cloudflare"
         }
+
+    if 400 <= e.code < 500:
+        return {
+            "status": "⚠️ PARZIALE",
+            "code": e.code,
+            "time": elapsed,
+            "final_url": url,
+            "note": "Errore HTTP"
+        }
+
+    return {
+        "status": "❌ OFFLINE",
+        "code": e.code,
+        "time": elapsed,
+        "final_url": url,
+        "note": "Errore server"
+    }
 
     except urllib.error.URLError as e:
 
@@ -263,24 +283,29 @@ def main():
         print()
 
     online = sum(
-        1 for r in results
-        if r["status"] == "✅ ONLINE"
-    )
+    1 for r in results
+    if r["status"] == "✅ ONLINE"
+)
 
-    protected = sum(
-        1 for r in results
-        if r["status"] == "🛡️ PROTETTO"
-    )
+protected = sum(
+    1 for r in results
+    if r["status"] == "🛡️ PROTETTO"
+)
 
-    partial = sum(
-        1 for r in results
-        if r["status"] == "⚠️ PARZIALE"
-    )
+redirect = sum(
+    1 for r in results
+    if r["status"] == "🔀 REDIRECT"
+)
 
-    offline = sum(
-        1 for r in results
-        if r["status"].startswith("❌")
-    )
+partial = sum(
+    1 for r in results
+    if r["status"] == "⚠️ PARZIALE"
+)
+
+offline = sum(
+    1 for r in results
+    if r["status"].startswith("❌")
+)
 
     print("========================================")
     print(
@@ -291,6 +316,9 @@ def main():
     )
     print(
         f"⚠️ Parziali: {partial}"
+    )
+    print(
+        f"🔀 Redirect: {redirect}"
     )
     print(
         f"❌ Offline: {offline}"
@@ -319,11 +347,12 @@ def main():
             )
 
             summary.write(
-                f"✅ **Online:** {online} · "
-                f"🛡️ **Protetti:** {protected} · "
-                f"⚠️ **Parziali:** {partial} · "
-                f"❌ **Offline:** {offline}\n\n"
-            )
+            f"✅ **Online:** {online} · "
+            f"🛡️ **Protetti:** {protected} · "
+            f"🔀 **Redirect:** {redirect} · "
+            f"⚠️ **Parziali:** {partial} · "
+            f"❌ **Offline:** {offline}\n\n"
+        )
 
             summary.write(
                 "| Plugin | Stato | HTTP | Tempo | Dominio |\n"
