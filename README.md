@@ -75,7 +75,7 @@
 </td>
 <td width="50%" valign="top">
 
-<b>📺 ONLINESERIETV</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime</sub><br> <sub>⚠️ CAPTCHA da risolvere, ma funzionante<a href="https://onlineserietv.mom/">Sito</a></sub>
+<b>📺 ONLINESERIETV</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime<br></sub><br> <sub>⚠️ CAPTCHA da risolvere, ma funzionante<a href="https://onlineserietv.mom/">Sito</a></sub>
 
 </td>
 </tr>
@@ -101,7 +101,7 @@
 </td>
 <td width="50%" valign="top">
 
-<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime<a href="https://toonitalia.xyz/">Sito</a></sub><br> <sub>
+<b>🐉 TOONITALIA</b><br> <img src="https://img.shields.io/badge/ONLINE-brightgreen?style=flat-square"> <sub>Film · Serie TV · Cartoni · Anime<br><a href="https://toonitalia.xyz/">Sito</a></sub><br> <sub>
 
 </td>
 </tr>
