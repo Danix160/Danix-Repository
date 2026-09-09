@@ -187,31 +187,166 @@ class ToonItaliaProvider : MainAPI() {
     // ============================================================
 
     override suspend fun search(
-        query: String
-    ): List<SearchResponse> {
-
-        val cleanQuery = query.trim()
-
-        if (cleanQuery.isBlank()) {
-            return emptyList()
-        }
-
-        val document = runCatching {
-            app.get(
-                "$mainUrl/",
-                params = mapOf(
-                    "s" to cleanQuery
-                )
-            ).document
-        }.getOrNull() ?: return emptyList()
-
-        return document
-            .select("article.post")
-            .mapNotNull { article ->
-                article.toSearchResult()
+            query: String
+        ): List<SearchResponse> {
+        
+            val cleanQuery = query.trim()
+        
+            if (cleanQuery.isBlank()) {
+                return emptyList()
             }
-            .distinctBy { it.url }
-    }
+        
+            val document = runCatching {
+                app.get(
+                    "$mainUrl/",
+                    params = mapOf(
+                        "s" to cleanQuery
+                    )
+                ).document
+            }.getOrNull() ?: return emptyList()
+        
+            val results =
+                mutableListOf<SearchResponse>()
+        
+            document
+                .select("article.post")
+                .forEach { article ->
+        
+                    val link = article.selectFirst(
+                        "h2.entry-title a[href], .entry-title a[href]"
+                    ) ?: return@forEach
+        
+                    val href = link
+                        .attr("abs:href")
+                        .takeIf { it.isNotBlank() }
+                        ?: return@forEach
+        
+                    val title = link
+                        .text()
+                        .trim()
+                        .takeIf { it.isNotBlank() }
+                        ?: return@forEach
+        
+                    if (!href.startsWith(mainUrl)) {
+                        return@forEach
+                    }
+        
+                    if (isNavigationUrl(href)) {
+                        return@forEach
+                    }
+        
+                    val classes = article
+                        .classNames()
+                        .map { it.lowercase() }
+                        .toSet()
+        
+                    val type = when {
+        
+                        classes.any {
+                            it == "category-serie-tv" ||
+                                it == "category-serie"
+                        } -> TvType.TvSeries
+        
+                        classes.any {
+                            it == "category-film-animazione" ||
+                                it == "category-film"
+                        } -> TvType.AnimeMovie
+        
+                        classes.any {
+                            it == "category-anime"
+                        } -> TvType.Anime
+        
+                        else -> TvType.TvSeries
+                    }
+        
+                    val toonPoster = article
+                        .selectFirst("img")
+                        ?.let { img ->
+        
+                            img.attr("abs:src")
+                                .takeIf { it.isNotBlank() }
+        
+                                ?: img.attr("abs:data-src")
+                                    .takeIf { it.isNotBlank() }
+        
+                                ?: img.attr("abs:data-lazy-src")
+                                    .takeIf { it.isNotBlank() }
+                        }
+        
+                    val tmdb = when (type) {
+        
+                        TvType.TvSeries,
+                        TvType.Anime -> {
+                            Tmdb.getTv(
+                                title = title,
+                                year = null
+                            )
+                        }
+        
+                        TvType.Movie,
+                        TvType.AnimeMovie -> {
+                            Tmdb.getMovie(
+                                title = title,
+                                year = null
+                            )
+                        }
+        
+                        else -> null
+                    }
+        
+                    val finalPoster =
+                        tmdb?.posterUrl
+                            ?: toonPoster
+        
+                    val response = when (type) {
+        
+                        TvType.Anime -> {
+                            newAnimeSearchResponse(
+                                title,
+                                href,
+                                TvType.Anime
+                            ) {
+                                posterUrl = finalPoster
+                            }
+                        }
+        
+                        TvType.AnimeMovie -> {
+                            newMovieSearchResponse(
+                                title,
+                                href,
+                                TvType.AnimeMovie
+                            ) {
+                                posterUrl = finalPoster
+                            }
+                        }
+        
+                        TvType.TvSeries -> {
+                            newTvSeriesSearchResponse(
+                                title,
+                                href,
+                                TvType.TvSeries
+                            ) {
+                                posterUrl = finalPoster
+                            }
+                        }
+        
+                        else -> {
+                            newMovieSearchResponse(
+                                title,
+                                href,
+                                type
+                            ) {
+                                posterUrl = finalPoster
+                            }
+                        }
+                    }
+        
+                    results += response
+                }
+        
+            return results
+                .distinctBy { it.url }
+        }
 
     // ============================================================
     // CONVERSIONE ELEMENTI TOONITALIA
