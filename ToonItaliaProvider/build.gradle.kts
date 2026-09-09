@@ -14,15 +14,16 @@ tasks.withType<KotlinJvmCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
     }
+}
 
 cloudstream {
     extra["prefix"] = "ToonItalia"
     extra["displayName"] = "ToonItalia"
-    
+
     version = 100
     description = "Archivio di Anime e Cartoni animati in italiano da ToonItalia.xyz"
     authors = listOf("Danix")
-    
+
     status = 1
     tvTypes = listOf("Movie", "TvSeries", "Anime", "Cartoon")
     requiresResources = false
