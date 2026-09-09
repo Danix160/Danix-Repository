@@ -31,6 +31,28 @@ object Tmdb {
         val genres: List<String>,
         val score: Int?
     )
+    
+    data class EpisodeImage(
+        val season: Int,
+        val episode: Int,
+        val posterUrl: String?
+    )
+    
+    private data class SeasonResponse(
+        @JsonProperty("episodes")
+        val episodes: List<TmdbEpisode>? = null
+    )
+    
+    private data class TmdbEpisode(
+        @JsonProperty("episode_number")
+        val episodeNumber: Int? = null,
+    
+        @JsonProperty("season_number")
+        val seasonNumber: Int? = null,
+    
+        @JsonProperty("still_path")
+        val stillPath: String? = null
+    )
 
     private data class SearchResponse(
         @JsonProperty("results")
@@ -130,7 +152,54 @@ object Tmdb {
             isTv = true
         )
     }
-
+    
+    suspend fun getEpisodeImages(
+        tvId: Int,
+        seasons: Set<Int>
+    ): Map<Pair<Int, Int>, String> {
+    
+        val result =
+            mutableMapOf<Pair<Int, Int>, String>()
+    
+        seasons.forEach { season ->
+    
+            val url =
+                "$apiUrl/tv/$tvId/season/$season" +
+                    "?api_key=$apiKey" +
+                    "&language=it-IT"
+    
+            val response =
+                runCatching {
+                    app.get(url)
+                        .parsed<SeasonResponse>()
+                }.getOrNull()
+                    ?: return@forEach
+    
+            response.episodes
+                .orEmpty()
+                .forEach { episode ->
+    
+                    val seasonNumber =
+                        episode.seasonNumber
+                            ?: season
+    
+                    val episodeNumber =
+                        episode.episodeNumber
+                            ?: return@forEach
+    
+                    val still =
+                        episode.stillPath
+                            ?.takeIf { it.isNotBlank() }
+                            ?: return@forEach
+    
+                    result[
+                        seasonNumber to episodeNumber
+                    ] = "$imageUrl$still"
+                }
+        }
+    
+        return result
+    }
     private suspend fun search(
         title: String,
         year: Int?,
