@@ -37,6 +37,24 @@ object Tmdb {
         val episode: Int,
         val posterUrl: String?
     )
+
+    data class SeasonInfo(
+        val season: Int,
+        val episodeCount: Int
+    )
+    
+    private data class TvDetailsSeasonsResponse(
+        @JsonProperty("seasons")
+        val seasons: List<TmdbSeasonInfo>? = null
+    )
+    
+    private data class TmdbSeasonInfo(
+        @JsonProperty("season_number")
+        val seasonNumber: Int? = null,
+    
+        @JsonProperty("episode_count")
+        val episodeCount: Int? = null
+    )
     
     private data class SeasonResponse(
         @JsonProperty("episodes")
@@ -151,6 +169,53 @@ object Tmdb {
             year = year,
             isTv = true
         )
+    }
+
+    suspend fun getTvSeasons(
+        tvId: Int
+    ): List<SeasonInfo> {
+    
+        val url =
+            "$apiUrl/tv/$tvId" +
+                "?api_key=$apiKey" +
+                "&language=it-IT"
+    
+        val response =
+            runCatching {
+                app.get(url)
+                    .parsed<TvDetailsSeasonsResponse>()
+            }.getOrNull()
+                ?: return emptyList()
+    
+        return response.seasons
+            .orEmpty()
+            .mapNotNull { season ->
+    
+                val seasonNumber =
+                    season.seasonNumber
+                        ?: return@mapNotNull null
+    
+                val episodeCount =
+                    season.episodeCount
+                        ?: return@mapNotNull null
+    
+                // Season 0 = speciali.
+                // Non deve partecipare al remapping.
+                if (
+                    seasonNumber <= 0 ||
+                    episodeCount <= 0
+                ) {
+                    return@mapNotNull null
+                }
+    
+                SeasonInfo(
+                    season = seasonNumber,
+                    episodeCount = episodeCount
+                )
+            }
+            .sortedBy {
+                it.season
+            }
     }
     
     suspend fun getEpisodeImages(
