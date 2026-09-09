@@ -134,6 +134,78 @@ open class Uqload : ExtractorApi() {
             println("[Uqload] PACKED LENGTH = ${packedScript.length}")
             println(packedScript)
         } 
-        println("========== END UQLOAD PACKED ==========")
+                println("========== END UQLOAD PACKED ==========")
+
+        val unpacked = packedScript?.let {
+            unpackPacker(it)
+        }
+
+        println("========== UQLOAD UNPACKED ==========")
+
+        if (unpacked == null) {
+            println("[Uqload] UNPACK FALLITO")
+        } else {
+            println("[Uqload] UNPACKED LENGTH = ${unpacked.length}")
+            println(unpacked)
+        }
+         println("========== END UQLOAD UNPACKED ==========")
+    }
+
+    private fun unpackPacker(script: String): String? {
+        val regex = Regex(
+            """\}\('((?:\\.|[^'])*)',(\d+),(\d+),'((?:\\.|[^'])*)'\.split\('\|'\)""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+
+        val match = regex.find(script) ?: return null
+
+        var payload = match.groupValues[1]
+            .replace("\\'", "'")
+            .replace("\\\\", "\\")
+
+        val radix = match.groupValues[2].toIntOrNull()
+            ?: return null
+
+        val count = match.groupValues[3].toIntOrNull()
+            ?: return null
+
+        val words = match.groupValues[4]
+            .split("|")
+
+        fun encode(value: Int): String {
+            val chars =
+                "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+            if (value == 0) return "0"
+
+            var number = value
+            var result = ""
+
+            while (number > 0) {
+                result =
+                    chars[number % radix] + result
+
+                number /= radix
+            }
+
+            return result
+        }
+
+        for (i in count - 1 downTo 0) {
+            if (i >= words.size) continue
+
+            val replacement = words[i]
+
+            if (replacement.isBlank()) continue
+
+            val key = encode(i)
+
+            payload = payload.replace(
+                Regex("""\b${Regex.escape(key)}\b"""),
+                replacement
+            )
+        }
+
+        return payload
     }
 }
