@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.utils.*
 
 // import android.util.Log
 
-class Uqloadvc : Uqloadvc() {
+class Uqloadvc : Uqload() {
     override var mainUrl = "https://uqload.vc"
 }
 
