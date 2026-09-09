@@ -96,7 +96,7 @@
 <tr>
 <td width="50%" valign="top">
 
-<b>🌐 UNIVERSAL</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV</sub><br> <sub>⚠️ Funzionante, ma possibili incongruenze</sub>
+<b>🌐 UNIVERSAL</b><br> <img src="https://img.shields.io/badge/PARZIALE-yellow?style=flat-square"> <sub>Film · Serie TV</sub><br> <sub>⚠️ Funzionante, Incrocio tra Altadefinizione e OnlineSerietv, CAPTCHA</sub>
 
 </td>
 <td width="50%" valign="top">
