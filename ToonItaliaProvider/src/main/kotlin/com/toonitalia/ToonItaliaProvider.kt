@@ -205,147 +205,144 @@ class ToonItaliaProvider : MainAPI() {
                 ).document
             }.getOrNull() ?: return emptyList()
         
-            val results =
-                mutableListOf<SearchResponse>()
-        
-            document
+            val articles = document
                 .select("article.post")
-                .forEach { article ->
+                .toList()
         
-                    val link = article.selectFirst(
-                        "h2.entry-title a[href], .entry-title a[href]"
-                    ) ?: return@forEach
+            return kotlinx.coroutines.coroutineScope {
         
-                    val href = link
-                        .attr("abs:href")
-                        .takeIf { it.isNotBlank() }
-                        ?: return@forEach
+                articles
+                    .map { article ->
         
-                    val title = link
-                        .text()
-                        .trim()
-                        .takeIf { it.isNotBlank() }
-                        ?: return@forEach
+                        kotlinx.coroutines.async {
         
-                    if (!href.startsWith(mainUrl)) {
-                        return@forEach
-                    }
+                            val link = article.selectFirst(
+                                "h2.entry-title a[href], .entry-title a[href]"
+                            ) ?: return@async null
         
-                    if (isNavigationUrl(href)) {
-                        return@forEach
-                    }
-        
-                    val classes = article
-                        .classNames()
-                        .map { it.lowercase() }
-                        .toSet()
-        
-                    val type = when {
-        
-                        classes.any {
-                            it == "category-serie-tv" ||
-                                it == "category-serie"
-                        } -> TvType.TvSeries
-        
-                        classes.any {
-                            it == "category-film-animazione" ||
-                                it == "category-film"
-                        } -> TvType.AnimeMovie
-        
-                        classes.any {
-                            it == "category-anime"
-                        } -> TvType.Anime
-        
-                        else -> TvType.TvSeries
-                    }
-        
-                    val toonPoster = article
-                        .selectFirst("img")
-                        ?.let { img ->
-        
-                            img.attr("abs:src")
+                            val href = link
+                                .attr("abs:href")
                                 .takeIf { it.isNotBlank() }
+                                ?: return@async null
         
-                                ?: img.attr("abs:data-src")
-                                    .takeIf { it.isNotBlank() }
+                            val title = link
+                                .text()
+                                .trim()
+                                .takeIf { it.isNotBlank() }
+                                ?: return@async null
         
-                                ?: img.attr("abs:data-lazy-src")
-                                    .takeIf { it.isNotBlank() }
+                            if (!href.startsWith(mainUrl)) {
+                                return@async null
+                            }
+        
+                            if (isNavigationUrl(href)) {
+                                return@async null
+                            }
+        
+                            val classes = article
+                                .classNames()
+                                .map { it.lowercase() }
+                                .toSet()
+        
+                            val type = when {
+        
+                                classes.any {
+                                    it == "category-serie-tv" ||
+                                        it == "category-serie"
+                                } -> TvType.TvSeries
+        
+                                classes.any {
+                                    it == "category-film-animazione" ||
+                                        it == "category-film"
+                                } -> TvType.AnimeMovie
+        
+                                classes.any {
+                                    it == "category-anime"
+                                } -> TvType.Anime
+        
+                                else -> TvType.TvSeries
+                            }
+        
+                            // --------------------------------------------
+                            // POSTER DALLA PAGINA TOONITALIA DEL RISULTATO
+                            // --------------------------------------------
+        
+                            val poster = runCatching {
+        
+                                val detailDocument =
+                                    app.get(href).document
+        
+                                val content =
+                                    detailDocument.selectFirst(
+                                        ".entry-content"
+                                    )
+        
+                                content
+                                    ?.selectFirst("img")
+                                    ?.let { img ->
+        
+                                        img.attr("abs:src")
+                                            .takeIf {
+                                                it.isNotBlank()
+                                            }
+        
+                                            ?: img.attr(
+                                                "abs:data-src"
+                                            ).takeIf {
+                                                it.isNotBlank()
+                                            }
+                                    }
+        
+                            }.getOrNull()
+        
+                            when (type) {
+        
+                                TvType.Anime -> {
+                                    newAnimeSearchResponse(
+                                        title,
+                                        href,
+                                        TvType.Anime
+                                    ) {
+                                        posterUrl = poster
+                                    }
+                                }
+        
+                                TvType.AnimeMovie -> {
+                                    newMovieSearchResponse(
+                                        title,
+                                        href,
+                                        TvType.AnimeMovie
+                                    ) {
+                                        posterUrl = poster
+                                    }
+                                }
+        
+                                TvType.TvSeries -> {
+                                    newTvSeriesSearchResponse(
+                                        title,
+                                        href,
+                                        TvType.TvSeries
+                                    ) {
+                                        posterUrl = poster
+                                    }
+                                }
+        
+                                else -> {
+                                    newMovieSearchResponse(
+                                        title,
+                                        href,
+                                        type
+                                    ) {
+                                        posterUrl = poster
+                                    }
+                                }
+                            }
                         }
-        
-                    val tmdb = when (type) {
-        
-                        TvType.TvSeries,
-                        TvType.Anime -> {
-                            Tmdb.getTv(
-                                title = title,
-                                year = null
-                            )
-                        }
-        
-                        TvType.Movie,
-                        TvType.AnimeMovie -> {
-                            Tmdb.getMovie(
-                                title = title,
-                                year = null
-                            )
-                        }
-        
-                        else -> null
                     }
-        
-                    val finalPoster =
-                        tmdb?.posterUrl
-                            ?: toonPoster
-        
-                    val response = when (type) {
-        
-                        TvType.Anime -> {
-                            newAnimeSearchResponse(
-                                title,
-                                href,
-                                TvType.Anime
-                            ) {
-                                posterUrl = finalPoster
-                            }
-                        }
-        
-                        TvType.AnimeMovie -> {
-                            newMovieSearchResponse(
-                                title,
-                                href,
-                                TvType.AnimeMovie
-                            ) {
-                                posterUrl = finalPoster
-                            }
-                        }
-        
-                        TvType.TvSeries -> {
-                            newTvSeriesSearchResponse(
-                                title,
-                                href,
-                                TvType.TvSeries
-                            ) {
-                                posterUrl = finalPoster
-                            }
-                        }
-        
-                        else -> {
-                            newMovieSearchResponse(
-                                title,
-                                href,
-                                type
-                            ) {
-                                posterUrl = finalPoster
-                            }
-                        }
-                    }
-        
-                    results += response
-                }
-        
-            return results
-                .distinctBy { it.url }
+                    .awaitAll()
+                    .filterNotNull()
+                    .distinctBy { it.url }
+            }
         }
 
     // ============================================================
