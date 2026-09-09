@@ -10,5 +10,6 @@ class ToonItaliaPlugin: Plugin() {
         // Registra il provider definito sopra nella classe ToonItaliaProvider
         registerMainAPI(ToonItaliaProvider())
         registerExtractorAPI(Voe())
+        registerExtractorAPI(Checktube())
     }
 }
