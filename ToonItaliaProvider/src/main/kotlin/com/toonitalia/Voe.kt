@@ -19,7 +19,7 @@ class Tubeless : Voe() {
 
 class Checktube : Voe() {
     override val name = "Checktube"
-    override val mainUrl = "https://chuckle-tube.com/"
+    override val mainUrl = "https://chuckle-tube.com"
 }
 
 class Simpulumlamerop : Voe() {
