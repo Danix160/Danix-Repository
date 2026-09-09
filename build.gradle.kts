@@ -74,13 +74,8 @@ subprojects {
     val cloudstream by configurations
     val implementation by configurations
 
-    // API completa di Cloudstream usata dai plugin
+    // API Cloudstream usata dai plugin
     cloudstream("com.lagradost:cloudstream3:pre-release")
-
-    // Libreria Cloudstream
-    implementation(
-        "com.github.recloudstream.cloudstream:library:-SNAPSHOT"
-    )
 
     implementation(kotlin("stdlib"))
     implementation("com.github.Blatzar:NiceHttp:0.4.11")
