@@ -621,6 +621,27 @@ private data class ToonLine(
             content = content
         )
 
+        val tmdb = when (type) {
+
+            TvType.Movie,
+            TvType.AnimeMovie -> {
+                Tmdb.getMovie(
+                    title = title,
+                    year = year
+                )
+            }
+        
+            TvType.TvSeries,
+            TvType.Anime -> {
+                Tmdb.getTv(
+                    title = title,
+                    year = year
+                )
+            }
+        
+            else -> null
+        }
+
         // --------------------------------------------------------
         // LOAD RESPONSE
         // --------------------------------------------------------
@@ -633,10 +654,28 @@ private data class ToonLine(
                     url,
                     TvType.Anime
                 ) {
-                    posterUrl = poster
-                    this.year = year
-                    this.plot = plot
-
+                    posterUrl =
+                        tmdb?.posterUrl
+                            ?: poster
+                
+                    backgroundPosterUrl =
+                        tmdb?.backgroundPosterUrl
+                
+                    this.year =
+                        tmdb?.year
+                            ?: year
+                
+                    this.plot =
+                        tmdb?.plot
+                            ?: plot
+                
+                    tags =
+                        tmdb?.genres
+                
+                    tmdb?.score?.let {
+                        score = Score.from10(it / 10.0)
+                    }
+                
                     addEpisodes(
                         DubStatus.Dubbed,
                         episodes
@@ -651,9 +690,27 @@ private data class ToonLine(
                     TvType.TvSeries,
                     episodes
                 ) {
-                    posterUrl = poster
-                    this.year = year
-                    this.plot = plot
+                    posterUrl =
+                        tmdb?.posterUrl
+                            ?: poster
+                
+                    backgroundPosterUrl =
+                        tmdb?.backgroundPosterUrl
+                
+                    this.year =
+                        tmdb?.year
+                            ?: year
+                
+                    this.plot =
+                        tmdb?.plot
+                            ?: plot
+                
+                    tags =
+                        tmdb?.genres
+                
+                    tmdb?.score?.let {
+                        score = Score.from10(it / 10.0)
+                    }
                 }
             }
 
@@ -664,9 +721,27 @@ private data class ToonLine(
                     TvType.AnimeMovie,
                     movieData
                 ) {
-                    posterUrl = poster
-                    this.year = year
-                    this.plot = plot
+                    posterUrl =
+                        tmdb?.posterUrl
+                            ?: poster
+                
+                    backgroundPosterUrl =
+                        tmdb?.backgroundPosterUrl
+                
+                    this.year =
+                        tmdb?.year
+                            ?: year
+                
+                    this.plot =
+                        tmdb?.plot
+                            ?: plot
+                
+                    tags =
+                        tmdb?.genres
+                
+                    tmdb?.score?.let {
+                        score = Score.from10(it / 10.0)
+                    }
                 }
             }
 
@@ -677,9 +752,27 @@ private data class ToonLine(
                     TvType.Movie,
                     movieData
                 ) {
-                    posterUrl = poster
-                    this.year = year
-                    this.plot = plot
+                    posterUrl =
+                        tmdb?.posterUrl
+                            ?: poster
+                
+                    backgroundPosterUrl =
+                        tmdb?.backgroundPosterUrl
+                
+                    this.year =
+                        tmdb?.year
+                            ?: year
+                
+                    this.plot =
+                        tmdb?.plot
+                            ?: plot
+                
+                    tags =
+                        tmdb?.genres
+                
+                    tmdb?.score?.let {
+                        score = Score.from10(it / 10.0)
+                    }
                 }
             }
         }
