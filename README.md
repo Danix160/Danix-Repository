@@ -106,7 +106,7 @@
 
 ### 🧸 LOONEX
 
-![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
+![Offline](https://img.shields.io/badge/STATO-OFFLINE-red?style=flat-square)
 
 **Contenuti:** Cartoni · Anime
 🌐 [Visita il sito](https://loonex.eu/cartoni/)
@@ -121,6 +121,8 @@
 * 🎵 Supporto alle sigle
 * 🎞️ Supporto ai trailer
 * ▶️ Riproduzione delle sigle tramite YouTube
+
+* ❌ Protezione Aggiunta, Ci stiamo lavorando...
 
 ---
 
@@ -149,7 +151,7 @@
 
 ### 🎬 CB01
 
-![Parziale](https://img.shields.io/badge/STATO-PARZIALE-yellow?style=flat-square)
+![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
 
 **Contenuti:** Film · Serie TV · Cartoni · Anime
 🌐 [Visita il sito](https://cb01uno.homes/)
