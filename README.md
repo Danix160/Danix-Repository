@@ -143,7 +143,7 @@
 * ▶️ Supporto a più player
 * 🔗 Gestione di player e host intermedi
 
-> ⚠️ Presenza di CAPTCHA, ma il plugin è funzionante.
+> ⚠️ CAPTCHA da risolvere.
 
 ---
 
@@ -165,7 +165,6 @@
 * 🔗 Gestione di diversi host video
 
 > ⚠️ CAPTCHA da risolvere.
-> ⚠️ Le Serie TV possono presentare problemi.
 
 ---
 
