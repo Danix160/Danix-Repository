@@ -2,6 +2,7 @@ package com.cb
 
 import android.util.Base64
 import android.util.Log
+import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -13,30 +14,284 @@ import org.jsoup.Jsoup
 
 class MaxStream : ExtractorApi() {
 
-    override val name =
-        "MaxStream"
+    override val name = "MaxStream"
 
-    override val mainUrl =
-        "https://maxstream.video"
+    override val mainUrl = "https://maxstream.video"
 
-    override val requiresReferer =
-        true
+    override val requiresReferer = true
 
     companion object {
 
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 10; K) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/139.0.0.0 Mobile Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/139.0.0.0 Mobile Safari/537.36"
+    }
+
+    /**
+     * Metodo preso dall'idea del nuovo extractor Streamflix.
+     *
+     * Cerca strutture tipo:
+     *
+     * sources: [{ src: "https://....m3u8" }]
+     *
+     * oppure:
+     *
+     * sources: [{ "src": "https://....m3u8" }]
+     */
+    private fun extractStreamflixSource(
+        html: String
+    ): String? {
+
+        val patterns =
+            listOf(
+                Regex(
+                    """sources\s*:\s*\[\s*\{\s*[sS]rc\s*:\s*["']([^"']+)["']""",
+                    RegexOption.IGNORE_CASE
+                ),
+
+                Regex(
+                    """sources\s*:\s*\[\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""",
+                    RegexOption.IGNORE_CASE
+                ),
+
+                Regex(
+                    """sources\s*=\s*\[\s*\{\s*[sS]rc\s*:\s*["']([^"']+)["']""",
+                    RegexOption.IGNORE_CASE
+                )
+            )
+
+        patterns.forEach { regex ->
+
+            val source =
+                regex
+                    .find(html)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.replace("\\/", "/")
+                    ?.replace("\\u0026", "&")
+                    ?.replace("&amp;", "&")
+                    ?.trim()
+
+            if (!source.isNullOrBlank()) {
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "SOURCE STREAMFLIX REGEX = $source"
+                )
+
+                return source
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Invia a CloudStream il link trovato.
+     *
+     * Restituisce true se il link è stato gestito.
+     */
+    private suspend fun sendStream(
+        streamUrl: String?,
+        playerReferer: String,
+        baseHeaders: Map<String, String>,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+
+        if (streamUrl.isNullOrBlank()) {
+            return false
+        }
+
+        val cleanUrl =
+            streamUrl
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
+                .replace("&amp;", "&")
+                .trim()
+
+        if (cleanUrl.isBlank()) {
+            return false
+        }
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "======================================"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "STREAM TROVATO = $cleanUrl"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "STREAM REFERER = $playerReferer"
+        )
+
+        val streamHeaders =
+            baseHeaders
+                .toMutableMap()
+                .apply {
+                    this["Referer"] =
+                        playerReferer
+                }
+
+        val isM3u8 =
+            cleanUrl.contains(
+                ".m3u8",
+                ignoreCase = true
+            )
+
+        if (isM3u8) {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "TIPO STREAM = M3U8"
+            )
+
+            try {
+
+                val links =
+                    M3u8Helper.generateM3u8(
+                        source = name,
+                        streamUrl = cleanUrl,
+                        referer = playerReferer,
+                        headers = streamHeaders
+                    )
+
+                if (links.isNotEmpty()) {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "M3U8Helper ha generato ${links.size} link"
+                    )
+
+                    links.forEach(callback)
+
+                } else {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "M3U8Helper vuoto, invio link M3U8 diretto"
+                    )
+
+                    callback.invoke(
+                        newExtractorLink(
+                            source = name,
+                            name = name,
+                            url = cleanUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer =
+                                playerReferer
+
+                            this.headers =
+                                streamHeaders
+
+                            this.quality =
+                                Qualities.Unknown.value
+                        }
+                    )
+                }
+
+            } catch (
+                e: Exception
+            ) {
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "Errore M3U8Helper: ${e.message}"
+                )
+
+                /*
+                 * Se M3U8Helper fallisce,
+                 * proviamo comunque il link diretto.
+                 */
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name = name,
+                        url = cleanUrl,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer =
+                            playerReferer
+
+                        this.headers =
+                            streamHeaders
+
+                        this.quality =
+                            Qualities.Unknown.value
+                    }
+                )
+            }
+
+        } else {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "TIPO STREAM = VIDEO"
+            )
+
+            callback.invoke(
+                newExtractorLink(
+                    source = name,
+                    name = name,
+                    url = cleanUrl,
+                    type = ExtractorLinkType.VIDEO
+                ) {
+                    this.referer =
+                        playerReferer
+
+                    this.headers =
+                        streamHeaders
+
+                    this.quality =
+                        Qualities.Unknown.value
+                }
+            )
+        }
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "STREAM INVIATO A CLOUDSTREAM"
+        )
+
+        return true
     }
 
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (com.lagradost.cloudstream3.SubtitleFile) -> Unit,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
 
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "======================================"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "MAXSTREAM START"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "URL = $url"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "REFERER = $referer"
+        )
+
+        /*
+         * Utilizziamo lo stesso User-Agent usato dalla
+         * WebView Uprot, quando disponibile.
+         */
         val sessionUserAgent =
             UprotSession.userAgent
                 .takeIf {
@@ -44,6 +299,10 @@ class MaxStream : ExtractorApi() {
                 }
                 ?: USER_AGENT
 
+        /*
+         * Recuperiamo anche i cookie generati durante
+         * la navigazione Uprot / MaxStream.
+         */
         val sessionCookies =
             UprotSession.cookieHeader
 
@@ -78,11 +337,31 @@ class MaxStream : ExtractorApi() {
             )
         }
 
+        /*
+         * =====================================================
+         * PRIMO ACCESSO MAXSTREAM
+         * =====================================================
+         */
+
         val response =
-            app.get(
-                url,
-                headers = headers
-            )
+            try {
+
+                app.get(
+                    url,
+                    headers = headers
+                )
+
+            } catch (
+                e: Exception
+            ) {
+
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "Errore GET MaxStream: ${e.message}"
+                )
+
+                return
+            }
 
         var html =
             response.text
@@ -105,6 +384,50 @@ class MaxStream : ExtractorApi() {
             "HTML LENGTH = ${html.length}"
         )
 
+        /*
+         * =====================================================
+         * NUOVO METODO STREAMFLIX
+         * =====================================================
+         *
+         * Prima di fare qualsiasi altra cosa proviamo
+         * direttamente a trovare:
+         *
+         * sources: [{ src: "..." }]
+         */
+
+        val firstSource =
+            extractStreamflixSource(
+                html
+            )
+
+        if (
+            !firstSource.isNullOrBlank()
+        ) {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                ">>> STREAMFLIX SOURCE TROVATA NELLA PAGINA PRINCIPALE <<<"
+            )
+
+            val success =
+                sendStream(
+                    streamUrl = firstSource,
+                    playerReferer = response.url,
+                    baseHeaders = headers,
+                    callback = callback
+                )
+
+            if (success) {
+                return
+            }
+        }
+
+        /*
+         * =====================================================
+         * CONTROLLO CLOUDFLARE
+         * =====================================================
+         */
+
         val initialDoc =
             Jsoup.parse(
                 html
@@ -112,7 +435,8 @@ class MaxStream : ExtractorApi() {
 
         val cloudflareBlocked =
             response.code == 403 ||
-                initialDoc.title()
+                initialDoc
+                    .title()
                     .contains(
                         "Just a moment",
                         ignoreCase = true
@@ -175,64 +499,171 @@ class MaxStream : ExtractorApi() {
                     "source=${webViewResult.sourceCount}"
             )
 
+            /*
+             * Se la WebView ci restituisce direttamente
+             * l'URL del player, proviamo ad aprirlo
+             * nuovamente usando i cookie aggiornati.
+             */
+            val possiblePlayerUrl =
+                webViewResult.playerUrl
+                    ?.takeIf {
+                        it.isNotBlank()
+                    }
+                    ?: webViewResult.playerPageUrl
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+
             if (
-                webViewResult.status ==
-                MaxStreamWebViewStatus.PLAYER_PAGE_READY
+                !possiblePlayerUrl.isNullOrBlank()
             ) {
 
-                Log.d(
+                Log.e(
                     "MAXSTREAM_DEBUG",
-                    "Diagnostica player completata: " +
-                        "pagina interna=${webViewResult.playerPageUrl}, " +
-                        "video=${webViewResult.videoCount}"
+                    "Provo player trovato dalla WebView: $possiblePlayerUrl"
                 )
+
+                val updatedCookies =
+                    UprotSession.cookieHeader
+
+                val webViewHeaders =
+                    headers
+                        .toMutableMap()
+                        .apply {
+
+                            this["Referer"] =
+                                webViewResult.finalUrl
+                                    ?.takeIf {
+                                        it.isNotBlank()
+                                    }
+                                    ?: response.url
+
+                            if (
+                                updatedCookies.isNotBlank()
+                            ) {
+                                this["Cookie"] =
+                                    updatedCookies
+                            }
+                        }
+
+                try {
+
+                    val playerResponse =
+                        app.get(
+                            possiblePlayerUrl,
+                            headers = webViewHeaders
+                        )
+
+                    val playerHtml =
+                        playerResponse.text
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "WEBVIEW PLAYER HTTP STATUS = ${playerResponse.code}"
+                    )
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "WEBVIEW PLAYER HTML LENGTH = ${playerHtml.length}"
+                    )
+
+                    /*
+                     * Qui applichiamo di nuovo
+                     * il metodo Streamflix.
+                     */
+                    val webViewSource =
+                        extractStreamflixSource(
+                            playerHtml
+                        )
+
+                    if (
+                        !webViewSource.isNullOrBlank()
+                    ) {
+
+                        Log.e(
+                            "MAXSTREAM_DEBUG",
+                            ">>> STREAMFLIX SOURCE TROVATA DOPO WEBVIEW <<<"
+                        )
+
+                        val success =
+                            sendStream(
+                                streamUrl = webViewSource,
+                                playerReferer = playerResponse.url,
+                                baseHeaders = webViewHeaders,
+                                callback = callback
+                            )
+
+                        if (success) {
+                            return
+                        }
+                    }
+
+                    /*
+                     * Se non troviamo sources,
+                     * continuiamo usando questo HTML
+                     * come pagina player.
+                     */
+                    if (
+                        playerResponse.code in 200..399 &&
+                        playerHtml.isNotBlank()
+                    ) {
+
+                        html =
+                            playerHtml
+
+                        playerReferer =
+                            playerResponse.url
+
+                        /*
+                         * Aggiorniamo anche gli headers
+                         * che verranno usati dopo.
+                         */
+                        headers["Referer"] =
+                            playerReferer
+
+                        if (
+                            updatedCookies.isNotBlank()
+                        ) {
+                            headers["Cookie"] =
+                                updatedCookies
+                        }
+
+                    } else {
+
+                        Log.e(
+                            "MAXSTREAM_DEBUG",
+                            "Impossibile utilizzare HTML player WebView"
+                        )
+                    }
+
+                } catch (
+                    e: Exception
+                ) {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "Errore apertura player WebView: ${e.message}"
+                    )
+                }
             }
+
+            /*
+             * A differenza del vecchio extractor,
+             * NON facciamo subito return su PLAYER_FOUND
+             * o PLAYER_PAGE_READY.
+             *
+             * Continuiamo e proviamo ad estrarre il player.
+             */
 
             when (
                 webViewResult.status
             ) {
 
-                MaxStreamWebViewStatus.PLAYER_PAGE_READY -> {
-
-                    Log.d(
-                        "MAXSTREAM_DEBUG",
-                        "Pagina interna del player caricata correttamente"
-                    )
-
-                    /*
-                     * Diagnostica completata.
-                     * Non intercettiamo né estraiamo URL multimediali
-                     * dalla pagina protetta.
-                     */
-                    return
-                }
-
-                MaxStreamWebViewStatus.PLAYER_FOUND -> {
-
-                    Log.d(
-                        "MAXSTREAM_DEBUG",
-                        "Player MaxStream reale rilevato nella WebView"
-                    )
-
-                    Log.d(
-                        "MAXSTREAM_DEBUG",
-                        "PLAYER IFRAME DIAGNOSTICO = ${webViewResult.playerUrl}"
-                    )
-
-                    /*
-                     * Risultato diagnostico:
-                     * restituiamo al chiamante l'URL dell'iframe reale
-                     * individuato nel DOM, ma non estraiamo automaticamente
-                     * lo stream dalla pagina protetta.
-                     */
-                    return
-                }
-
                 MaxStreamWebViewStatus.CANCELLED -> {
 
                     Log.e(
                         "MAXSTREAM_DEBUG",
-                        "WebView MaxStream chiusa prima del completamento"
+                        "WebView MaxStream chiusa dall'utente"
                     )
 
                     return
@@ -245,10 +676,40 @@ class MaxStream : ExtractorApi() {
                         "Timeout WebView MaxStream"
                     )
 
-                    return
+                    /*
+                     * Non ritorniamo immediatamente se abbiamo
+                     * già ottenuto dell'HTML valido.
+                     */
+                    if (
+                        html.isBlank()
+                    ) {
+                        return
+                    }
+                }
+
+                MaxStreamWebViewStatus.PLAYER_FOUND -> {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "Player MaxStream rilevato dalla WebView"
+                    )
+                }
+
+                MaxStreamWebViewStatus.PLAYER_PAGE_READY -> {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        "Pagina player MaxStream caricata dalla WebView"
+                    )
                 }
             }
         }
+
+        /*
+         * =====================================================
+         * CAPTCHA
+         * =====================================================
+         */
 
         val maxDoc =
             Jsoup.parse(
@@ -269,11 +730,18 @@ class MaxStream : ExtractorApi() {
 
             Log.e(
                 "MAXSTREAM_DEBUG",
-                "MaxStream richiede ancora UPCaptcha nonostante la sessione WebView"
+                "MaxStream richiede ancora UPCaptcha"
             )
 
             return
         }
+
+        /*
+         * =====================================================
+         * METODO CLASSICO MAXSTREAM
+         * decodedBaseUrl + decodedFileCode
+         * =====================================================
+         */
 
         val iframeBase64 =
             Regex(
@@ -339,7 +807,7 @@ class MaxStream : ExtractorApi() {
                         .apply {
 
                             this["Referer"] =
-                                response.url
+                                playerReferer
                         }
 
                 val iframeResponse =
@@ -366,6 +834,44 @@ class MaxStream : ExtractorApi() {
                     "IFRAME HTML LENGTH = ${iframeHtml.length}"
                 )
 
+                /*
+                 * =================================================
+                 * STREAMFLIX METHOD SULL'IFRAME
+                 * =================================================
+                 */
+
+                val iframeSource =
+                    extractStreamflixSource(
+                        iframeHtml
+                    )
+
+                if (
+                    !iframeSource.isNullOrBlank()
+                ) {
+
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        ">>> STREAMFLIX SOURCE TROVATA NELL'IFRAME <<<"
+                    )
+
+                    val success =
+                        sendStream(
+                            streamUrl = iframeSource,
+                            playerReferer = iframeResponse.url,
+                            baseHeaders = iframeHeaders,
+                            callback = callback
+                        )
+
+                    if (success) {
+                        return
+                    }
+                }
+
+                /*
+                 * Se Streamflix regex non trova niente,
+                 * continuiamo con il vecchio sistema.
+                 */
+
                 html =
                     iframeHtml
 
@@ -378,7 +884,7 @@ class MaxStream : ExtractorApi() {
 
                 Log.e(
                     "MAXSTREAM_DEBUG",
-                    "Errore caricamento iframe /emiuhi/: ${e.message}"
+                    "Errore caricamento iframe MaxStream: ${e.message}"
                 )
             }
 
@@ -390,6 +896,12 @@ class MaxStream : ExtractorApi() {
             )
         }
 
+        /*
+         * =====================================================
+         * ANALISI PLAYER
+         * =====================================================
+         */
+
         Log.e(
             "MAXSTREAM_DEBUG",
             "=============================="
@@ -399,6 +911,37 @@ class MaxStream : ExtractorApi() {
             "MAXSTREAM_DEBUG",
             "PLAYER REFERER = $playerReferer"
         )
+
+        /*
+         * Ultimo tentativo Streamflix dopo tutte
+         * le eventuali trasformazioni della pagina.
+         */
+        val finalStreamflixSource =
+            extractStreamflixSource(
+                html
+            )
+
+        if (
+            !finalStreamflixSource.isNullOrBlank()
+        ) {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                ">>> STREAMFLIX SOURCE TROVATA NEL PLAYER FINALE <<<"
+            )
+
+            val success =
+                sendStream(
+                    streamUrl = finalStreamflixSource,
+                    playerReferer = playerReferer,
+                    baseHeaders = headers,
+                    callback = callback
+                )
+
+            if (success) {
+                return
+            }
+        }
 
         val document =
             Jsoup.parse(
@@ -410,6 +953,10 @@ class MaxStream : ExtractorApi() {
             "PLAYER TITLE = ${document.title()}"
         )
 
+        /*
+         * Log degli script, utile per capire
+         * eventuali cambiamenti futuri di MaxStream.
+         */
         document
             .select(
                 "script"
@@ -457,6 +1004,15 @@ class MaxStream : ExtractorApi() {
                 }
             }
 
+        /*
+         * =====================================================
+         * FALLBACK VECCHIO
+         * =====================================================
+         *
+         * Cerca qualsiasi URL .m3u8 oppure .mp4
+         * nell'HTML.
+         */
+
         val streamUrlRegex =
             """https?://[^\s"'<>\\]+\.(?:m3u8|mp4)[^\s"'<>\\]*"""
                 .toRegex(
@@ -474,6 +1030,14 @@ class MaxStream : ExtractorApi() {
                             "\\/",
                             "/"
                         )
+                        .replace(
+                            "\\u0026",
+                            "&"
+                        )
+                        .replace(
+                            "&amp;",
+                            "&"
+                        )
                 }
                 .distinct()
                 .toList()
@@ -489,90 +1053,33 @@ class MaxStream : ExtractorApi() {
 
             Log.e(
                 "MAXSTREAM_DEBUG",
-                "STREAM = $streamUrl"
+                "FALLBACK STREAM = $streamUrl"
             )
 
-            val isM3u8 =
-                streamUrl.contains(
-                    ".m3u8",
-                    ignoreCase = true
+            val success =
+                sendStream(
+                    streamUrl = streamUrl,
+                    playerReferer = playerReferer,
+                    baseHeaders = headers,
+                    callback = callback
                 )
 
-            val streamHeaders =
-                headers
-                    .toMutableMap()
-                    .apply {
+            if (success) {
 
-                        this["Referer"] =
-                            playerReferer
-                    }
-
-            if (
-                isM3u8
-            ) {
-
-                val m3u8Links =
-                    M3u8Helper.generateM3u8(
-                        source = this.name,
-                        streamUrl = streamUrl,
-                        referer = playerReferer,
-                        headers = streamHeaders
-                    )
-
-                if (
-                    m3u8Links.isNotEmpty()
-                ) {
-
-                    m3u8Links
-                        .forEach(
-                            callback
-                        )
-
-                } else {
-
-                    callback.invoke(
-                        newExtractorLink(
-                            source = this.name,
-                            name = this.name,
-                            url = streamUrl,
-                            type =
-                                ExtractorLinkType.M3U8
-                        ) {
-
-                            this.referer =
-                                playerReferer
-
-                            this.headers =
-                                streamHeaders
-
-                            this.quality =
-                                Qualities.Unknown.value
-                        }
-                    )
-                }
-
-            } else {
-
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = this.name,
-                        url = streamUrl,
-                        type =
-                            ExtractorLinkType.VIDEO
-                    ) {
-
-                        this.referer =
-                            playerReferer
-
-                        this.headers =
-                            streamHeaders
-
-                        this.quality =
-                            Qualities.Unknown.value
-                    }
+                /*
+                 * Non facciamo necessariamente return,
+                 * perché potrebbero esserci più qualità.
+                 */
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "Fallback stream aggiunto"
                 )
             }
         }
-    } 
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "MAXSTREAM EXTRACTION FINISHED"
+        )
+    }
 }
