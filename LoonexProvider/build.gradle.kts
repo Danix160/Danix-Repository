@@ -24,7 +24,7 @@ cloudstream {
     description = "Archivio di Anime e Cartoni animati in italiano da Loonex"
     authors = listOf("Danix")
     
-    status = 1
+    status = 0
     tvTypes = listOf("Cartoon", "Anime", "TvSeries", "Movie")
     requiresResources = false
     language = "it"
