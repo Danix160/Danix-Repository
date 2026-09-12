@@ -122,7 +122,7 @@
 * 🎞️ Supporto ai trailer
 * ▶️ Riproduzione delle sigle tramite YouTube
 
-* ❌ Protezione Aggiunta, Ci stiamo lavorando...
+> ❌ Protezione Aggiunta, Ci stiamo lavorando...
 
 ---
 
