@@ -92,6 +92,51 @@ class MaxStream : ExtractorApi() {
      *
      * Restituisce true se il link è stato gestito.
      */
+
+     private fun extractHexIframe(html: String): String? {
+
+        val rawHex =
+            Regex(
+                """var\s+rawHex\s*=\s*["']([0-9a-fA-F]+)["']"""
+            )
+                .find(html)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?: return null
+    
+        return try {
+    
+            val decoded =
+                rawHex
+                    .chunked(2)
+                    .map {
+                        it.toInt(16).toChar()
+                    }
+                    .joinToString("")
+    
+            val finalUrl =
+                decoded.reversed()
+    
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "HEX IFRAME DECODED = $finalUrl"
+            )
+    
+            finalUrl
+    
+        } catch (
+            e: Exception
+        ) {
+    
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "Errore decode HEX: ${e.message}"
+            )
+    
+            null
+        }
+    }
+     
     private suspend fun sendStream(
         streamUrl: String?,
         playerReferer: String,
@@ -742,7 +787,216 @@ class MaxStream : ExtractorApi() {
          * decodedBaseUrl + decodedFileCode
          * =====================================================
          */
+        /*
+ * =====================================================
+ * NUOVO MAXSTREAM 2026
+ * rawHex -> HEX decode -> reverse
+ * =====================================================
+ */
 
+val hexIframeUrl =
+    extractHexIframe(html)
+
+if (!hexIframeUrl.isNullOrBlank()) {
+
+    Log.e(
+        "MAXSTREAM_DEBUG",
+        ">>> NUOVO IFRAME HEX TROVATO <<<"
+    )
+
+    Log.e(
+        "MAXSTREAM_DEBUG",
+        "IFRAME HEX URL = $hexIframeUrl"
+    )
+
+    val iframeHeaders =
+        headers
+            .toMutableMap()
+            .apply {
+                this["Referer"] =
+                    playerReferer
+            }
+
+    try {
+
+        val iframeResponse =
+            app.get(
+                hexIframeUrl,
+                headers = iframeHeaders
+            )
+
+        val iframeHtml =
+            iframeResponse.text
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "HEX IFRAME STATUS = ${iframeResponse.code}"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "HEX IFRAME FINAL URL = ${iframeResponse.url}"
+        )
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "HEX IFRAME HTML LENGTH = ${iframeHtml.length}"
+        )
+
+        /*
+         * Prova prima il metodo Streamflix.
+         */
+        val streamflixSource =
+            extractStreamflixSource(
+                iframeHtml
+            )
+
+        if (!streamflixSource.isNullOrBlank()) {
+
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                ">>> STREAMFLIX SOURCE TROVATA NEL NUOVO IFRAME <<<"
+            )
+
+            val success =
+                sendStream(
+                    streamUrl = streamflixSource,
+                    playerReferer = iframeResponse.url,
+                    baseHeaders = iframeHeaders,
+                    callback = callback
+                )
+
+            if (success) {
+                return
+            }
+        }
+
+        /*
+         * Se sources/src non è presente,
+         * analizziamo comunque l'HTML dell'iframe
+         * con i fallback successivi.
+         */
+        html =
+            iframeHtml
+
+        playerReferer =
+            iframeResponse.url
+
+    } catch (
+        e: Exception
+    ) {
+
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "Errore apertura nuovo iframe HEX: ${e.message}"
+        )
+    }
+ }
+        /*
+         * =====================================================
+         * NUOVO MAXSTREAM 2026
+         * rawHex -> HEX decode -> reverse
+         * =====================================================
+         */
+        
+        val hexIframeUrl =
+            extractHexIframe(html)
+        
+        if (!hexIframeUrl.isNullOrBlank()) {
+        
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                ">>> NUOVO IFRAME HEX TROVATO <<<"
+            )
+        
+            Log.e(
+                "MAXSTREAM_DEBUG",
+                "IFRAME HEX URL = $hexIframeUrl"
+            )
+        
+            val iframeHeaders =
+                headers
+                    .toMutableMap()
+                    .apply {
+                        this["Referer"] =
+                            playerReferer
+                    }
+        
+            try {
+        
+                val iframeResponse =
+                    app.get(
+                        hexIframeUrl,
+                        headers = iframeHeaders
+                    )
+        
+                val iframeHtml =
+                    iframeResponse.text
+        
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "HEX IFRAME STATUS = ${iframeResponse.code}"
+                )
+        
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "HEX IFRAME FINAL URL = ${iframeResponse.url}"
+                )
+        
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "HEX IFRAME HTML LENGTH = ${iframeHtml.length}"
+                )
+        
+                /*
+                 * Prova prima il metodo Streamflix.
+                 */
+                val streamflixSource =
+                    extractStreamflixSource(
+                        iframeHtml
+                    )
+        
+                if (!streamflixSource.isNullOrBlank()) {
+        
+                    Log.e(
+                        "MAXSTREAM_DEBUG",
+                        ">>> STREAMFLIX SOURCE TROVATA NEL NUOVO IFRAME <<<"
+                    )
+        
+                    val success =
+                        sendStream(
+                            streamUrl = streamflixSource,
+                            playerReferer = iframeResponse.url,
+                            baseHeaders = iframeHeaders,
+                            callback = callback
+                        )
+        
+                    if (success) {
+                        return
+                    }
+                }
+        
+                /*
+                 * Se sources/src non è presente,
+                 * analizziamo comunque l'HTML dell'iframe
+                 * con i fallback successivi.
+                 */
+                html =
+                    iframeHtml
+        
+                playerReferer =
+                    iframeResponse.url
+        
+            } catch (
+                e: Exception
+            ) {
+        
+                Log.e(
+                    "MAXSTREAM_DEBUG",
+                    "Errore apertura nuovo iframe HEX: ${e.message}"
+                )
+            }
+        }
         val iframeBase64 =
             Regex(
                 """decodedBaseUrl\s*=\s*atob\(\s*["']([^"']+)["']\s*\)"""
