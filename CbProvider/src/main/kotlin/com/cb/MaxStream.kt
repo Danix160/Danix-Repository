@@ -312,6 +312,10 @@ class MaxStream : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
+        Log.e(
+            "MAXSTREAM_DEBUG",
+            "### MAXSTREAM NUOVO HEX BUILD 12-09-2026 ###"
+        )
 
         Log.e(
             "MAXSTREAM_DEBUG",
