@@ -37,11 +37,17 @@ jobs:
         with:
           java-version: 17
 
-      # ✅ After (Fixed)
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v2
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
-          packages: 'cmdline-tools;latest platform-tools platforms;android-34 build-tools;34.0.0'
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug
 
       - name: Build Plugins
         run: |
