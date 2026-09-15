@@ -269,6 +269,60 @@ class LoadmExtractor : ExtractorApi() {
                     useWideViewPort = true
                 }
 
+                val playScript = """
+                    (function() {
+                        if (window._loadmLoopRunning) return;
+                        window._loadmLoopRunning = true;
+
+                        var clickCount = 0;
+                        var triggerInterval = setInterval(function() {
+                            clickCount++;
+                            if (clickCount > 40) {
+                                clearInterval(triggerInterval);
+                                return;
+                            }
+
+                            try {
+                                // 1. Click selettori noti
+                                var targets = [
+                                    '#player-button',
+                                    '.vds-play-button',
+                                    '[data-media-provider]',
+                                    '.play-btn',
+                                    'button[aria-label*="Play"]',
+                                    'button[aria-label*="play"]',
+                                    '.jw-display-icon-container'
+                                ];
+
+                                for (var i = 0; i < targets.length; i++) {
+                                    var el = document.querySelector(targets[i]);
+                                    if (el) {
+                                        el.click();
+                                    }
+                                }
+
+                                // 2. Click fittizio al centro pagina
+                                var centerEl = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+                                if (centerEl) {
+                                    centerEl.click();
+                                }
+
+                                // 3. Play forzato su tutti i tag video
+                                var videos = document.querySelectorAll('video');
+                                for (var j = 0; j < videos.length; j++) {
+                                    var v = videos[j];
+                                    v.muted = true;
+                                    v.playsInline = true;
+                                    var promise = v.play();
+                                    if (promise !== undefined) {
+                                        promise.catch(function() {});
+                                    }
+                                }
+                            } catch(err) {}
+                        }, 500);
+                    })();
+                """.trimIndent()
+
                 view.webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
@@ -297,54 +351,18 @@ class LoadmExtractor : ExtractorApi() {
                             }, 250)
                         }
 
+                        // Appena intercetta le prime chiamate API di loadM, prova subito ad iniettare
+                        if (!videoFound && (requestUrl.contains("loadm.cam/api/") || requestUrl.contains("vidstack"))) {
+                            handler.post {
+                                view?.evaluateJavascript(playScript, null)
+                            }
+                        }
+
                         return super.shouldInterceptRequest(view, request)
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-
-                        // Script ad intervallo continuo: ritenta il play ogni 500ms finché non parte
-                        val playScript = """
-                            (function() {
-                                if (window._playIntervalStarted) return;
-                                window._playIntervalStarted = true;
-                                
-                                var attempts = 0;
-                                var interval = setInterval(function() {
-                                    attempts++;
-                                    if (attempts > 30) {
-                                        clearInterval(interval);
-                                        return;
-                                    }
-                                    
-                                    try {
-                                        // 1. Cerca bottoni play specifici o generici
-                                        var playBtn = document.getElementById('player-button') ||
-                                                      document.querySelector('.vds-play-button') ||
-                                                      document.querySelector('[data-media-provider]') ||
-                                                      document.querySelector('.play-btn') ||
-                                                      document.querySelector('.jw-display-icon-container');
-                                        if (playBtn) {
-                                            playBtn.click();
-                                        }
-
-                                        // 2. Forza play diretto su video
-                                        var videos = document.querySelectorAll('video');
-                                        videos.forEach(function(v) {
-                                            try {
-                                                v.muted = true;
-                                                v.playsInline = true;
-                                                var p = v.play();
-                                                if (p !== undefined) {
-                                                    p.catch(function(e) {});
-                                                }
-                                            } catch(e) {}
-                                        });
-                                    } catch(e) {}
-                                }, 500);
-                            })();
-                        """.trimIndent()
-
                         view?.evaluateJavascript(playScript, null)
                     }
                 }
@@ -356,6 +374,10 @@ class LoadmExtractor : ExtractorApi() {
 
                 Log.d(TAG, "WEBVIEW LOAD = $embedUrl")
                 view.loadUrl(embedUrl, loadHeaders)
+
+                // Timer di backup indipendenti: forzano l'avvio anche se onPageFinished non scatta mai
+                handler.postDelayed({ if (!completed) view.evaluateJavascript(playScript, null) }, 1500)
+                handler.postDelayed({ if (!completed) view.evaluateJavascript(playScript, null) }, 3000)
 
                 handler.postDelayed({
                     if (!completed) {
