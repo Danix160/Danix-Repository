@@ -303,30 +303,49 @@ class LoadmExtractor : ExtractorApi() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
 
-                        if (url?.contains("loadm.", ignoreCase = true) == true) {
-                            handler.postDelayed({
-                                if (completed) return@postDelayed
-                                Log.d(TAG, "Cerco #player-button")
-                                view?.evaluateJavascript(
-                                    """
-                                    (function() {
-                                        try {
-                                            var btn = document.getElementById('player-button');
-                                            if (btn) btn.click();
-                                            var video = document.querySelector('video');
-                                            if (video) {
-                                                try {
-                                                    video.muted = true;
-                                                    video.play();
-                                                } catch(e) {}
-                                            }
-                                        } catch(e) {}
-                                    })();
-                                    """.trimIndent(),
-                                    null
-                                )
-                            }, 1500)
-                        }
+                        // Script ad intervallo continuo: ritenta il play ogni 500ms finché non parte
+                        val playScript = """
+                            (function() {
+                                if (window._playIntervalStarted) return;
+                                window._playIntervalStarted = true;
+                                
+                                var attempts = 0;
+                                var interval = setInterval(function() {
+                                    attempts++;
+                                    if (attempts > 30) {
+                                        clearInterval(interval);
+                                        return;
+                                    }
+                                    
+                                    try {
+                                        // 1. Cerca bottoni play specifici o generici
+                                        var playBtn = document.getElementById('player-button') ||
+                                                      document.querySelector('.vds-play-button') ||
+                                                      document.querySelector('[data-media-provider]') ||
+                                                      document.querySelector('.play-btn') ||
+                                                      document.querySelector('.jw-display-icon-container');
+                                        if (playBtn) {
+                                            playBtn.click();
+                                        }
+
+                                        // 2. Forza play diretto su video
+                                        var videos = document.querySelectorAll('video');
+                                        videos.forEach(function(v) {
+                                            try {
+                                                v.muted = true;
+                                                v.playsInline = true;
+                                                var p = v.play();
+                                                if (p !== undefined) {
+                                                    p.catch(function(e) {});
+                                                }
+                                            } catch(e) {}
+                                        });
+                                    } catch(e) {}
+                                }, 500);
+                            })();
+                        """.trimIndent()
+
+                        view?.evaluateJavascript(playScript, null)
                     }
                 }
 
