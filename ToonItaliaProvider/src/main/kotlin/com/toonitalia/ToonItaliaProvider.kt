@@ -2,10 +2,10 @@ package com.toonitalia
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.amap
-import com.lagradost.cloudstream3.network.CloudflareKiller
 import org.jsoup.nodes.Element
 
 class ToonItaliaProvider : MainAPI() {
@@ -268,6 +268,8 @@ class ToonItaliaProvider : MainAPI() {
                         else -> TvType.TvSeries
                     }
             
+                    // Poster preso direttamente dalla pagina
+                    // della serie/film su ToonItalia.
                     val poster =
                         if (posterCache.containsKey(href)) {
                     
@@ -488,6 +490,10 @@ class ToonItaliaProvider : MainAPI() {
                             .ifBlank { mainUrl }
                     )
     
+                // ------------------------------------------------
+                // PLAYER
+                // ------------------------------------------------
+    
                 val links = fragmentDocument
                     .select("a[href]")
                     .mapNotNull { link ->
@@ -522,6 +528,18 @@ class ToonItaliaProvider : MainAPI() {
                     .distinctBy {
                         it.url
                     }
+    
+                // ------------------------------------------------
+                // TESTO EPISODIO
+                //
+                // Rimuoviamo gli <a> dal clone in modo che:
+                //
+                // "01 - Titolo - VOE - RPMShare"
+                //
+                // diventi:
+                //
+                // "01 - Titolo"
+                // ------------------------------------------------
     
                 val textDocument =
                     fragmentDocument.clone()
@@ -675,24 +693,24 @@ class ToonItaliaProvider : MainAPI() {
     // ============================================================
 
     private data class ToonPlayerLink(
-        val label: String,
-        val url: String
-    )
+    val label: String,
+    val url: String
+)
 
-    private data class ToonLine(
-        val text: String,
-        val links: List<ToonPlayerLink>
-    )
+private data class ToonLine(
+    val text: String,
+    val links: List<ToonPlayerLink>
+)
 
     private data class ToonEpisode(
-        val season: Int,
-        val episode: Int,
-        val absoluteEpisode: Int?,
-        val originalEpisode: Int?,
-        val suffix: String?,
-        val title: String,
-        val links: List<ToonPlayerLink> = emptyList()
-    )
+    val season: Int,
+    val episode: Int,
+    val absoluteEpisode: Int?,
+    val originalEpisode: Int?,
+    val suffix: String?,
+    val title: String,
+    val links: List<ToonPlayerLink> = emptyList()
+)
 
     private suspend fun remapAbsoluteEpisodesWithTmdb(
         episodes: List<Episode>,
@@ -705,6 +723,16 @@ class ToonItaliaProvider : MainAPI() {
         ) {
             return episodes
         }
+    
+        // ------------------------------------------------------------
+        // PROTEZIONE 1
+        //
+        // Questa funzione interviene SOLTANTO quando ToonItalia
+        // ha interpretato tutti gli episodi come una singola stagione.
+        //
+        // Serie che hanno già S1, S2, S3... restano completamente
+        // invariate.
+        // ------------------------------------------------------------
     
         val normalEpisodes =
             episodes.filter {
@@ -728,8 +756,19 @@ class ToonItaliaProvider : MainAPI() {
                 .distinct()
     
         if (toonSeasons.size != 1) {
+            println(
+                "[TMDB REMAP] Ignorato: ToonItalia possiede già " +
+                    "${toonSeasons.size} stagioni"
+            )
+    
             return episodes
         }
+    
+        // ------------------------------------------------------------
+        // PROTEZIONE 2
+        //
+        // Gli episodi devono essere 1,2,3,4...N senza buchi.
+        // ------------------------------------------------------------
     
         val sortedEpisodes =
             normalEpisodes.sortedBy {
@@ -749,13 +788,29 @@ class ToonItaliaProvider : MainAPI() {
             (1..sortedEpisodes.size).toList()
     
         if (episodeNumbers != expectedNumbers) {
+    
+            println(
+                "[TMDB REMAP] Ignorato: numerazione ToonItalia " +
+                    "non consecutiva"
+            )
+    
             return episodes
         }
+    
+        // ------------------------------------------------------------
+        // STAGIONI TMDB
+        // ------------------------------------------------------------
     
         val tmdbSeasons =
             Tmdb.getTvSeasons(tmdbId)
     
         if (tmdbSeasons.size <= 1) {
+    
+            println(
+                "[TMDB REMAP] Ignorato: TMDB non possiede " +
+                    "più stagioni"
+            )
+    
             return episodes
         }
     
@@ -764,9 +819,38 @@ class ToonItaliaProvider : MainAPI() {
                 it.episodeCount
             }
     
+        // ------------------------------------------------------------
+        // PROTEZIONE PRINCIPALE
+        //
+        // Il totale deve coincidere ESATTAMENTE.
+        // ------------------------------------------------------------
+    
         if (tmdbTotal != sortedEpisodes.size) {
+    
+            println(
+                "[TMDB REMAP] Ignorato: " +
+                    "ToonItalia=${sortedEpisodes.size}, " +
+                    "TMDB=$tmdbTotal"
+            )
+    
             return episodes
         }
+    
+        println(
+            "[TMDB REMAP] Match perfetto: " +
+                "${sortedEpisodes.size} episodi"
+        )
+    
+        println(
+            "[TMDB REMAP] Stagioni TMDB: " +
+                tmdbSeasons.joinToString {
+                    "S${it.season}=${it.episodeCount}"
+                }
+        )
+    
+        // ------------------------------------------------------------
+        // REMAPPING
+        // ------------------------------------------------------------
     
         var absoluteIndex = 0
 
@@ -795,6 +879,7 @@ class ToonItaliaProvider : MainAPI() {
             }
         }
         
+        // Ultima verifica PRIMA di modificare gli Episode.
         if (
             absoluteIndex != sortedEpisodes.size ||
             mapping.size != sortedEpisodes.size
@@ -802,6 +887,7 @@ class ToonItaliaProvider : MainAPI() {
             return episodes
         }
         
+        // Da questo punto sappiamo che il mapping è completo.
         val remapped =
             mapping.map {
                 (episode, seasonNumber, episodeNumber) ->
@@ -826,6 +912,10 @@ class ToonItaliaProvider : MainAPI() {
         val article = document.selectFirst("article")
         val content = document.selectFirst(".entry-content")
 
+        // --------------------------------------------------------
+        // TITOLO
+        // --------------------------------------------------------
+
         val title = document
             .selectFirst("h1.entry-title")
             ?.text()
@@ -846,6 +936,10 @@ class ToonItaliaProvider : MainAPI() {
 
             ?: return null
 
+        // --------------------------------------------------------
+        // POSTER
+        // --------------------------------------------------------
+
         val poster = content
             ?.selectFirst("img")
             ?.let { img ->
@@ -857,9 +951,23 @@ class ToonItaliaProvider : MainAPI() {
                         .takeIf { it.isNotBlank() }
             }
 
+        // --------------------------------------------------------
+        // ANNO
+        // --------------------------------------------------------
+
         val year = extractYear(content)
+
+        // --------------------------------------------------------
+        // TRAMA
+        // --------------------------------------------------------
+
         val plot = extractPlot(content)
-        val trailerUrl = extractSeriesTrailer(content)
+        val trailerUrl =
+                   extractSeriesTrailer(content)
+
+        // --------------------------------------------------------
+        // PLAYER FILM
+        // --------------------------------------------------------
 
         val moviePlayerLinks =
             extractMoviePlayerLinks(content)
@@ -869,6 +977,10 @@ class ToonItaliaProvider : MainAPI() {
                 url,
                 moviePlayerLinks
             )
+
+        // --------------------------------------------------------
+        // TIPO
+        // --------------------------------------------------------
 
         val type = detectLoadType(
             article = article,
@@ -954,6 +1066,10 @@ class ToonItaliaProvider : MainAPI() {
                             ?: seriesPoster
                 }
             }
+
+        // --------------------------------------------------------
+        // LOAD RESPONSE
+        // --------------------------------------------------------
 
         return when (type) {
 
@@ -1174,31 +1290,72 @@ class ToonItaliaProvider : MainAPI() {
             return false
         }
 
-        var loaded = false
+        println("========== TOONITALIA PLAYERS ==========")
 
         playerLinks.forEach { player ->
         
-            if (player.label.equals("LuluStream", ignoreCase = true)) {
-                return@forEach
-            }
+            val host = runCatching {
+                java.net.URI(player.url)
+                    .host
+                    ?.lowercase()
+                    .orEmpty()
+            }.getOrDefault("")
         
-            val result = runCatching {
-        
-                loadExtractor(
-                    player.url,
-                    mainUrl,
-                    subtitleCallback,
-                    callback
-                )
-        
-            }.getOrDefault(false)
-        
-            if (result) {
-                loaded = true
-            }
+            println(
+                "[ToonItalia] " +
+                    "LABEL=${player.label} | " +
+                    "HOST=$host | " +
+                    "URL=${player.url}"
+            )
         }
         
-        return loaded
+        println("=========================================")
+    
+        var loaded = false
+
+            playerLinks.forEach { player ->
+            
+                // LuluStream lo ignoriamo
+                if (player.label.equals("LuluStream", ignoreCase = true)) {
+                    println("[ToonItalia] LuluStream ignorato")
+                    return@forEach
+                }
+            
+                println(
+                    "[ToonItalia] provo extractor: " +
+                        "${player.label} -> ${player.url}"
+                )
+            
+                val result = runCatching {
+            
+                    loadExtractor(
+                        player.url,
+                        mainUrl,
+                        subtitleCallback,
+                        callback
+                    )
+            
+                }.onFailure { error ->
+            
+                    println(
+                        "[ToonItalia] extractor ERROR: " +
+                            "${player.label} -> " +
+                            "${error.javaClass.simpleName}: ${error.message}"
+                    )
+            
+                }.getOrDefault(false)
+            
+                println(
+                    "[ToonItalia] extractor result: " +
+                        "${player.label} -> $result"
+                )
+            
+                if (result) {
+                    loaded = true
+                }
+            }
+            
+            return loaded
     }
 
     // ============================================================
@@ -1392,11 +1549,16 @@ class ToonItaliaProvider : MainAPI() {
 
         val unnumberedSpecialCounters = mutableMapOf<String, Int>()
 
+        // Esempio:
+        // 1° Stagione
+        // Stagione 1
         val seasonRegex = Regex(
             """(?:Stagione\s*(\d+)|(\d+)\s*°?\s*Stagione)""",
             RegexOption.IGNORE_CASE
         )
 
+        // Esempio:
+        // 52 – Il più forte vince
         val episodeRegex = Regex(
             """^\s*(\d{1,4})\s*[-–—]\s*(.+?)\s*$"""
         )
@@ -1405,6 +1567,8 @@ class ToonItaliaProvider : MainAPI() {
             """^\s*(\d{1,4})\.(\d+)\s*[-–—]\s*(.+?)\s*$"""
         )
 
+        // Esempio:
+        // Special-Tv-01 – Avventura nell'ombelico dell'oceano
         val specialTvRegex = Regex(
             """^\s*Special[\s-]*Tv[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""",
             RegexOption.IGNORE_CASE
@@ -1424,6 +1588,10 @@ class ToonItaliaProvider : MainAPI() {
             """^\s*(\d+)\s*[xX×]\s*(\d+(?:\s*-\s*\d+)+)\s*[-–—]\s*(.+?)\s*$"""
         )
 
+        // Esempio:
+        // 1x01A – Bugie pericolose
+        // 1x01B – Al lupo al lupo
+        // 2x03 – Titolo episodio
         val explicitEpisodeRegex = Regex(
             """^\s*(\d+)\s*[xX×]\s*(\d+)([A-Za-z])?\s*[-–—]\s*(.+?)\s*$"""
         )
@@ -1435,6 +1603,9 @@ class ToonItaliaProvider : MainAPI() {
 
         content.children().forEach elementLoop@ { element ->
 
+            // ----------------------------------------------------
+            // CAMBIO STAGIONE
+            // ----------------------------------------------------
             if (
                 element.tagName() == "h2" ||
                 element.tagName() == "h3" ||
@@ -1443,6 +1614,10 @@ class ToonItaliaProvider : MainAPI() {
                 
                 val rawHeadingText = element.text().trim()
                 val headingText = normalize(rawHeadingText)
+
+                // ----------------------------------------------------
+                // SPECIALI / OVA
+                // ----------------------------------------------------
 
                 if (
                     headingText.contains("speciali") ||
@@ -1457,6 +1632,10 @@ class ToonItaliaProvider : MainAPI() {
                 
                     return@elementLoop
                 }
+
+                // ----------------------------------------------------
+                // DISK / DISC / DISCO
+                // ----------------------------------------------------
 
                 val diskMatch = diskRegex.find(rawHeadingText)
                 
@@ -1496,6 +1675,10 @@ class ToonItaliaProvider : MainAPI() {
                     return@elementLoop
                 }
 
+                // ----------------------------------------------------
+                // STAGIONI NORMALI
+                // ----------------------------------------------------
+
                 val match = seasonRegex.find(
                     element.text()
                 )
@@ -1514,6 +1697,8 @@ class ToonItaliaProvider : MainAPI() {
 
                         currentGroupName = null
 
+                        // Se l'HTML ripete due volte la stessa stagione,
+                        // non azzeriamo inutilmente il riferimento.
                         if (currentSeason != seasonNumber) {
                             currentSeason = seasonNumber
                             seasonFirstAbsolute = null
@@ -1523,6 +1708,10 @@ class ToonItaliaProvider : MainAPI() {
 
                 return@elementLoop
             }
+
+            // ----------------------------------------------------
+            // BLOCCHI EPISODI
+            // ----------------------------------------------------
 
             if (element.tagName() != "p") {
                 return@elementLoop
@@ -1540,64 +1729,82 @@ class ToonItaliaProvider : MainAPI() {
                     )
             
                 val playerLinks = lineData.links
-                val normalizedLine = normalize(cleanLine)
-                
-                if (
-                    normalizedLine == "speciali" ||
-                    normalizedLine == "special" ||
-                    normalizedLine == "speciali tv" ||
-                    normalizedLine == "special tv" ||
-                    normalizedLine == "episodi speciali" ||
-                    normalizedLine == "ova" ||
-                    normalizedLine == "oav" ||
-                    normalizedLine == "extra" ||
-                    normalizedLine == "episodi extra"
-                ) {
-                    currentSeason = 0
-                    seasonFirstAbsolute = null
-                    currentGroupName = null
-                
-                    return@lineLoop
-                }
-                
-                val paragraphDiskMatch = diskRegex.find(cleanLine)
-                
-                if (paragraphDiskMatch != null) {
-                
-                    val diskNumber = paragraphDiskMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.toIntOrNull()
-                
-                    val diskTitle = paragraphDiskMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
-                
-                    groupSeasonCounter++
-                
-                    currentSeason = groupSeasonCounter
-                    seasonFirstAbsolute = null
-                
-                    currentGroupName = buildString {
-                
-                        append("Disk")
-                
-                        if (diskNumber != null) {
-                            append(" ")
-                            append(diskNumber)
-                        }
-                
-                        if (diskTitle != null) {
-                            append(" - ")
-                            append(diskTitle)
-                        }
-                    }
-                
-                    return@lineLoop
-                }
 
+                    // ====================================================
+                    // CAMBIO SEZIONE DENTRO I PARAGRAFI
+                    // ====================================================
+                    
+                    val normalizedLine = normalize(cleanLine)
+                    
+                    // ----------------------------------------------------
+                    // SPECIALI / OVA
+                    // Esempio: <span>Speciali Tv:</span>
+                    // ----------------------------------------------------
+                    
+                    if (
+                        normalizedLine == "speciali" ||
+                        normalizedLine == "special" ||
+                        normalizedLine == "speciali tv" ||
+                        normalizedLine == "special tv" ||
+                        normalizedLine == "episodi speciali" ||
+                        normalizedLine == "ova" ||
+                        normalizedLine == "oav" ||
+                        normalizedLine == "extra" ||
+                        normalizedLine == "episodi extra"
+                    ) {
+                        currentSeason = 0
+                        seasonFirstAbsolute = null
+                        currentGroupName = null
+                    
+                        return@lineLoop
+                    }
+                    
+                    // ----------------------------------------------------
+                    // DISK / DISC / DISCO
+                    // ----------------------------------------------------
+                    
+                    val paragraphDiskMatch = diskRegex.find(cleanLine)
+                    
+                    if (paragraphDiskMatch != null) {
+                    
+                        val diskNumber = paragraphDiskMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                    
+                        val diskTitle = paragraphDiskMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.trim()
+                            ?.takeIf { it.isNotBlank() }
+                    
+                        groupSeasonCounter++
+                    
+                        currentSeason = groupSeasonCounter
+                        seasonFirstAbsolute = null
+                    
+                        currentGroupName = buildString {
+                    
+                            append("Disk")
+                    
+                            if (diskNumber != null) {
+                                append(" ")
+                                append(diskNumber)
+                            }
+                    
+                            if (diskTitle != null) {
+                                append(" - ")
+                                append(diskTitle)
+                            }
+                        }
+                    
+                        return@lineLoop
+                    }
+
+                // ====================================================
+                // SPECIALI TV
+                // ====================================================
+                
                 val specialMatch = specialTvRegex.find(cleanLine)
                 
                 if (specialMatch != null) {
@@ -1632,6 +1839,11 @@ class ToonItaliaProvider : MainAPI() {
                 
                     return@lineLoop
                 }
+                
+                
+                // ====================================================
+                // OVA / OAV / SPECIAL / EXTRA NUMERATI
+                // ====================================================
                 
                 val genericSpecialMatch = specialGenericRegex.find(cleanLine)
                 
@@ -1681,6 +1893,11 @@ class ToonItaliaProvider : MainAPI() {
                 
                     return@lineLoop
                 }
+                
+                
+                // ====================================================
+                // OVA / OAV / SPECIAL / SPECIALE / EXTRA SENZA NUMERO
+                // ====================================================
                 
                 val unnumberedSpecialMatch =
                     unnumberedSpecialRegex.find(cleanLine)
@@ -1732,59 +1949,70 @@ class ToonItaliaProvider : MainAPI() {
                     return@lineLoop
                 }
 
-                val multiMatch = multiEpisodeRegex.find(cleanLine)
-                
-                if (multiMatch != null) {
-                
-                    val explicitSeason = multiMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
-                
-                    val episodeNumbers = multiMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.split(Regex("""\s*-\s*"""))
-                        ?.mapNotNull { it.toIntOrNull() }
-                        .orEmpty()
-                
-                    var title = multiMatch
-                        .groupValues
-                        .getOrNull(3)
-                        ?.trim()
-                        .orEmpty()
-                
-                    title = cleanEpisodeTitle(title)
-                
-                    if (episodeNumbers.isEmpty() || title.isBlank()) {
+                    // ====================================================
+                    // FORMATO MULTI-EPISODIO
+                    // Esempio:
+                    // 2x05-06-07 – Carly va in Giappone
+                    // 3x08-09 – Lascio iCarly
+                    // ====================================================
+                    
+                    val multiMatch = multiEpisodeRegex.find(cleanLine)
+                    
+                    if (multiMatch != null) {
+                    
+                        val explicitSeason = multiMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        val episodeNumbers = multiMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.split(Regex("""\s*-\s*"""))
+                            ?.mapNotNull { it.toIntOrNull() }
+                            .orEmpty()
+                    
+                        var title = multiMatch
+                            .groupValues
+                            .getOrNull(3)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        title = cleanEpisodeTitle(title)
+                    
+                        if (episodeNumbers.isEmpty() || title.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        val firstEpisode = episodeNumbers.first()
+                    
+                        val sourceLabel = buildString {
+                            append(explicitSeason)
+                            append("x")
+                            append(
+                                episodeNumbers.joinToString("-") {
+                                    it.toString().padStart(2, '0')
+                                }
+                            )
+                        }
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = explicitSeason,
+                            episode = firstEpisode,
+                            absoluteEpisode = null,
+                            originalEpisode = firstEpisode,
+                            suffix = "MULTI",
+                            title = "$sourceLabel - $title",
+                            links = playerLinks
+                        )
+                    
                         return@lineLoop
                     }
-                
-                    val firstEpisode = episodeNumbers.first()
-                
-                    val sourceLabel = buildString {
-                        append(explicitSeason)
-                        append("x")
-                        append(
-                            episodeNumbers.joinToString("-") {
-                                it.toString().padStart(2, '0')
-                            }
-                        )
-                    }
-                
-                    parsedEpisodes += ToonEpisode(
-                        season = explicitSeason,
-                        episode = firstEpisode,
-                        absoluteEpisode = null,
-                        originalEpisode = firstEpisode,
-                        suffix = "MULTI",
-                        title = "$sourceLabel - $title",
-                        links = playerLinks
-                    )
-                
-                    return@lineLoop
-                }
+
+                // ====================================================
+                // FORMATO ESPLICITO SxE / SxEA-B
+                // ====================================================
 
                 val explicitMatch =
                     explicitEpisodeRegex.find(cleanLine)
@@ -1903,49 +2131,52 @@ class ToonItaliaProvider : MainAPI() {
                 
                 val decimalMatch = decimalEpisodeRegex.find(cleanLine)
                     
-                if (decimalMatch != null) {
-                
-                    val whole = decimalMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
-                
-                    val decimal = decimalMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
-                
-                    var title = decimalMatch
-                        .groupValues
-                        .getOrNull(3)
-                        ?.trim()
-                        .orEmpty()
-                
-                    title = cleanEpisodeTitle(title)
-                
-                    if (title.isBlank()) {
+                    if (decimalMatch != null) {
+                    
+                        val whole = decimalMatch
+                            .groupValues
+                            .getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        val decimal = decimalMatch
+                            .groupValues
+                            .getOrNull(2)
+                            ?.toIntOrNull()
+                            ?: return@lineLoop
+                    
+                        var title = decimalMatch
+                            .groupValues
+                            .getOrNull(3)
+                            ?.trim()
+                            .orEmpty()
+                    
+                        title = cleanEpisodeTitle(title)
+                    
+                        if (title.isBlank()) {
+                            return@lineLoop
+                        }
+                    
+                        val specialNumber = parsedEpisodes.count {
+                            it.season == 0 &&
+                                it.suffix?.startsWith("DECIMAL") == true
+                        } + 1
+                    
+                        parsedEpisodes += ToonEpisode(
+                            season = 0,
+                            episode = specialNumber,
+                            absoluteEpisode = null,
+                            originalEpisode = whole,
+                            suffix = "DECIMAL${whole}_${decimal}",
+                            title = "$whole.$decimal - $title",
+                            links = playerLinks
+                        )
+                    
                         return@lineLoop
                     }
-                
-                    val specialNumber = parsedEpisodes.count {
-                        it.season == 0 &&
-                            it.suffix?.startsWith("DECIMAL") == true
-                    } + 1
-                
-                    parsedEpisodes += ToonEpisode(
-                        season = 0,
-                        episode = specialNumber,
-                        absoluteEpisode = null,
-                        originalEpisode = whole,
-                        suffix = "DECIMAL${whole}_${decimal}",
-                        title = "$whole.$decimal - $title",
-                        links = playerLinks
-                    )
-                
-                    return@lineLoop
-                }
+                // ====================================================
+                // FORMATO NUMERICO ASSOLUTO
+                // ====================================================
 
                 val season = currentSeason ?: 1
 
