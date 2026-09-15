@@ -22,7 +22,7 @@ cloudstream {
     extra["prefix"] = "GuardaPlay"
     extra["displayName"] = "GuardaPlay"
     
-    version = 11
+    version = 12
     description = "GuardaPlay"
     authors = listOf("Danix")
     
