@@ -5,7 +5,7 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.amap
-import com.lagradost.nicehttp.CloudflareKiller
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import org.jsoup.nodes.Element
 import java.util.concurrent.ConcurrentHashMap
 
