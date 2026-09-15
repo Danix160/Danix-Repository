@@ -22,11 +22,11 @@ cloudstream {
     extra["prefix"] = "GuardaPlay"
     extra["displayName"] = "GuardaPlay"
     
-    version = 7
+    version = 8
     description = "GuardaPlay"
     authors = listOf("Danix")
     
-    status = 0
+    status = 1
     tvTypes = listOf("Movie")
     requiresResources = false
     language = "it"
