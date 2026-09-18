@@ -676,7 +676,7 @@ val originalEpisode = xMatch
                 )
             )
     
-            val drimeJson = drimeResponse.text
+            val drimeJson = drimeResponse.textLarge
     
             val stream = Regex(
                 """"stream"\s*:\s*"([^"]+)""""
@@ -728,7 +728,7 @@ val originalEpisode = xMatch
             headers = headers,
             referer = "$mainUrl/"
         )
-        val html = response.text
+        val html = response.textLarge
 
         // Recuperiamo l'ID dell'episodio corrente (necessario per la POST)
         val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
@@ -767,7 +767,7 @@ val originalEpisode = xMatch
                     referer = data
                 )
 
-                val authJson = authResponse.text
+                val authJson = authResponse.textLarge
                 val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
 
                 if (payload != null) {
