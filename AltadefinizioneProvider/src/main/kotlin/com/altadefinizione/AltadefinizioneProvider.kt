@@ -354,7 +354,6 @@ private fun toHorizontalHomeResponse(
             }
         }
     }
-}
 
     private fun String.normalizeSlug(): String {
     return java.text.Normalizer
