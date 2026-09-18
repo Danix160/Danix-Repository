@@ -26,7 +26,7 @@ cloudstream {
     description = "cb01uno.one"
     authors = listOf("Danix")
     
-    status = 0
+    status = 1
     tvTypes = listOf("Movie", "TvSeries", "Cartoon")
     requiresResources = false
     language = "it"
