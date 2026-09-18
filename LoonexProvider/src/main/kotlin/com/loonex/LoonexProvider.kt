@@ -166,21 +166,29 @@ class LoonexProvider : MainAPI() {
     }
 
     private fun rc4Decode(encoded: ByteArray, keyStr: String): String {
-        val key = keyStr.toByteArray()
+        val key = keyStr.toByteArray(Charsets.UTF_8)
         val s = IntArray(256) { it }
         var j = 0
         for (i in 0 until 256) {
-            j = (j + s[i] + key[i % key.size]) and 0xFF
-            val temp = s[i]; s[i] = s[j]; s[j] = temp
+            j = (j + s[i] + (key[i % key.size].toInt() and 0xFF)) and 0xFF
+            val temp = s[i]
+            s[i] = s[j]
+            s[j] = temp
         }
         var i = 0
         j = 0
-        val out = ByteArray(encoded.size)
+        val out = CharArray(encoded.size)
         for (y in encoded.indices) {
             i = (i + 1) and 0xFF
             j = (j + s[i]) and 0xFF
-            val temp = s[i]; s[i] = s[j]; s[j] = temp
-            out[y] = (encoded[y].toInt() xor s[(s[i] + s[j]) and 0xFF]).toByte()
+            val temp = s[i]
+            s[i] = s[j]
+            s[j] = temp
+            
+            // IL FIX ERA QUI: "and 0xFF" impedisce l'estensione del segno in negativo
+            val byteVal = encoded[y].toInt() and 0xFF
+            val cipherByte = s[(s[i] + s[j]) and 0xFF]
+            out[y] = (byteVal xor cipherByte).toChar()
         }
         return String(out)
     }
@@ -204,411 +212,122 @@ class LoonexProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
+        val doc = app.get(url, headers = headers).document
+        val html = doc.toString()
 
-    val doc = app.get(
-        url,
-        headers = headers
-    ).document
+        val title = Regex(""""title"\s*:\s*"([^"]+)"""").find(html)?.groupValues?.get(1)?.replace("\\/", "/")
+            ?: doc.selectFirst("h1,h2,.cartoon-title")?.text()?.trim() ?: "Loonex"
 
-    val html = doc.toString()
+        val poster = Regex(""""image"\s*:\s*"([^"]+)"""").find(html)?.groupValues?.get(1)?.replace("\\/", "/")?.let(::fixUrl)
 
-    val title = Regex(
-        """"title"\s*:\s*"([^"]+)""""
-    ).find(html)
-        ?.groupValues
-        ?.get(1)
-        ?.replace("\\/", "/")
-        ?: doc.selectFirst("h1,h2,.cartoon-title")
-            ?.text()
-            ?.trim()
-        ?: "Loonex"
+        val plot = doc.selectFirst(".content-box-opaque .text-secondary[style*=\"line-height\"]")?.ownText()?.trim()?.takeIf { it.isNotBlank() }
 
-    val poster = Regex(
-        """"image"\s*:\s*"([^"]+)""""
-    ).find(html)
-        ?.groupValues
-        ?.get(1)
-        ?.replace("\\/", "/")
-        ?.let(::fixUrl)
-
-        val plot = doc
-            .selectFirst(".content-box-opaque .text-secondary[style*=\"line-height\"]")
-            ?.ownText()
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-
-         val trailerUrl = doc
-            .selectFirst("iframe.poster-trailer-iframe[src]")
-            ?.attr("src")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?.let { src ->
-                Regex("""embed/([A-Za-z0-9_-]{11})""")
-                    .find(src)
-                    ?.groupValues
-                    ?.getOrNull(1)
-            }
-            ?.let { videoId ->
-                "https://www.youtube.com/watch?v=$videoId"
-            }
+        val trailerUrl = doc.selectFirst("iframe.poster-trailer-iframe[src]")?.attr("src")?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { src -> Regex("""embed/([A-Za-z0-9_-]{11})""").find(src)?.groupValues?.getOrNull(1) }
+            ?.let { videoId -> "https://www.youtube.com/watch?v=$videoId" }
             
-            val rawTrailerUrl = try {
-                trailerUrl?.let { youtubeUrl ->
-                    val service = NewPipe.getService(0)
-                    val info = StreamInfo.getInfo(service, youtubeUrl)
-            
-                    info.videoStreams
-                        .firstOrNull()
-                        ?.content
-                        ?.takeIf { it.isNotBlank() }
+        val rawTrailerUrl = try {
+            trailerUrl?.let { youtubeUrl ->
+                val service = NewPipe.getService(0)
+                val info = StreamInfo.getInfo(service, youtubeUrl)
+                info.videoStreams.firstOrNull()?.content?.takeIf { it.isNotBlank() }
+            }
+        } catch (e: Exception) { null }
+
+        val movieCard = doc.selectFirst(".quality-card[data-ep-label]")
+        if (movieCard != null) {
+            val movieUrl = movieCard.selectFirst("a.auto-watch-btn[href]")?.attr("href")?.trim()?.takeIf { it.isNotBlank() }
+            if (movieUrl != null) {
+                return newMovieLoadResponse(title, url, TvType.Movie, fixUrl(movieUrl)) {
+                    posterUrl = poster
+                    this.plot = plot
+                    if (rawTrailerUrl != null) {
+                        trailers.add(TrailerData(extractorUrl = rawTrailerUrl, referer = null, raw = true))
+                    } else {
+                        trailerUrl?.let { trailers.add(TrailerData(extractorUrl = it, referer = null, raw = false)) }
+                    }
                 }
-            } catch (e: Exception) {
-                null
             }
+        }
 
+        val episodes = mutableListOf<Episode>()
+        val seasonsData = mutableListOf<SeasonData>()
 
-/*
- * =========================================================
- * FILM
- * =========================================================
- *
- * Loonex usa .quality-card per i film completi,
- * mentre le serie utilizzano .episode-row.
- */
-val movieCard = doc.selectFirst(
-    ".quality-card[data-ep-label]"
-)
+        val seasonButtons = doc.select("""#season-tabs button[data-bs-target][data-season-name]""")
+        seasonButtons.forEachIndexed { tabIndex, button ->
+            val cloudSeason = tabIndex + 1
+            val tabName = button.attr("data-season-name").trim().ifBlank { "Parte $cloudSeason" }
+            val tmdbId = findTmdbSeries(tabName)
+            val tmdbStillsBySeason = mutableMapOf<Int, Map<Int, String>>()
+            val targetId = button.attr("data-bs-target").trim().removePrefix("#")
+            
+            if (targetId.isBlank()) return@forEachIndexed
+            val tabContainer = doc.getElementById(targetId) ?: return@forEachIndexed
 
-if (movieCard != null) {
+            seasonsData.add(SeasonData(cloudSeason, tabName))
 
-    val movieUrl = movieCard
-        .selectFirst("a.auto-watch-btn[href]")
-        ?.attr("href")
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
+            val rows = tabContainer.select(".episode-row")
+            rows.forEachIndexed episodeLoop@ { index, row ->
+                val label = row.attr("data-ep-label").trim()
+                val playUrl = row.selectFirst("a.btn-play-sm[href]")?.attr("href")?.trim()?.takeIf { it.isNotBlank() } ?: return@episodeLoop
 
-    if (movieUrl != null) {
+                val xMatch = Regex("""(?i)(\d+)\s*[x×]\s*0*(\d+)""").find(label) ?: Regex("""(?i)(\d+)[x×]0*(\d+)""").find(playUrl)
+                val originalSeason = xMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: cloudSeason
+                val originalEpisode = xMatch?.groupValues?.getOrNull(2)?.toIntOrNull() ?: Regex("""(?i)(?:episodio|episode|ep)\s*0*(\d+)""").find(label)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: (index + 1)
+                
+                val episodeStill = if (tmdbId != null) {
+                    var seasonStills = tmdbStillsBySeason[originalSeason]
+                    if (seasonStills == null) {
+                        seasonStills = getTmdbSeasonStills(tmdbId, originalSeason)
+                        tmdbStillsBySeason[originalSeason] = seasonStills
+                    }
+                    seasonStills[originalEpisode]
+                } else null
 
-        return newMovieLoadResponse(
-            title,
-            url,
-            TvType.Movie,
-            fixUrl(movieUrl)
-        ) {
+                val cloudEpisode = index + 1
+                val displayName = if (label.isNotBlank()) label else "Episodio %02d".format(originalEpisode)
+
+                episodes.add(newEpisode(fixUrl(playUrl)) {
+                    this.season = cloudSeason
+                    this.episode = cloudEpisode
+                    this.name = displayName
+                    this.posterUrl = episodeStill ?: poster
+                })
+            }
+        }
+
+        if (episodes.isEmpty()) {
+            doc.select(".episode-row").forEachIndexed { index, row ->
+                val label = row.attr("data-ep-label").trim()
+                val playUrl = row.selectFirst("a.btn-play-sm")?.attr("href")?.trim()?.takeIf { it.isNotBlank() } ?: return@forEachIndexed
+                val numbers = Regex("""(?i)(\d+)\s*[x×]\s*0*(\d+)""").find(label)
+                val seasonNumber = numbers?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
+                val episodeNumber = numbers?.groupValues?.getOrNull(2)?.toIntOrNull() ?: (index + 1)
+
+                if (seasonsData.none { it.season == seasonNumber }) {
+                    seasonsData.add(SeasonData(seasonNumber, "Stagione $seasonNumber"))
+                }
+
+                episodes.add(newEpisode(fixUrl(playUrl)) {
+                    this.name = label.ifBlank { "Episodio $episodeNumber" }
+                    this.season = seasonNumber
+                    this.episode = episodeNumber
+                })
+            }
+        }
+
+        return newTvSeriesLoadResponse(title, url, TvType.Cartoon, episodes) {
             posterUrl = poster
             this.plot = plot
-        
             if (rawTrailerUrl != null) {
-                trailers.add(
-                    TrailerData(
-                        extractorUrl = rawTrailerUrl,
-                        referer = null,
-                        raw = true
-                    )
-                )
+                trailers.add(TrailerData(extractorUrl = rawTrailerUrl, referer = null, raw = true))
             } else {
-                trailerUrl?.let {
-                    trailers.add(
-                        TrailerData(
-                            extractorUrl = it,
-                            referer = null,
-                            raw = false
-                        )
-                    )
-                }
+                trailerUrl?.let { trailers.add(TrailerData(extractorUrl = it, referer = null, raw = false)) }
             }
-        }
-    }
-}
-
-////////////////
-// SERIE ///////
-////////////////
-        
-    val episodes = mutableListOf<Episode>()
-    val seasonsData = mutableListOf<SeasonData>()
-
-    val seasonButtons = doc.select(
-    """#season-tabs button[data-bs-target][data-season-name]"""
-)
-
-seasonButtons.forEachIndexed { tabIndex, button ->
-
-    /*
-     * Ogni TAB Loonex diventa una "stagione"
-     * nel selettore Cloudstream.
-     */
-    val cloudSeason = tabIndex + 1
-
-    val tabName = button
-        .attr("data-season-name")
-        .trim()
-        .ifBlank {
-            "Parte $cloudSeason"
-        }
-
-    val tmdbId = findTmdbSeries(tabName)
-
-    val tmdbStillsBySeason =
-    mutableMapOf<Int, Map<Int, String>>()
-    
-
-    val targetId = button
-        .attr("data-bs-target")
-        .trim()
-        .removePrefix("#")
-
-    if (targetId.isBlank()) {
-        return@forEachIndexed
-    }
-
-    val tabContainer = doc.getElementById(targetId)
-        ?: return@forEachIndexed
-
-    /*
-     * Il nome visualizzato nel selettore Cloudstream
-     * è esattamente il nome del TAB Loonex.
-     */
-    seasonsData.add(
-        SeasonData(
-            cloudSeason,
-            tabName
-        )
-    )
-
-    /*
-     * Prendiamo TUTTI gli episodi presenti
-     * esclusivamente dentro questo tab.
-     */
-    val rows = tabContainer.select(".episode-row")
-
-    rows.forEachIndexed episodeLoop@ { index, row ->
-
-        val label = row
-            .attr("data-ep-label")
-            .trim()
-
-        val playUrl = row
-            .selectFirst("a.btn-play-sm[href]")
-            ?.attr("href")
-            ?.trim()
-            ?.takeIf {
-                it.isNotBlank()
-            }
-            ?: return@episodeLoop
-
-        /*
-         * Recuperiamo la numerazione originale:
-         *
-         * 1x01
-         * 2x04
-         * 3x12
-         *
-         * Serve per il NOME, non per il
-         * raggruppamento Cloudstream.
-         */
-        /*
- * Cerchiamo prima SxE nel label.
- *
- * Esempio:
- * "Episodio 1x05"
- *
- * Se non esiste, lo cerchiamo nell'URL:
- *
- * cucciolo_scooby_doo_1x05
- */
-val xMatch =
-    Regex(
-        """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
-    ).find(label)
-        ?: Regex(
-            """(?i)(\d+)[x×]0*(\d+)"""
-        ).find(playUrl)
-
-val originalSeason = xMatch
-    ?.groupValues
-    ?.getOrNull(1)
-    ?.toIntOrNull()
-    ?: cloudSeason
-
-val originalEpisode = xMatch
-    ?.groupValues
-    ?.getOrNull(2)
-    ?.toIntOrNull()
-    ?: Regex(
-        """(?i)(?:episodio|episode|ep)\s*0*(\d+)"""
-    ).find(label)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?.toIntOrNull()
-    ?: (index + 1)
-    
-      val episodeStill =
-    if (
-        tmdbId != null &&
-        originalSeason != null &&
-        originalEpisode != null
-    ) {
-
-        var seasonStills =
-            tmdbStillsBySeason[originalSeason]
-
-        if (seasonStills == null) {
-
-            seasonStills = getTmdbSeasonStills(
-                tmdbId,
-                originalSeason
-            )
-
-            tmdbStillsBySeason[originalSeason] =
-                seasonStills
-        }
-
-        seasonStills[originalEpisode]
-
-    } else {
-        null
-    }
-        /*
-         * Cloudstream deve avere episodi progressivi
-         * all'interno del TAB.
-         *
-         * Questo evita collisioni:
-         *
-         * 1x01
-         * 2x01
-         * 3x01
-         *
-         * non possono essere tutti episode = 1.
-         */
-        val cloudEpisode = index + 1
-
-        val displayName =
-            if (label.isNotBlank()) {
-                label
-            } else {
-                "Episodio %02d".format(originalEpisode)
-            }
-
-        episodes.add(
-        newEpisode(
-        fixUrl(playUrl)
-    ) {
-        this.season = cloudSeason
-        this.episode = cloudEpisode
-        this.name = displayName
-
-        /*
-         * Prima scelta:
-         * still vera TMDB.
-         *
-         * Fallback:
-         * poster principale Loonex.
-         */
-        this.posterUrl = episodeStill ?: poster
-    }
-)
-    }
-}
-
-    /*
-     * Fallback per eventuali pagine Loonex
-     * che non usano i tab delle stagioni.
-     */
-    if (episodes.isEmpty()) {
-
-        doc.select(".episode-row")
-            .forEachIndexed { index, row ->
-
-                val label = row
-                    .attr("data-ep-label")
-                    .trim()
-
-                val playUrl = row
-                    .selectFirst("a.btn-play-sm")
-                    ?.attr("href")
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: return@forEachIndexed
-
-                val numbers = Regex(
-                    """(?i)(\d+)\s*[x×]\s*0*(\d+)"""
-                ).find(label)
-
-                val seasonNumber =
-                    numbers
-                        ?.groupValues
-                        ?.getOrNull(1)
-                        ?.toIntOrNull()
-                        ?: 1
-
-                val episodeNumber =
-                    numbers
-                        ?.groupValues
-                        ?.getOrNull(2)
-                        ?.toIntOrNull()
-                        ?: (index + 1)
-
-                if (
-                    seasonsData.none {
-                        it.season == seasonNumber
-                    }
-                ) {
-                    seasonsData.add(
-                        SeasonData(
-                            seasonNumber,
-                            "Stagione $seasonNumber"
-                        )
-                    )
-                }
-
-                episodes.add(
-                    newEpisode(
-                        fixUrl(playUrl)
-                    ) {
-                        this.name = label.ifBlank {
-                            "Episodio $episodeNumber"
-                        }
-
-                        this.season = seasonNumber
-                        this.episode = episodeNumber
-                    }
-                )
-            }
-    }
-
-    return newTvSeriesLoadResponse(
-    title,
-    url,
-    TvType.Cartoon,
-    episodes
-) {
-    posterUrl = poster
-    this.plot = plot
-
-    if (rawTrailerUrl != null) {
-        trailers.add(
-            TrailerData(
-                extractorUrl = rawTrailerUrl,
-                referer = null,
-                raw = true
-            )
-        )
-    } else {
-        trailerUrl?.let {
-            trailers.add(
-                TrailerData(
-                    extractorUrl = it,
-                    referer = null,
-                    raw = false
-                )
-            )
+            addSeasonNames(seasonsData)
         }
     }
 
-    addSeasonNames(seasonsData)
-}
-}
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -621,82 +340,41 @@ val originalEpisode = xMatch
          * 1. DRIME
          * =========================================================
          */
-    
-        val drimeHash = Regex(
-            """[?&]drim=([^&#]+)""",
-            RegexOption.IGNORE_CASE
-        ).find(data)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.let {
-                try {
-                    URLDecoder.decode(it, "UTF-8")
-                } catch (_: Exception) {
-                    it
-                }
-            }
-            ?.trim()
+        val drimeHash = Regex("""[?&]drim=([^&#]+)""", RegexOption.IGNORE_CASE).find(data)
+            ?.groupValues?.getOrNull(1)?.let {
+                try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+            }?.trim()
     
         if (!drimeHash.isNullOrBlank()) {
-    
-            val drimePageUrl = "$mainUrl/guarda/?drim=" +
-                java.net.URLEncoder.encode(
-                    drimeHash,
-                    "UTF-8"
-                )
-    
+            val drimePageUrl = "$mainUrl/guarda/?drim=" + java.net.URLEncoder.encode(drimeHash, "UTF-8")
             val drimeResponse = app.post(
                 drimePageUrl,
                 headers = headers + mapOf(
-                    "Content-Type" to
-                        "application/x-www-form-urlencoded;charset=UTF-8",
+                    "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
                     "Accept" to "application/json, text/plain, */*",
                     "X-Requested-With" to "XMLHttpRequest"
                 ),
                 referer = drimePageUrl,
-                data = mapOf(
-                    "action" to "drime_resolve",
-                    "hash" to drimeHash
-                )
+                data = mapOf("action" to "drime_resolve", "hash" to drimeHash)
             )
-    
-            // Lettura sicura dal body OkHttp per aggirare il limite dei 5MB
+            
             val drimeJson = drimeResponse.okhttpResponse.body?.string() ?: ""
+            val stream = Regex(""""stream"\s*:\s*"([^"]+)"""").find(drimeJson)
+                ?.groupValues?.getOrNull(1)?.replace("\\/", "/")
+                ?.replace("\\u0026", "&")?.replace("\\u003d", "=")?.trim()
     
-            val stream = Regex(
-                """"stream"\s*:\s*"([^"]+)""""
-            ).find(drimeJson)
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.replace("\\/", "/")
-                ?.replace("\\u0026", "&")
-                ?.replace("\\u003d", "=")
-                ?.trim()
-    
-            if (stream.isNullOrBlank()) {
-                return false
-            }
+            if (stream.isNullOrBlank()) return false
     
             callback(
                 newExtractorLink(
                     source = "Loonex Drime",
                     name = "Loonex Drime",
                     url = stream,
-                    type = if (
-                        stream.contains(".m3u8", true)
-                    ) {
-                        ExtractorLinkType.M3U8
-                    } else {
-                        ExtractorLinkType.VIDEO
-                    }
+                    type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                 ) {
-                    this.headers = mapOf(
-                        "User-Agent" to
-                            (headers["User-Agent"] ?: "")
-                    )
+                    this.headers = mapOf("User-Agent" to (headers["User-Agent"] ?: ""))
                 }
             )
-    
             return true
         }
     
@@ -705,71 +383,89 @@ val originalEpisode = xMatch
          * 2. LOONEX NORMALE (Nuovo Sistema API + RC4)
          * =========================================================
          */
-        val response = app.get(
-            data,
-            headers = headers,
-            referer = "$mainUrl/"
-        )
-        
-        // Lettura sicura dal body OkHttp per aggirare il limite dei 5MB
+        val response = app.get(data, headers = headers, referer = "$mainUrl/")
         val html = response.okhttpResponse.body?.string() ?: ""
 
-        val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
-            .find(html)?.groupValues?.get(1)
-            ?: Regex("""[?&]id=([^&]+)""").find(data)?.groupValues?.get(1)
-            ?: return false
-
-        val dMatch = Regex("""var\s+_d\s*=\s*["']([^"']+)["']""").find(html)
-        if (dMatch != null) {
-            val dStr = dMatch.groupValues[1]
-            val rot13Str = rot13(dStr)
+        // A. Tentativo più veloce e sicuro: Prelevare il token _browserResolved pre-calcolato nell'HTML!
+        val browserUnpackRegex = Regex("""_lxBrowserUnpack\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)""")
+        val browserMatch = browserUnpackRegex.find(html)
+        
+        if (browserMatch != null) {
+            val payload = browserMatch.groupValues[1]
+            val key = browserMatch.groupValues[2]
+            val unpacked = lxBrowserUnpack(payload, key)
             
-            val decodedTokenKey = String(android.util.Base64.decode(rot13Str, android.util.Base64.DEFAULT))
-            val parts = decodedTokenKey.split(":")
-            
-            if (parts.size >= 2) {
-                val sessionToken = parts[0]
-                val sessionKey = parts[1]
-
-                val authResponse = app.post(
-                    data,
-                    headers = headers + mapOf(
-                        "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
-                        "X-Requested-With" to "XMLHttpRequest"
-                    ),
-                    data = mapOf(
-                        "action" to "guarda_play_auth",
-                        "token" to sessionToken,
-                        "video_id" to currentVideoId,
-                        "raw_video_id" to currentVideoId,
-                        "player_type" to "norm",
-                        "srv" to "1"
-                    ),
-                    referer = data
+            if (!unpacked.isNullOrBlank() && !unpacked.contains("start1.mp4")) {
+                val streamUrl = unpacked.replace("\\/", "/")
+                callback(
+                    newExtractorLink(
+                        source = "Loonex",
+                        name = "Loonex",
+                        url = streamUrl,
+                        type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "$mainUrl/"
+                    }
                 )
+                return true
+            }
+        }
 
-                // Lettura sicura dal body OkHttp per aggirare il limite dei 5MB
-                val authJson = authResponse.okhttpResponse.body?.string() ?: ""
-                val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
+        // B. Fallback se _browserResolved non c'è: Usare la POST all'API guarda_play_auth
+        val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
+            .find(html)?.groupValues?.get(1) ?: Regex("""[?&]id=([^&]+)""").find(data)?.groupValues?.get(1)
 
-                if (payload != null) {
-                    val unpacked = lxBrowserUnpack(payload, sessionKey)
-                    if (unpacked != null) {
-                        val streamUrl = Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
-                            .find(unpacked)?.groupValues?.get(1)?.replace("\\/", "/")
-                        
-                        if (!streamUrl.isNullOrBlank() && !streamUrl.contains("start1.mp4")) {
-                            callback(
-                                newExtractorLink(
-                                    source = "Loonex",
-                                    name = "Loonex",
-                                    url = streamUrl,
-                                    type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                ) {
-                                    this.referer = "$mainUrl/"
-                                }
-                            )
-                            return true
+        if (currentVideoId != null) {
+            val dMatch = Regex("""var\s+_d\s*=\s*["']([^"']+)["']""").find(html)
+            if (dMatch != null) {
+                val dStr = dMatch.groupValues[1]
+                val rot13Str = rot13(dStr)
+                val decodedTokenKey = String(android.util.Base64.decode(rot13Str, android.util.Base64.DEFAULT))
+                val parts = decodedTokenKey.split(":")
+                
+                if (parts.size >= 2) {
+                    val sessionToken = parts[0]
+                    val sessionKey = parts[1]
+
+                    val authResponse = app.post(
+                        data,
+                        headers = headers + mapOf(
+                            "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
+                            "X-Requested-With" to "XMLHttpRequest"
+                        ),
+                        data = mapOf(
+                            "action" to "guarda_play_auth",
+                            "token" to sessionToken,
+                            "video_id" to currentVideoId,
+                            "raw_video_id" to currentVideoId,
+                            "player_type" to "norm",
+                            "srv" to "1"
+                        ),
+                        referer = data
+                    )
+
+                    val authJson = authResponse.okhttpResponse.body?.string() ?: ""
+                    val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
+
+                    if (payload != null) {
+                        val unpacked = lxBrowserUnpack(payload, sessionKey)
+                        if (unpacked != null) {
+                            val streamUrl = Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
+                                .find(unpacked)?.groupValues?.get(1)?.replace("\\/", "/")
+                            
+                            if (!streamUrl.isNullOrBlank() && !streamUrl.contains("start1.mp4")) {
+                                callback(
+                                    newExtractorLink(
+                                        source = "Loonex",
+                                        name = "Loonex",
+                                        url = streamUrl,
+                                        type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                    ) {
+                                        this.referer = "$mainUrl/"
+                                    }
+                                )
+                                return true
+                            }
                         }
                     }
                 }
@@ -777,7 +473,7 @@ val originalEpisode = xMatch
         }
 
         // =========================================================
-        // FALLBACK: Vecchio metodo XOR (seleziona i video non aggiornati)
+        // 3. FALLBACK: Vecchio metodo XOR
         // =========================================================
         val encoded = Regex("""var\s+encodedStr\s*=\s*["']([^"']+)["']""").find(html)?.groupValues?.getOrNull(1)
         val key = Regex("""var\s+decryptionKey\s*=\s*["']([^"']+)["']""").find(html)?.groupValues?.getOrNull(1)
@@ -786,7 +482,6 @@ val originalEpisode = xMatch
             val decoded = decryptLoonexUrl(encoded, key)
             if (decoded.isNotBlank() && !decoded.contains("start1.mp4")) {
                 val videoUrl = encodeUrlPath(decoded)
-                
                 callback(
                     newExtractorLink(
                         source = "Loonex (Legacy)",
@@ -804,214 +499,79 @@ val originalEpisode = xMatch
         return false
     }
 
-    private suspend fun findTmdbSeries(
-    rawTitle: String
-): Int? {
+    private suspend fun findTmdbSeries(rawTitle: String): Int? {
+        tmdbSeriesCache[rawTitle]?.let { return it }
+        val year = Regex("""\((19|20)\d{2}\)""").find(rawTitle)?.value?.removePrefix("(")?.removeSuffix(")")?.toIntOrNull()
+        val cleanTitle = rawTitle.replace(Regex("""\((19|20)\d{2}\)"""), "").replace(Regex("""(?i)\bserie\s+completa\b"""), "").trim()
+        val encodedTitle = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
 
-    tmdbSeriesCache[rawTitle]?.let {
-        return it
-    }
-
-    /*
-     * Estraiamo eventuale anno:
-     *
-     * Ben 10 (2005) Serie Completa
-     *             ↓
-     *            2005
-     */
-    val year = Regex(
-        """\((19|20)\d{2}\)"""
-    ).find(rawTitle)
-        ?.value
-        ?.removePrefix("(")
-        ?.removeSuffix(")")
-        ?.toIntOrNull()
-
-    /*
-     * Pulizia del nome Loonex.
-     */
-    val cleanTitle = rawTitle
-        .replace(
-            Regex("""\((19|20)\d{2}\)"""),
-            ""
-        )
-        .replace(
-            Regex("""(?i)\bserie\s+completa\b"""),
-            ""
-        )
-        .trim()
-
-    val encodedTitle = java.net.URLEncoder.encode(
-        cleanTitle,
-        "UTF-8"
-    )
-
-    val searchUrl = buildString {
-        append("$tmdbApi/search/tv")
-        append("?api_key=$tmdbApiKey")
-        append("&query=$encodedTitle")
-        append("&language=it-IT")
-
-        if (year != null) {
-            append("&first_air_date_year=$year")
-        }
-    }
-
-    return try {
-
-        val response = app.get(
-            searchUrl,
-            headers = headers
-        )
-
-        val json = response.parsedSafe<TmdbSearchResponse>()
-
-        val result = json
-            ?.results
-            ?.firstOrNull()
-
-        val id = result?.id
-
-        tmdbSeriesCache[rawTitle] = id
-
-        id
-
-    } catch (_: Exception) {
-
-        tmdbSeriesCache[rawTitle] = null
-        null
-    }
-}
-
-    private suspend fun getTmdbSeasonStills(
-    tmdbId: Int,
-    season: Int
-): Map<Int, String> {
-
-    val cacheKey = tmdbId to season
-
-    tmdbSeasonCache[cacheKey]?.let {
-        return it
-    }
-
-    val url =
-        "$tmdbApi/tv/$tmdbId/season/$season" +
-        "?api_key=$tmdbApiKey" +
-        "&language=it-IT"
-
-    return try {
-
-        val response = app.get(
-            url,
-            headers = headers
-        )
-
-        val data = response
-            .parsedSafe<TmdbSeasonResponse>()
-
-        val result = data
-            ?.episodes
-            ?.mapNotNull { episode ->
-
-                val number = episode.episodeNumber
-                    ?: return@mapNotNull null
-
-                val still = episode.stillPath
-                    ?: return@mapNotNull null
-
-                number to "$tmdbImageBase$still"
-            }
-            ?.toMap()
-            ?: emptyMap()
-
-        tmdbSeasonCache[cacheKey] = result
-
-        result
-
-    } catch (_: Exception) {
-
-        tmdbSeasonCache[cacheKey] = emptyMap()
-        emptyMap()
-    }
-}
-
-    private fun decryptLoonexUrl(
-        hex: String,
-        key: String
-    ): String {
-
-        if (key.isBlank()) return ""
-
-        val decoded = buildString {
-
-            var i = 0
-
-            while (i + 1 < hex.length) {
-
-                val value = hex
-                    .substring(i, i + 2)
-                    .toIntOrNull(16)
-                    ?: break
-
-                val keyChar = key[
-                    (i / 2) % key.length
-                ].code
-
-                append(
-                    (value xor keyChar).toChar()
-                )
-
-                i += 2
-            }
+        val searchUrl = buildString {
+            append("$tmdbApi/search/tv")
+            append("?api_key=$tmdbApiKey")
+            append("&query=$encodedTitle")
+            append("&language=it-IT")
+            if (year != null) append("&first_air_date_year=$year")
         }
 
         return try {
-            URLDecoder.decode(
-                decoded,
-                "UTF-8"
-            )
+            val response = app.get(searchUrl, headers = headers)
+            val json = response.parsedSafe<TmdbSearchResponse>()
+            val id = json?.results?.firstOrNull()?.id
+            tmdbSeriesCache[rawTitle] = id
+            id
         } catch (_: Exception) {
-            decoded
+            tmdbSeriesCache[rawTitle] = null
+            null
         }
+    }
+
+    private suspend fun getTmdbSeasonStills(tmdbId: Int, season: Int): Map<Int, String> {
+        val cacheKey = tmdbId to season
+        tmdbSeasonCache[cacheKey]?.let { return it }
+        val url = "$tmdbApi/tv/$tmdbId/season/$season?api_key=$tmdbApiKey&language=it-IT"
+
+        return try {
+            val response = app.get(url, headers = headers)
+            val data = response.parsedSafe<TmdbSeasonResponse>()
+            val result = data?.episodes?.mapNotNull { episode ->
+                val number = episode.episodeNumber ?: return@mapNotNull null
+                val still = episode.stillPath ?: return@mapNotNull null
+                number to "$tmdbImageBase$still"
+            }?.toMap() ?: emptyMap()
+            tmdbSeasonCache[cacheKey] = result
+            result
+        } catch (_: Exception) {
+            tmdbSeasonCache[cacheKey] = emptyMap()
+            emptyMap()
+        }
+    }
+
+    private fun decryptLoonexUrl(hex: String, key: String): String {
+        if (key.isBlank()) return ""
+        val decoded = buildString {
+            var i = 0
+            while (i + 1 < hex.length) {
+                val value = hex.substring(i, i + 2).toIntOrNull(16) ?: break
+                val keyChar = key[(i / 2) % key.length].code
+                append((value xor keyChar).toChar())
+                i += 2
+            }
+        }
+        return try { URLDecoder.decode(decoded, "UTF-8") } catch (_: Exception) { decoded }
     }
 
     private fun encodeUrlPath(url: String): String {
         return try {
-
             val uri = URI(url)
-
-            URI(
-                uri.scheme,
-                uri.userInfo,
-                uri.host,
-                uri.port,
-                uri.path,
-                uri.query,
-                uri.fragment
-            ).toASCIIString()
-
+            URI(uri.scheme, uri.userInfo, uri.host, uri.port, uri.path, uri.query, uri.fragment).toASCIIString()
         } catch (_: Exception) {
-            url
-                .replace(" ", "%20")
-                .replace("[", "%5B")
-                .replace("]", "%5D")
+            url.replace(" ", "%20").replace("[", "%5B").replace("]", "%5D")
         }
     }
 
     private fun fixUrl(url: String): String {
-
-        if (url.startsWith("http")) {
-            return url
-        }
-
-        if (url.startsWith("//")) {
-            return "https:$url"
-        }
-
-        return if (url.startsWith("/")) {
-            "$mainUrl$url"
-        } else {
-            "$mainUrl/cartoni/$url"
-        }
+        if (url.startsWith("http")) return url
+        if (url.startsWith("//")) return "https:$url"
+        return if (url.startsWith("/")) "$mainUrl$url" else "$mainUrl/cartoni/$url"
     }
 }
