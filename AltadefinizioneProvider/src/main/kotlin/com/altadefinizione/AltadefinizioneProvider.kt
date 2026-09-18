@@ -14,7 +14,7 @@ import java.net.URI
 class AltadefinizioneProvider : MainAPI() {
 
     override var mainUrl = "https://altadefinizione.fast"
-    override var name = "Altadefinizione Fast"
+    override var name = "Altadefinizione"
     override var lang = "it"
 
     override val hasMainPage = true
