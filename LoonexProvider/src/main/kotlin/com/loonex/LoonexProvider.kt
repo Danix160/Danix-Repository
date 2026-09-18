@@ -346,8 +346,6 @@ class LoonexProvider : MainAPI() {
         if (!drimeHash.isNullOrBlank()) {
             val drimePageUrl = "$mainUrl/guarda/?drim=" + java.net.URLEncoder.encode(drimeHash, "UTF-8")
             
-            // Usiamo app.post per mantenere i cookie di Cloudflare, 
-            // ma estraiamo la stringa con okhttpResponse per evitare OOM
             val drimeResponse = app.post(
                 drimePageUrl,
                 headers = headers + mapOf(
@@ -360,7 +358,6 @@ class LoonexProvider : MainAPI() {
             )
             
             val drimeJson = drimeResponse.okhttpResponse.body?.string() ?: ""
-            
             val stream = Regex(""""stream"\s*:\s*"([^"]+)"""").find(drimeJson)
                 ?.groupValues?.getOrNull(1)?.replace("\\/", "/")
                 ?.replace("\\u0026", "&")?.replace("\\u003d", "=")?.trim()
@@ -384,11 +381,12 @@ class LoonexProvider : MainAPI() {
         // 2. LOONEX NORMALE (Nuovo Sistema API + RC4)
         // =========================================================
         
-        // Usiamo app.get per i cookie, ma okhttpResponse.body?.string() per evadere i 5MB
+        // Eseguiamo la richiesta normale, mantenendo i cookie/Cloudflare interceptor
         val response = app.get(data, headers = headers, referer = "$mainUrl/")
+        // Estraiamo il body grezzo direttamente da OkHttp per bypassare i limiti di 5MB e le alterazioni di Jsoup
         val html = response.okhttpResponse.body?.string() ?: ""
 
-        // A. Prelevare il token _browserResolved pre-calcolato nell'HTML
+        // A. Tentativo più veloce: Prelevare il token _browserResolved pre-calcolato
         val browserUnpackRegex = Regex("""_lxBrowserUnpack\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)""")
         val browserMatch = browserUnpackRegex.find(html)
         
@@ -413,7 +411,7 @@ class LoonexProvider : MainAPI() {
             }
         }
 
-        // B. Fallback se _browserResolved non c'è: Usare la POST all'API
+        // B. Fallback: API Auth tramite session token _d
         val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
             .find(html)?.groupValues?.get(1) ?: Regex("""[?&]id=([^&]+)""").find(data)?.groupValues?.get(1)
 
