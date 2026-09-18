@@ -3,6 +3,11 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 android {
     namespace = "com.altadefinizione"
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
 }
 
 tasks.withType<KotlinJvmCompile>().configureEach {
