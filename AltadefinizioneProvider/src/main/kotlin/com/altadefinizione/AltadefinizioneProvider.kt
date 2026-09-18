@@ -27,41 +27,128 @@ class AltadefinizioneProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        "$mainUrl/film/" to "Film",
-        "$mainUrl/serie-tv/" to "Serie TV",
-        "$mainUrl/cinema" to "Cinema",
-        "$mainUrl/azione" to "Azione",
-        "$mainUrl/commedia" to "Commedia",
-        "$mainUrl/horror" to "Horror",
-        "$mainUrl/fantascienza" to "Fantascienza",
-        "$mainUrl/animazione" to "Animazione"
-    )
+    "$mainUrl/" to "Home"
+)
 
     // ============================================================
     // MAIN PAGE
     // ============================================================
 
     override suspend fun getMainPage(
-        page: Int,
-        request: MainPageRequest
-    ): HomePageResponse {
+    page: Int,
+    request: MainPageRequest
+): HomePageResponse {
 
-        val url = if (page <= 1) {
-            request.data
-        } else {
-            "${request.data.trimEnd('/')}?page=$page"
+    val document = app.get(mainUrl).document
+
+    val sections = document
+        .select("section.section")
+        .mapNotNull { section ->
+
+            val sectionTitle = section
+                .selectFirst(".section-title")
+                ?.text()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+
+            val items = section
+                .select(".movie")
+                .mapNotNull { movie ->
+                    toHomeSearchResponse(movie)
+                }
+                .distinctBy { it.url }
+
+            if (items.isEmpty()) {
+                return@mapNotNull null
+            }
+
+            HomePageList(
+                name = sectionTitle,
+                list = items,
+                isHorizontalImages = false
+            )
         }
 
-        val document = app.get(url).document
+    return HomePageResponse(
+        items = sections,
+        hasNext = false
+    )
+}
 
-        val results = parseCards(document)
+    private fun toHomeSearchResponse(
+    movie: Element
+): SearchResponse? {
 
-        return newHomePageResponse(
-            request.name,
-            results,
-            hasNext = results.isNotEmpty()
-        )
+    val link = movie.selectFirst(
+        "a[href*='-streaming.html']"
+    ) ?: return null
+
+    val href = movie
+        .attr("data-link")
+        .ifBlank {
+            link.attr("href")
+        }
+        .takeIf { it.isNotBlank() }
+        ?: return null
+
+    val url = fixUrl(href)
+
+    val title = movie
+        .attr("data-title")
+        .ifBlank {
+            link.attr("data-title")
+        }
+        .ifBlank {
+            movie.selectFirst("img")
+                ?.attr("alt")
+                .orEmpty()
+        }
+        .trim()
+        .let(::cleanTitle)
+        .takeIf { it.isNotBlank() }
+        ?: return null
+
+    val poster = movie
+        .selectFirst("img")
+        ?.let {
+            it.attr("data-src")
+                .ifBlank { it.attr("src") }
+        }
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::fixUrl)
+
+    val kind = movie
+        .attr("data-kind")
+        .ifBlank {
+            link.attr("data-kind")
+        }
+
+    val isSeries =
+        kind.equals("series", ignoreCase = true) ||
+        url.contains("/serie-tv/")
+
+    return if (isSeries) {
+
+        newTvSeriesSearchResponse(
+            title,
+            url,
+            TvType.TvSeries
+        ) {
+            this.posterUrl = poster
+        }
+
+    } else {
+
+        newMovieSearchResponse(
+            title,
+            url,
+            TvType.Movie
+        ) {
+            this.posterUrl = poster
+        }
     }
+}
 
     // ============================================================
     // SEARCH
