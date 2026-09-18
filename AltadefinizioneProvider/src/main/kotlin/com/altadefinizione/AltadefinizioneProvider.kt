@@ -27,7 +27,20 @@ class AltadefinizioneProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-    "$mainUrl/" to "Home"
+    "$mainUrl/" to "Home",
+    "$mainUrl/azione" to "Azione",
+    "$mainUrl/animazione" to "Animazione",
+    "$mainUrl/avventura" to "Avventura",
+    "$mainUrl/commedia" to "Commedia",
+    "$mainUrl/crime" to "Crime",
+    "$mainUrl/documentario" to "Documentario",
+    "$mainUrl/drammatico" to "Drammatico",
+    "$mainUrl/famiglia" to "Famiglia",
+    "$mainUrl/fantascienza" to "Fantascienza",
+    "$mainUrl/fantasy" to "Fantasy",
+    "$mainUrl/horror" to "Horror",
+    "$mainUrl/romantico" to "Romantico",
+    "$mainUrl/thriller" to "Thriller"
 )
 
 override suspend fun getMainPage(
@@ -35,68 +48,92 @@ override suspend fun getMainPage(
     request: MainPageRequest
 ): HomePageResponse {
 
-    if (page > 1) {
-        return newHomePageResponse(
-            emptyList<HomePageList>(),
-            false
-        )
-    }
+    // HOME PRINCIPALE
+    if (request.data == "$mainUrl/" || request.data == mainUrl) {
 
-    val document = app.get(mainUrl).document
-    val sections = mutableListOf<HomePageList>()
-
-    document.select("section.section").forEach { section ->
-
-        val sectionTitle = section
-            .selectFirst(".section-title")
-            ?.text()
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: return@forEach
-
-        val items = mutableListOf<SearchResponse>()
-
-        // Card verticali (.movie)
-        section.select(".movie").forEach { movie ->
-            val response = toHomeSearchResponse(movie)
-
-            if (response != null) {
-                items.add(response)
-            }
+        if (page > 1) {
+            return newHomePageResponse(
+                emptyList<HomePageList>(),
+                false
+            )
         }
 
-        // Card orizzontali (.swiper-slide senza .movie)
-        section.select(".swiper-slide").forEach { slide ->
+        val document = app.get(mainUrl).document
+        val sections = mutableListOf<HomePageList>()
 
-            if (slide.selectFirst(".movie") == null) {
+        document.select("section.section").forEach { section ->
 
-                val response = toHorizontalHomeResponse(slide)
+            val sectionTitle = section
+                .selectFirst(".section-title")
+                ?.text()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return@forEach
+
+            val items = mutableListOf<SearchResponse>()
+
+            // Card verticali
+            section.select(".movie").forEach { movie ->
+                val response = toHomeSearchResponse(movie)
 
                 if (response != null) {
                     items.add(response)
                 }
             }
-        }
 
-        val finalItems = items.distinctBy { it.url }
+            // Card orizzontali
+            section.select(".swiper-slide").forEach { slide ->
 
-        if (finalItems.isNotEmpty()) {
-            sections.add(
-                HomePageList(
-                    name = sectionTitle,
-                    list = finalItems,
-                    isHorizontalImages = sectionTitle.equals(
-                        "Titoli del momento",
-                        ignoreCase = true
+                if (slide.selectFirst(".movie") == null) {
+                    val response = toHorizontalHomeResponse(slide)
+
+                    if (response != null) {
+                        items.add(response)
+                    }
+                }
+            }
+
+            val finalItems = items.distinctBy { it.url }
+
+            if (finalItems.isNotEmpty()) {
+                sections.add(
+                    HomePageList(
+                        name = sectionTitle,
+                        list = finalItems,
+                        isHorizontalImages = sectionTitle.equals(
+                            "Titoli del momento",
+                            ignoreCase = true
+                        )
                     )
                 )
-            )
+            }
         }
+
+        return newHomePageResponse(
+            sections,
+            false
+        )
     }
 
+    // CATEGORIE / GENERI
+    val categoryUrl = if (page > 1) {
+        "${request.data}?page=$page"
+    } else {
+        request.data
+    }
+
+    val document = app.get(categoryUrl).document
+
+    val items = document
+        .select(".movie")
+        .mapNotNull { movie ->
+            toHomeSearchResponse(movie)
+        }
+        .distinctBy { it.url }
+
     return newHomePageResponse(
-        sections,
-        false
+        request.name,
+        items
     )
 }
 
