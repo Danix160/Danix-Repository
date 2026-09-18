@@ -153,6 +153,56 @@ class LoonexProvider : MainAPI() {
             .distinctBy { it.url }
     }
 
+    // --- FUNZIONI DI SUPPORTO PER LA DECODIFICA DEL NUOVO PLAYER ---
+
+    private fun rot13(input: String): String {
+        return input.map { c ->
+            when (c) {
+                in 'a'..'z' -> if (c <= 'm') c + 13 else c - 13
+                in 'A'..'Z' -> if (c <= 'M') c + 13 else c - 13
+                else -> c
+            }
+        }.joinToString("")
+    }
+
+    private fun rc4Decode(encoded: ByteArray, keyStr: String): String {
+        val key = keyStr.toByteArray()
+        val s = IntArray(256) { it }
+        var j = 0
+        for (i in 0 until 256) {
+            j = (j + s[i] + key[i % key.size]) and 0xFF
+            val temp = s[i]; s[i] = s[j]; s[j] = temp
+        }
+        var i = 0
+        j = 0
+        val out = ByteArray(encoded.size)
+        for (y in encoded.indices) {
+            i = (i + 1) and 0xFF
+            j = (j + s[i]) and 0xFF
+            val temp = s[i]; s[i] = s[j]; s[j] = temp
+            out[y] = (encoded[y].toInt() xor s[(s[i] + s[j]) and 0xFF]).toByte()
+        }
+        return String(out)
+    }
+
+    private fun lxBrowserUnpack(payload: String, baseKey: String): String? {
+        val b64Str = payload.replace("-", "+").replace("_", "/")
+        val pad = b64Str.length % 4
+        val padded = if (pad > 0) b64Str + "=".repeat(4 - pad) else b64Str
+        val bin = android.util.Base64.decode(padded, android.util.Base64.DEFAULT)
+
+        val tryKeys = listOf(baseKey, "$baseKey:lx3")
+        for (k in tryKeys) {
+            try {
+                val dec = rc4Decode(bin, k)
+                if (dec.startsWith("LX2:") || dec.startsWith("LX3:")) {
+                    return URLDecoder.decode(dec.substring(4), "UTF-8")
+                }
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
     override suspend fun load(url: String): LoadResponse {
 
     val doc = app.get(
@@ -670,96 +720,105 @@ val originalEpisode = xMatch
     
         /*
          * =========================================================
-         * 2. LOONEX NORMALE
+         * 2. LOONEX NORMALE (Nuovo Sistema API + RC4)
          * =========================================================
-         *
-         * Questo è il vecchio percorso usato dagli episodi.
-         * Non lo modifichiamo.
          */
-    
         val response = app.get(
             data,
             headers = headers,
             referer = "$mainUrl/"
         )
-    
         val html = response.text
-    
-        val encoded = Regex(
-            """var\s+encodedStr\s*=\s*["']([^"']+)["']"""
-        ).find(html)
-            ?.groupValues
-            ?.getOrNull(1)
+
+        // Recuperiamo l'ID dell'episodio corrente (necessario per la POST)
+        val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
+            .find(html)?.groupValues?.get(1)
+            ?: Regex("""[?&]id=([^&]+)""").find(data)?.groupValues?.get(1)
             ?: return false
-    
-        val key = Regex(
-            """var\s+decryptionKey\s*=\s*["']([^"']+)["']"""
-        ).find(html)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?: return false
-    
-        val decoded = decryptLoonexUrl(
-            encoded,
-            key
-        )
-    
-        if (decoded.isBlank()) {
-            return false
-        }
-    
-        val videoUrl = encodeUrlPath(decoded)
-    
-        /*
-         * Evitiamo di mandare accidentalmente
-         * "drime-pending" a ExoPlayer.
-         */
-        if (
-            videoUrl.equals(
-                "drime-pending",
-                ignoreCase = true
-            )
-        ) {
-            return false
-        }
-    
-       val videoHeaders = mapOf(
-            "User-Agent" to (headers["User-Agent"] ?: ""),
-            "Accept" to "*/*",
-            "Accept-Language" to "it-IT,it;q=0.6",
-        
-            "Origin" to mainUrl,
-            "Referer" to "$mainUrl/",
-        
-            "Sec-GPC" to "1",
-            "Sec-Fetch-Site" to "same-site",
-            "Sec-Fetch-Mode" to "cors",
-            "Sec-Fetch-Dest" to "empty",
-        
-            "sec-ch-ua" to "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Brave\";v=\"152\"",
-            "sec-ch-ua-mobile" to "?0",
-            "sec-ch-ua-platform" to "\"Windows\""
-        )
-    
-        callback(
-            newExtractorLink(
-                source = "Loonex",
-                name = "Loonex",
-                url = videoUrl,
-                type = if (
-                    videoUrl.contains(".m3u8", true)
-                ) {
-                    ExtractorLinkType.M3U8
-                } else {
-                    ExtractorLinkType.VIDEO
+
+        // Cerchiamo il token di sessione _lxSessionCtx
+        val dMatch = Regex("""var\s+_d\s*=\s*["']([^"']+)["']""").find(html)
+        if (dMatch != null) {
+            val dStr = dMatch.groupValues[1]
+            val rot13Str = rot13(dStr)
+            
+            val decodedTokenKey = String(android.util.Base64.decode(rot13Str, android.util.Base64.DEFAULT))
+            val parts = decodedTokenKey.split(":")
+            
+            if (parts.size >= 2) {
+                val sessionToken = parts[0]
+                val sessionKey = parts[1]
+
+                // Simuliamo la chiamata ajax_handler.php o alla stessa URL
+                val authResponse = app.post(
+                    data,
+                    headers = headers + mapOf(
+                        "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
+                        "X-Requested-With" to "XMLHttpRequest"
+                    ),
+                    data = mapOf(
+                        "action" to "guarda_play_auth",
+                        "token" to sessionToken,
+                        "video_id" to currentVideoId,
+                        "raw_video_id" to currentVideoId,
+                        "player_type" to "norm",
+                        "srv" to "1"
+                    ),
+                    referer = data
+                )
+
+                val authJson = authResponse.text
+                val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
+
+                if (payload != null) {
+                    val unpacked = lxBrowserUnpack(payload, sessionKey)
+                    if (unpacked != null) {
+                        val streamUrl = Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
+                            .find(unpacked)?.groupValues?.get(1)?.replace("\\/", "/")
+                        
+                        // Ignora i video esca
+                        if (!streamUrl.isNullOrBlank() && !streamUrl.contains("start1.mp4")) {
+                            callback(
+                                newExtractorLink(
+                                    source = "Loonex",
+                                    name = "Loonex",
+                                    url = streamUrl,
+                                    referer = "$mainUrl/",
+                                    type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                )
+                            )
+                            return true
+                        }
+                    }
                 }
-            ) {
-                referer = "$mainUrl/"
-                this.headers = videoHeaders
             }
-        )
-    
-        return true
+        }
+
+        // =========================================================
+        // FALLBACK: Vecchio metodo XOR (seleziona i video non aggiornati)
+        // =========================================================
+        val encoded = Regex("""var\s+encodedStr\s*=\s*["']([^"']+)["']""").find(html)?.groupValues?.getOrNull(1)
+        val key = Regex("""var\s+decryptionKey\s*=\s*["']([^"']+)["']""").find(html)?.groupValues?.getOrNull(1)
+
+        if (encoded != null && key != null) {
+            val decoded = decryptLoonexUrl(encoded, key)
+            if (decoded.isNotBlank() && !decoded.contains("start1.mp4")) {
+                val videoUrl = encodeUrlPath(decoded)
+                
+                callback(
+                    newExtractorLink(
+                        source = "Loonex (Legacy)",
+                        name = "Loonex (Legacy)",
+                        url = videoUrl,
+                        referer = "$mainUrl/",
+                        type = if (videoUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    )
+                )
+                return true
+            }
+        }
+
+        return false
     }
 
     private suspend fun findTmdbSeries(
