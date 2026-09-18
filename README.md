@@ -189,23 +189,6 @@
 
 ---
 
-### 📡 RIVESTREAM
-
-![Parziale](https://img.shields.io/badge/STATO-PARZIALE-yellow?style=flat-square)
-
-**Contenuti:** Canali TV
-
-**Funzioni principali:**
-
-* 📡 Supporto ai canali TV
-* 📺 Visualizzazione dei canali disponibili
-* ▶️ Riproduzione degli stream supportati
-* 🔗 Gestione delle sorgenti dei canali
-
-> ⚠️ Al momento sono disponibili i canali TV. Gli eventi non sono ancora supportati.
-
----
-
 ### 🎥 GUARDAPLAY
 
 ![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
