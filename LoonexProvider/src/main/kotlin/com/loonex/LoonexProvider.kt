@@ -620,13 +620,6 @@ val originalEpisode = xMatch
          * =========================================================
          * 1. DRIME
          * =========================================================
-         *
-         * I film Drime arrivano già a loadLinks() così:
-         *
-         * https://loonex.eu/guarda/?drim=HASH
-         *
-         * Quindi estraiamo l'hash direttamente da "data"
-         * PRIMA di aprire/decodificare la pagina.
          */
     
         val drimeHash = Regex(
@@ -652,15 +645,6 @@ val originalEpisode = xMatch
                     "UTF-8"
                 )
     
-            /*
-             * Replica la richiesta effettuata dal player:
-             *
-             * POST /guarda/?drim=HASH
-             *
-             * action=drime_resolve
-             * hash=HASH
-             */
-    
             val drimeResponse = app.post(
                 drimePageUrl,
                 headers = headers + mapOf(
@@ -676,7 +660,8 @@ val originalEpisode = xMatch
                 )
             )
     
-            val drimeJson = drimeResponse.textLarge
+            // Lettura sicura dal body OkHttp per aggirare il limite dei 5MB
+            val drimeJson = drimeResponse.okhttpResponse.body?.string() ?: ""
     
             val stream = Regex(
                 """"stream"\s*:\s*"([^"]+)""""
@@ -705,9 +690,6 @@ val originalEpisode = xMatch
                         ExtractorLinkType.VIDEO
                     }
                 ) {
-                    /*
-                     * Il player Drime usa no-referrer.
-                     */
                     this.headers = mapOf(
                         "User-Agent" to
                             (headers["User-Agent"] ?: "")
@@ -728,15 +710,15 @@ val originalEpisode = xMatch
             headers = headers,
             referer = "$mainUrl/"
         )
-        val html = response.textLarge
+        
+        // Lettura sicura dal body OkHttp per aggirare il limite dei 5MB
+        val html = response.okhttpResponse.body?.string() ?: ""
 
-        // Recuperiamo l'ID dell'episodio corrente (necessario per la POST)
         val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
             .find(html)?.groupValues?.get(1)
             ?: Regex("""[?&]id=([^&]+)""").find(data)?.groupValues?.get(1)
             ?: return false
 
-        // Cerchiamo il token di sessione _lxSessionCtx
         val dMatch = Regex("""var\s+_d\s*=\s*["']([^"']+)["']""").find(html)
         if (dMatch != null) {
             val dStr = dMatch.groupValues[1]
@@ -749,7 +731,6 @@ val originalEpisode = xMatch
                 val sessionToken = parts[0]
                 val sessionKey = parts[1]
 
-                // Simuliamo la chiamata ajax_handler.php o alla stessa URL
                 val authResponse = app.post(
                     data,
                     headers = headers + mapOf(
@@ -767,7 +748,8 @@ val originalEpisode = xMatch
                     referer = data
                 )
 
-                val authJson = authResponse.textLarge
+                // Lettura sicura dal body OkHttp per aggirare il limite dei 5MB
+                val authJson = authResponse.okhttpResponse.body?.string() ?: ""
                 val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
 
                 if (payload != null) {
@@ -776,7 +758,6 @@ val originalEpisode = xMatch
                         val streamUrl = Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
                             .find(unpacked)?.groupValues?.get(1)?.replace("\\/", "/")
                         
-                        // Ignora i video esca
                         if (!streamUrl.isNullOrBlank() && !streamUrl.contains("start1.mp4")) {
                             callback(
                                 newExtractorLink(
