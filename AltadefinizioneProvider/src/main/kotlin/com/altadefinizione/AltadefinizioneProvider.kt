@@ -124,13 +124,9 @@ override suspend fun getMainPage(
 
     val document = app.get(categoryUrl).document
 
-    val items = document
-        .select(".movie")
-        .mapNotNull { movie ->
-            toHomeSearchResponse(movie)
-        }
+    val items = parseCards(document)
         .distinctBy { it.url }
-
+    
     return newHomePageResponse(
         request.name,
         items
