@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.nodes.Element
@@ -33,6 +34,8 @@ class GuardaPlayProvider : MainAPI() {
         private const val TMDB_API_KEY =
             "e541cb159df14ce70fc51ab75703a1a2"
     }
+
+    private val cfKiller = CloudflareKiller()
 
     override val mainPage =
         mainPageOf(
@@ -104,7 +107,8 @@ class GuardaPlayProvider : MainAPI() {
             val document =
                 app.get(
                     url,
-                    headers = headers
+                    headers = headers,
+                    interceptor = cfKiller
                 ).document
 
             val sections =
@@ -188,7 +192,8 @@ class GuardaPlayProvider : MainAPI() {
                 val response =
                     app.get(
                         url,
-                        headers = headers
+                        headers = headers,
+                        interceptor = cfKiller
                     )
 
                 if (response.code != 200) {
@@ -279,7 +284,8 @@ class GuardaPlayProvider : MainAPI() {
             val document =
                 app.get(
                     url,
-                    headers = headers
+                    headers = headers,
+                    interceptor = cfKiller
                 ).document
 
             val title =
@@ -442,7 +448,8 @@ class GuardaPlayProvider : MainAPI() {
         val document =
             app.get(
                 pageUrl,
-                headers = headers
+                headers = headers,
+                interceptor = cfKiller
             ).document
 
         val options =
