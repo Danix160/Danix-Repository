@@ -70,9 +70,9 @@ class AltadefinizioneProvider : MainAPI() {
             )
         }
 
-    return HomePageResponse(
-        items = sections,
-        hasNext = false
+    return newHomePageResponse(
+        sections,
+        false
     )
 }
 
