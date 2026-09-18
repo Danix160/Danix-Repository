@@ -324,35 +324,34 @@ private fun toHorizontalHomeResponse(
             ?: "film"
     }
 
-    val url =
-        "$mainUrl/$category/$contentId-$cleanSlug-streaming.html"
-
-    return if (isSeries) {
-
-        newTvSeriesSearchResponse(
-            cleanTitle(title),
-            url,
-            TvType.TvSeries
-        ) {
-            this.posterUrl = posterUrl
-            this.posterHeaders = mapOf(
-                "Referer" to "$mainUrl/",
-                "User-Agent" to USER_AGENT
+        val url =
+            "$mainUrl/$category/$contentId-$cleanSlug-streaming.html"
+        
+        val directPoster = posterUrl
+            ?.replace(
+                "https://img.altadefinizione.fast/t/p/",
+                "https://image.tmdb.org/t/p/"
             )
-        }
-
-    } else {
-
-        newMovieSearchResponse(
-            cleanTitle(title),
-            url,
-            TvType.Movie
-        ) {
-            this.posterUrl = posterUrl
-            this.posterHeaders = mapOf(
-                "Referer" to "$mainUrl/",
-                "User-Agent" to USER_AGENT
-            )
+        
+        return if (isSeries) {
+        
+            newTvSeriesSearchResponse(
+                cleanTitle(title),
+                url,
+                TvType.TvSeries
+            ) {
+                this.posterUrl = directPoster
+            }
+        
+        } else {
+        
+            newMovieSearchResponse(
+                cleanTitle(title),
+                url,
+                TvType.Movie
+            ) {
+                this.posterUrl = directPoster
+            }
         }
     }
 }
