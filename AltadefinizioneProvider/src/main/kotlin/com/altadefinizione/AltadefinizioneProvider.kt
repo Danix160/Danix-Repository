@@ -3,10 +3,10 @@ package com.altadefinizione
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addDuration
-import com.lagradost.cloudstream3.LoadResponse.Companion.addRating
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -15,7 +15,7 @@ class AltadefinizioneProvider : MainAPI() {
 
     override var mainUrl = "https://altadefinizione.fast"
     override var name = "Altadefinizione Fast"
-    override val lang = "it"
+    override var lang = "it"
 
     override val hasMainPage = true
     override val hasQuickSearch = false
@@ -312,9 +312,6 @@ class AltadefinizioneProvider : MainAPI() {
                 this.year = year
                 this.tags = tags
 
-                rating?.let {
-                    addRating(it)
-                }
 
                 if (actors.isNotEmpty()) {
                     addActors(actors)
@@ -331,7 +328,7 @@ class AltadefinizioneProvider : MainAPI() {
     // SERIES
     // ============================================================
 
-    private fun loadSeries(
+    private suspend fun loadSeries(
         document: Document,
         pageUrl: String,
         title: String,
@@ -453,10 +450,6 @@ class AltadefinizioneProvider : MainAPI() {
             this.plot = plot
             this.year = year
             this.tags = tags
-
-            rating?.let {
-                addRating(it)
-            }
 
             if (actors.isNotEmpty()) {
                 addActors(actors)
