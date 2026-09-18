@@ -335,11 +335,9 @@ class LoonexProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
     
-        /*
-         * =========================================================
-         * 1. DRIME
-         * =========================================================
-         */
+        // =========================================================
+        // 1. DRIME
+        // =========================================================
         val drimeHash = Regex("""[?&]drim=([^&#]+)""", RegexOption.IGNORE_CASE).find(data)
             ?.groupValues?.getOrNull(1)?.let {
                 try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
@@ -347,44 +345,53 @@ class LoonexProvider : MainAPI() {
     
         if (!drimeHash.isNullOrBlank()) {
             val drimePageUrl = "$mainUrl/guarda/?drim=" + java.net.URLEncoder.encode(drimeHash, "UTF-8")
-            val drimeResponse = app.post(
-                drimePageUrl,
-                headers = headers + mapOf(
-                    "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
-                    "Accept" to "application/json, text/plain, */*",
-                    "X-Requested-With" to "XMLHttpRequest"
-                ),
-                referer = drimePageUrl,
-                data = mapOf("action" to "drime_resolve", "hash" to drimeHash)
-            )
             
-            val drimeJson = drimeResponse.okhttpResponse.body?.string() ?: ""
+            // Bypass sicuro del limite 5MB usando baseClient
+            val drimeReq = okhttp3.Request.Builder()
+                .url(drimePageUrl)
+                .post(okhttp3.FormBody.Builder()
+                    .add("action", "drime_resolve")
+                    .add("hash", drimeHash)
+                    .build())
+                .addHeader("User-Agent", headers["User-Agent"] ?: "")
+                .addHeader("Accept", "application/json, text/plain, */*")
+                .addHeader("X-Requested-With", "XMLHttpRequest")
+                .addHeader("Referer", drimePageUrl)
+                .build()
+
+            val drimeJson = app.baseClient.newCall(drimeReq).execute().body?.string() ?: ""
+            
             val stream = Regex(""""stream"\s*:\s*"([^"]+)"""").find(drimeJson)
                 ?.groupValues?.getOrNull(1)?.replace("\\/", "/")
                 ?.replace("\\u0026", "&")?.replace("\\u003d", "=")?.trim()
     
-            if (stream.isNullOrBlank()) return false
-    
-            callback(
-                newExtractorLink(
-                    source = "Loonex Drime",
-                    name = "Loonex Drime",
-                    url = stream,
-                    type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    this.headers = mapOf("User-Agent" to (headers["User-Agent"] ?: ""))
-                }
-            )
-            return true
+            if (!stream.isNullOrBlank()) {
+                callback(
+                    newExtractorLink(
+                        source = "Loonex Drime",
+                        name = "Loonex Drime",
+                        url = stream,
+                        type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    ) {
+                        this.headers = mapOf("User-Agent" to (headers["User-Agent"] ?: ""))
+                    }
+                )
+                return true
+            }
         }
     
-        /*
-         * =========================================================
-         * 2. LOONEX NORMALE (Nuovo Sistema API + RC4)
-         * =========================================================
-         */
-        val response = app.get(data, headers = headers, referer = "$mainUrl/")
-        val html = response.okhttpResponse.body?.string() ?: ""
+        // =========================================================
+        // 2. LOONEX NORMALE (Nuovo Sistema API + RC4)
+        // =========================================================
+        
+        // Bypass sicuro del limite 5MB usando baseClient
+        val htmlReq = okhttp3.Request.Builder()
+            .url(data)
+            .headers(okhttp3.Headers.of(headers))
+            .addHeader("Referer", "$mainUrl/")
+            .build()
+            
+        val html = app.baseClient.newCall(htmlReq).execute().body?.string() ?: ""
 
         // A. Tentativo più veloce e sicuro: Prelevare il token _browserResolved pre-calcolato nell'HTML!
         val browserUnpackRegex = Regex("""_lxBrowserUnpack\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)""")
@@ -427,24 +434,23 @@ class LoonexProvider : MainAPI() {
                     val sessionToken = parts[0]
                     val sessionKey = parts[1]
 
-                    val authResponse = app.post(
-                        data,
-                        headers = headers + mapOf(
-                            "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
-                            "X-Requested-With" to "XMLHttpRequest"
-                        ),
-                        data = mapOf(
-                            "action" to "guarda_play_auth",
-                            "token" to sessionToken,
-                            "video_id" to currentVideoId,
-                            "raw_video_id" to currentVideoId,
-                            "player_type" to "norm",
-                            "srv" to "1"
-                        ),
-                        referer = data
-                    )
+                    val authReq = okhttp3.Request.Builder()
+                        .url(data)
+                        .post(okhttp3.FormBody.Builder()
+                            .add("action", "guarda_play_auth")
+                            .add("token", sessionToken)
+                            .add("video_id", currentVideoId)
+                            .add("raw_video_id", currentVideoId)
+                            .add("player_type", "norm")
+                            .add("srv", "1")
+                            .build())
+                        .addHeader("User-Agent", headers["User-Agent"] ?: "")
+                        .addHeader("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+                        .addHeader("X-Requested-With", "XMLHttpRequest")
+                        .addHeader("Referer", data)
+                        .build()
 
-                    val authJson = authResponse.okhttpResponse.body?.string() ?: ""
+                    val authJson = app.baseClient.newCall(authReq).execute().body?.string() ?: ""
                     val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
 
                     if (payload != null) {
