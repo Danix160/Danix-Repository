@@ -26,7 +26,7 @@ cloudstream {
     extra["prefix"] = "Altadefinizione"
     extra["displayName"] = "Altadefinizione"
     
-    version = 1
+    version = 2
     description = "Altadefinizione"
     authors = listOf("Danix")
     
@@ -34,5 +34,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries", "Cartoon")
     requiresResources = false
     language = "it"
-    iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/Altadefinizione/logo.png"
+    iconUrl = "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/AltadefinizioneProvider/logo.png"
 }
