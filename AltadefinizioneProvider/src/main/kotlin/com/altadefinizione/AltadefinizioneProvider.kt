@@ -30,11 +30,7 @@ class AltadefinizioneProvider : MainAPI() {
     "$mainUrl/" to "Home"
 )
 
-    // ============================================================
-    // MAIN PAGE
-    // ============================================================
-
-    override suspend fun getMainPage(
+override suspend fun getMainPage(
     page: Int,
     request: MainPageRequest
 ): HomePageResponse {
@@ -47,58 +43,56 @@ class AltadefinizioneProvider : MainAPI() {
     }
 
     val document = app.get(mainUrl).document
+    val sections = mutableListOf<HomePageList>()
 
-    val sections = document
-        .select("section.section")
-        .mapNotNull { section ->
+    document.select("section.section").forEach { section ->
 
-            val sectionTitle = section
-                .selectFirst(".section-title")
-                ?.text()
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
+        val sectionTitle = section
+            .selectFirst(".section-title")
+            ?.text()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@forEach
 
-            val items = mutableListOf<SearchResponse>()
+        val items = mutableListOf<SearchResponse>()
 
-            // Tipo 1:
-            // card verticali con wrapper .movie
-            section.select(".movie").forEach { movie ->
-                toHomeSearchResponse(movie)?.let {
-                    items += it
+        // Card verticali (.movie)
+        section.select(".movie").forEach { movie ->
+            val response = toHomeSearchResponse(movie)
+
+            if (response != null) {
+                items.add(response)
+            }
+        }
+
+        // Card orizzontali (.swiper-slide senza .movie)
+        section.select(".swiper-slide").forEach { slide ->
+
+            if (slide.selectFirst(".movie") == null) {
+
+                val response = toHorizontalHomeResponse(slide)
+
+                if (response != null) {
+                    items.add(response)
                 }
             }
+        }
 
-            // Tipo 2:
-            // card orizzontali senza wrapper .movie
-            section.select(".swiper-slide").forEach { slide ->
+        val finalItems = items.distinctBy { it.url }
 
-                val alreadyParsed =
-                    slide.selectFirst(".movie") != null
-
-                if (!alreadyParsed) {
-                    toHorizontalHomeResponse(slide)?.let {
-                        items += it
-                    }
-                }
-            }
-
-            val finalItems = items
-                .distinctBy { it.url }
-
-            if (finalItems.isEmpty()) {
-                return@mapNotNull null
-            }
-
-            HomePageList(
-                name = sectionTitle,
-                list = finalItems,
-                isHorizontalImages = sectionTitle.equals(
-                    "Titoli del momento",
-                    ignoreCase = true
+        if (finalItems.isNotEmpty()) {
+            sections.add(
+                HomePageList(
+                    name = sectionTitle,
+                    list = finalItems,
+                    isHorizontalImages = sectionTitle.equals(
+                        "Titoli del momento",
+                        ignoreCase = true
+                    )
                 )
             )
         }
+    }
 
     return newHomePageResponse(
         sections,
@@ -106,7 +100,7 @@ class AltadefinizioneProvider : MainAPI() {
     )
 }
 
-    private fun toHomeSearchResponse(
+private fun toHomeSearchResponse(
     movie: Element
 ): SearchResponse? {
 
@@ -141,9 +135,9 @@ class AltadefinizioneProvider : MainAPI() {
 
     val poster = movie
         .selectFirst("img")
-        ?.let {
-            it.attr("data-src")
-                .ifBlank { it.attr("src") }
+        ?.let { image ->
+            image.attr("data-src")
+                .ifBlank { image.attr("src") }
         }
         ?.takeIf { it.isNotBlank() }
         ?.let(::fixUrl)
@@ -159,7 +153,6 @@ class AltadefinizioneProvider : MainAPI() {
         url.contains("/serie-tv/")
 
     return if (isSeries) {
-
         newTvSeriesSearchResponse(
             title,
             url,
@@ -167,11 +160,71 @@ class AltadefinizioneProvider : MainAPI() {
         ) {
             this.posterUrl = poster
         }
-
     } else {
-
         newMovieSearchResponse(
             title,
+            url,
+            TvType.Movie
+        ) {
+            this.posterUrl = poster
+        }
+    }
+}
+
+private fun toHorizontalHomeResponse(
+    slide: Element
+): SearchResponse? {
+
+    val link = slide.selectFirst(
+        ".movie-poster a[href*='-streaming.html'], " +
+            ".movie-title a[href*='-streaming.html']"
+    ) ?: return null
+
+    val href = link
+        .attr("href")
+        .trim()
+        .takeIf { it.isNotBlank() }
+        ?: return null
+
+    val url = fixUrl(href)
+
+    val image = slide.selectFirst(".movie-poster img")
+
+    val title = slide
+        .selectFirst(".movie-title")
+        ?.text()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: image
+            ?.attr("alt")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    val poster = image
+        ?.let { img ->
+            img.attr("data-src")
+                .ifBlank { img.attr("src") }
+        }
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::fixUrl)
+
+    val isSeries = url.contains(
+        "/serie-tv/",
+        ignoreCase = true
+    )
+
+    return if (isSeries) {
+        newTvSeriesSearchResponse(
+            cleanTitle(title),
+            url,
+            TvType.TvSeries
+        ) {
+            this.posterUrl = poster
+        }
+    } else {
+        newMovieSearchResponse(
+            cleanTitle(title),
             url,
             TvType.Movie
         ) {
