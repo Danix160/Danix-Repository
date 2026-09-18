@@ -43,6 +43,25 @@ class AltadefinizioneProvider : MainAPI() {
     "$mainUrl/thriller" to "Thriller"
 )
 
+    data class ArchiveResponse(
+    val items: List<ArchiveItem> = emptyList(),
+    val count: Int? = null
+)
+
+data class ArchiveItem(
+    val id: Int? = null,
+    val legacyId: Int? = null,
+    val kind: String? = null,
+    val title: String? = null,
+    val slug: String? = null,
+    val year: Int? = null,
+    val posterUrl: String? = null,
+    val tileUrl: String? = null,
+    val backdropUrl: String? = null,
+    val rating: String? = null,
+    val genres: List<String>? = null
+)
+
 override suspend fun getMainPage(
     page: Int,
     request: MainPageRequest
@@ -270,19 +289,96 @@ private fun toHorizontalHomeResponse(
     // SEARCH
     // ============================================================
 
+    private fun ArchiveItem.toSearchResponse(): SearchResponse? {
+
+    val title = title
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    val contentId = legacyId ?: id ?: return null
+
+    val cleanSlug = slug
+        ?.removeSuffix("-streaming")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    val isSeries = kind.equals(
+        "series",
+        ignoreCase = true
+    )
+
+    val category = if (isSeries) {
+        "serie-tv"
+    } else {
+        genres
+            ?.firstOrNull {
+                it.isNotBlank() &&
+                    !it.equals("Sub-ITA", true) &&
+                    !it.equals("Serie TV", true) &&
+                    !it.equals("Tv Show", true)
+            }
+            ?.lowercase()
+            ?.normalizeSlug()
+            ?: "film"
+    }
+
+    val url =
+        "$mainUrl/$category/$contentId-$cleanSlug-streaming.html"
+
+    return if (isSeries) {
+
+        newTvSeriesSearchResponse(
+            cleanTitle(title),
+            url,
+            TvType.TvSeries
+        ) {
+            this.posterUrl = posterUrl
+        }
+
+    } else {
+
+        newMovieSearchResponse(
+            cleanTitle(title),
+            url,
+            TvType.Movie
+        ) {
+            this.posterUrl = posterUrl
+        }
+    }
+}
+
+    private fun String.normalizeSlug(): String {
+    return java.text.Normalizer
+        .normalize(this, java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+        .lowercase()
+        .replace(Regex("['’`]"), "")
+        .replace(Regex("[^a-z0-9]+"), "-")
+        .trim('-')
+}
+
     override suspend fun search(query: String): List<SearchResponse> {
+    val cleanQuery = query.trim()
+    if (cleanQuery.isBlank()) return emptyList()
 
     val encoded = java.net.URLEncoder.encode(
-        query.trim(),
+        cleanQuery,
         Charsets.UTF_8.name()
     )
+
+    val results = mutableListOf<SearchResponse>()
+
+    // ---------------------------------------------------------
+    // PRIMI 30 RISULTATI
+    // ---------------------------------------------------------
 
     val document = app.get(
         "$mainUrl/archivio?search=$encoded"
     ).document
 
-    return document
-        .select("table.catalog-table tbody tr.mlnew")
+    document.select("table.catalog-table tbody tr.mlnew")
         .mapNotNull { row ->
 
             val link = row.selectFirst(
@@ -292,41 +388,42 @@ private fun toHorizontalHomeResponse(
             ) ?: return@mapNotNull null
 
             val href = link.attr("href")
+                .trim()
                 .takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
 
             val url = fixUrl(href)
 
-            val title = link.attr("title")
-                .ifBlank { link.text() }
+            val title = link.text()
                 .trim()
-                .let(::cleanTitle)
                 .takeIf { it.isNotBlank() }
+                ?: link.attr("title")
+                    .trim()
+                    .takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
 
-            val poster = row
-                .selectFirst("img")
+            val poster = row.selectFirst("img")
                 ?.attr("src")
+                ?.trim()
                 ?.takeIf { it.isNotBlank() }
                 ?.let(::fixUrl)
 
-            val isSeries =
-                url.contains("/serie-tv/")
+            val isSeries = url.contains(
+                "/serie-tv/",
+                ignoreCase = true
+            )
 
             if (isSeries) {
-
                 newTvSeriesSearchResponse(
-                    title,
+                    cleanTitle(title),
                     url,
                     TvType.TvSeries
                 ) {
                     this.posterUrl = poster
                 }
-
             } else {
-
                 newMovieSearchResponse(
-                    title,
+                    cleanTitle(title),
                     url,
                     TvType.Movie
                 ) {
@@ -334,8 +431,75 @@ private fun toHorizontalHomeResponse(
                 }
             }
         }
-        .distinctBy { it.url }
+        .let(results::addAll)
+
+    // Se ci sono meno di 30 risultati, il sito stesso
+    // considera terminata la ricerca.
+    if (results.size < 30) {
+        return results.distinctBy { it.url }
+    }
+
+    // ---------------------------------------------------------
+    // CARICAMENTO PROGRESSIVO
+    // ---------------------------------------------------------
+
+    var offset = 30
+var requests = 0
+
+while (requests < 20) {
+    requests++
+
+    val apiUrl = buildString {
+        append("$mainUrl/api/v1/web/archive")
+        append("?offset=$offset")
+        append("&limit=30")
+        append("&q=$encoded")
+        append("&sort=")
+        append(
+            java.net.URLEncoder.encode(
+                "Data di aggiornamento",
+                Charsets.UTF_8.name()
+            )
+        )
+    }
+
+    val response = try {
+        app.get(
+            apiUrl,
+            referer = "$mainUrl/"
+        )
+    } catch (_: Exception) {
+        break
+    }
+
+    if (!response.isSuccessful) {
+        break
+    }
+
+    val json = try {
+        parseJson<ArchiveResponse>(response.text)
+    } catch (_: Exception) {
+        break
+    }
+
+    val items = json.items
+
+    if (items.isEmpty()) {
+        break
+    }
+
+    results += items.mapNotNull {
+        it.toSearchResponse()
+    }
+
+    if (items.size < 30) {
+        break
+    }
+
+    offset += items.size
 }
+
+return results.distinctBy { it.url }
 
     // ============================================================
     // CARD PARSER
