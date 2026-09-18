@@ -335,6 +335,10 @@ private fun toHorizontalHomeResponse(
             TvType.TvSeries
         ) {
             this.posterUrl = posterUrl
+            this.posterHeaders = mapOf(
+                "Referer" to "$mainUrl/",
+                "User-Agent" to USER_AGENT
+            )
         }
 
     } else {
@@ -345,6 +349,10 @@ private fun toHorizontalHomeResponse(
             TvType.Movie
         ) {
             this.posterUrl = posterUrl
+            this.posterHeaders = mapOf(
+                "Referer" to "$mainUrl/",
+                "User-Agent" to USER_AGENT
+            )
         }
     }
 }
