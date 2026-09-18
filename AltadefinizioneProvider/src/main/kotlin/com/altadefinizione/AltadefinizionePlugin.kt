@@ -7,7 +7,7 @@ import android.content.Context
 @CloudstreamPlugin
 class AltadefinizionePlugin : Plugin() {
     override fun load(context: Context) {
-        registerMainAPI(AltadefinizioneFastProvider())
+        registerMainAPI(AltadefinizioneProvider())
         registerExtractorAPI(VidxGoExtractor())
     }
 }
