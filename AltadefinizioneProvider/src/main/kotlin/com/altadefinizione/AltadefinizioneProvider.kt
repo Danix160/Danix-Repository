@@ -69,41 +69,70 @@ class AltadefinizioneProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
 
-        /*
-         * Il sito usa un input "story".
-         *
-         * Manteniamo questo endpoint isolato così, se la ricerca
-         * Next.js utilizza un endpoint differente, dovremo cambiare
-         * solamente questa parte.
-         */
+    val encoded = java.net.URLEncoder.encode(
+        query.trim(),
+        Charsets.UTF_8.name()
+    )
 
-        val encoded = java.net.URLEncoder.encode(
-            query,
-            Charsets.UTF_8.name()
-        )
+    val document = app.get(
+        "$mainUrl/archivio?search=$encoded"
+    ).document
 
-        val candidates = listOf(
-            "$mainUrl/?story=$encoded",
-            "$mainUrl/search?story=$encoded"
-        )
+    return document
+        .select("table.catalog-table tbody tr.mlnew")
+        .mapNotNull { row ->
 
-        for (url in candidates) {
+            val link = row.selectFirst(
+                "h2 a[href*='-streaming.html']"
+            ) ?: row.selectFirst(
+                "a[href*='-streaming.html']"
+            ) ?: return@mapNotNull null
 
-            try {
+            val href = link.attr("href")
+                .takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
 
-                val document = app.get(url).document
-                val results = parseCards(document)
+            val url = fixUrl(href)
 
-                if (results.isNotEmpty()) {
-                    return results
+            val title = link.attr("title")
+                .ifBlank { link.text() }
+                .trim()
+                .let(::cleanTitle)
+                .takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+
+            val poster = row
+                .selectFirst("img")
+                ?.attr("src")
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::fixUrl)
+
+            val isSeries =
+                url.contains("/serie-tv/")
+
+            if (isSeries) {
+
+                newTvSeriesSearchResponse(
+                    title,
+                    url,
+                    TvType.TvSeries
+                ) {
+                    this.posterUrl = poster
                 }
 
-            } catch (_: Exception) {
+            } else {
+
+                newMovieSearchResponse(
+                    title,
+                    url,
+                    TvType.Movie
+                ) {
+                    this.posterUrl = poster
+                }
             }
         }
-
-        return emptyList()
-    }
+        .distinctBy { it.url }
+}
 
     // ============================================================
     // CARD PARSER
