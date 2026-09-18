@@ -26,7 +26,7 @@ cloudstream {
     extra["prefix"] = "Altadefinizione"
     extra["displayName"] = "Altadefinizione"
     
-    version = 5
+    version = 6
     description = "Altadefinizione"
     authors = listOf("Danix")
     
