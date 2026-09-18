@@ -783,9 +783,10 @@ val originalEpisode = xMatch
                                     source = "Loonex",
                                     name = "Loonex",
                                     url = streamUrl,
-                                    referer = "$mainUrl/",
                                     type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                )
+                                ) {
+                                    this.referer = "$mainUrl/"
+                                }
                             )
                             return true
                         }
@@ -810,9 +811,10 @@ val originalEpisode = xMatch
                         source = "Loonex (Legacy)",
                         name = "Loonex (Legacy)",
                         url = videoUrl,
-                        referer = "$mainUrl/",
                         type = if (videoUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    )
+                    ) {
+                        this.referer = "$mainUrl/"
+                    }
                 )
                 return true
             }
