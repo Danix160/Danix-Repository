@@ -384,13 +384,16 @@ class LoonexProvider : MainAPI() {
         // 2. LOONEX NORMALE (Nuovo Sistema API + RC4)
         // =========================================================
         
-        // Bypass sicuro del limite 5MB usando baseClient
-        val htmlReq = okhttp3.Request.Builder()
+        // Costruzione sicura senza Headers.of(Map) deprecato
+        val htmlReqBuilder = okhttp3.Request.Builder()
             .url(data)
-            .headers(okhttp3.Headers.of(headers))
             .addHeader("Referer", "$mainUrl/")
-            .build()
             
+        headers.forEach { (key, value) ->
+            htmlReqBuilder.addHeader(key, value)
+        }
+            
+        val htmlReq = htmlReqBuilder.build()
         val html = app.baseClient.newCall(htmlReq).execute().body?.string() ?: ""
 
         // A. Tentativo più veloce e sicuro: Prelevare il token _browserResolved pre-calcolato nell'HTML!
@@ -434,7 +437,7 @@ class LoonexProvider : MainAPI() {
                     val sessionToken = parts[0]
                     val sessionKey = parts[1]
 
-                    val authReq = okhttp3.Request.Builder()
+                    val authReqBuilder = okhttp3.Request.Builder()
                         .url(data)
                         .post(okhttp3.FormBody.Builder()
                             .add("action", "guarda_play_auth")
@@ -444,12 +447,15 @@ class LoonexProvider : MainAPI() {
                             .add("player_type", "norm")
                             .add("srv", "1")
                             .build())
-                        .addHeader("User-Agent", headers["User-Agent"] ?: "")
                         .addHeader("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
                         .addHeader("X-Requested-With", "XMLHttpRequest")
                         .addHeader("Referer", data)
-                        .build()
+                        
+                    headers.forEach { (key, value) ->
+                        authReqBuilder.addHeader(key, value)
+                    }
 
+                    val authReq = authReqBuilder.build()
                     val authJson = app.baseClient.newCall(authReq).execute().body?.string() ?: ""
                     val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
 
