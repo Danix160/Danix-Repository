@@ -66,7 +66,7 @@
 ![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
 
 **Contenuti:** Film · Serie TV · Cartoni
-🌐 [Visita il sito](https://altadefinizione.fast/))
+🌐 [Visita il sito](https://altadefinizione.fast/)
 
 **Funzioni principali:**
 
