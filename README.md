@@ -61,6 +61,25 @@
 
 > Estensioni attualmente presenti nella **Danix Repository**.
 
+### 🎬 ALTADEFINIZIONE
+
+![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
+
+**Contenuti:** Film · Serie TV · Cartoni
+🌐 [Visita il sito](https://altadefinizione.fast/))
+
+**Funzioni principali:**
+
+* 🔎 Ricerca dei contenuti
+* 🎬 Supporto Film
+* 📺 Supporto Serie TV
+* 🧸 Supporto Cartoni
+* 🏠 Homepage con contenuti del sito
+* 🖼️ Poster dei contenuti
+* ▶️ Gestione dei player disponibili
+
+---
+
 ### 🎬 ALTADEFINIZIONE01
 
 ![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
@@ -187,27 +206,6 @@
 
 ---
 
-### 🌐 UNIVERSAL
-
-![Parziale](https://img.shields.io/badge/STATO-PARZIALE-yellow?style=flat-square)
-
-**Contenuti:** Film · Serie TV
-
-**Funzioni principali:**
-
-* 🔎 Ricerca dei contenuti
-* 🎬 Supporto Film
-* 📺 Supporto Serie TV
-* 🌐 Integrazione di più fonti
-* 🔗 Incrocio tra Altadefinizione e OnlineSerieTV
-* 🖼️ Poster e informazioni dei contenuti
-* ▶️ Gestione dei player disponibili
-
-> ⚠️ Plugin funzionante basato sull'integrazione di più fonti.
-> ⚠️ Alcuni contenuti possono presentare incongruenze o CAPTCHA.
-
----
-
 ### 🎥 GUARDAPLAY
 
 ![Offline](https://img.shields.io/badge/STATO-OFFLINE-red?style=flat-square)
@@ -223,7 +221,7 @@
 * 🖼️ Gestione dei poster
 * ▶️ Integrazione con i player del sito
 
-> ❌ Player momentaneamente offline.
+> ❌ Lavori in Corso.
 
 ---
 
