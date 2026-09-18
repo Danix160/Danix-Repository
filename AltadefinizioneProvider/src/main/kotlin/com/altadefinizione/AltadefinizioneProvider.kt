@@ -448,13 +448,17 @@ class AltadefinizioneProvider : MainAPI() {
             vidxId,
             pageUrl
         ).forEach { candidate ->
-
-            if (
-                episodes.none {
-                    it.season == candidate.season &&
-                    it.episode == candidate.episode
-                }
-            ) {
+        
+            val existingIndex = episodes.indexOfFirst {
+                it.season == candidate.season &&
+                it.episode == candidate.episode
+            }
+        
+            if (existingIndex >= 0) {
+                // Il dato Next.js è più completo:
+                // titolo, poster e descrizione.
+                episodes[existingIndex] = candidate
+            } else {
                 episodes += candidate
             }
         }
@@ -495,53 +499,149 @@ class AltadefinizioneProvider : MainAPI() {
     // ============================================================
 
     private fun extractEpisodesFromHtml(
-        html: String,
-        vidxId: String,
-        referer: String
-    ): List<Episode> {
+    html: String,
+    vidxId: String,
+    referer: String
+): List<Episode> {
 
-        val results =
-            mutableListOf<Episode>()
+    val results = mutableListOf<Episode>()
+
+    /*
+     * I dati Next.js arrivano escaped, ad esempio:
+     *
+     * \"number\":1,
+     * \"name\":\"Stagione 1\",
+     * \"episodes\":[
+     *   {
+     *     \"number\":1,
+     *     \"title\":\"L'uomo nero\",
+     *     \"plot\":\"\",
+     *     \"still\":\"https://...\"
+     *   }
+     * ]
+     *
+     * Normalizziamo prima l'HTML per poterlo analizzare.
+     */
+
+    val normalized = html
+        .replace("\\\\\"", "\"")
+        .replace("\\\"", "\"")
+        .replace("\\/", "/")
+        .replace("\\u0026", "&")
+        .replace("\\u003c", "<")
+        .replace("\\u003e", ">")
+
+    /*
+     * Troviamo ogni stagione e prendiamo il blocco degli episodi
+     * fino alla stagione successiva.
+     */
+    val seasonRegex = Regex(
+        """"number"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"Stagione\s+\d+"\s*,\s*"episodes"\s*:\s*\["""
+    )
+
+    val seasonMatches = seasonRegex.findAll(normalized).toList()
+
+    seasonMatches.forEachIndexed { index, seasonMatch ->
+
+        val season = seasonMatch.groupValues[1].toIntOrNull()
+            ?: return@forEachIndexed
+
+        val start = seasonMatch.range.last + 1
+
+        val end = if (index + 1 < seasonMatches.size) {
+            seasonMatches[index + 1].range.first
+        } else {
+            normalized.length
+        }
+
+        val seasonBlock = normalized.substring(start, end)
 
         /*
-         * Primo fallback semplice:
-         * cerca tutte le occorrenze "S-E" presenti come
-         * data-episode nel sorgente serializzato.
+         * Ogni episodio:
+         * number
+         * title
+         * plot
+         * still
          */
-
-        Regex(
-            """data-episode\\?["']?\s*[:=]\s*\\?["'](\d+)-(\d+)"""
+        val episodeRegex = Regex(
+            """"number"\s*:\s*(\d+)\s*,\s*"title"\s*:\s*(null|"(?:\\.|[^"\\])*")\s*,\s*"plot"\s*:\s*(null|"(?:\\.|[^"\\])*")\s*,\s*"still"\s*:\s*(null|"(?:\\.|[^"\\])*")"""
         )
-            .findAll(html)
-            .forEach { match ->
 
-                val season =
-                    match.groupValues[1]
-                        .toIntOrNull()
-                        ?: return@forEach
+        episodeRegex.findAll(seasonBlock).forEach { match ->
 
-                val episode =
-                    match.groupValues[2]
-                        .toIntOrNull()
-                        ?: return@forEach
+            val episode = match.groupValues[1].toIntOrNull()
+                ?: return@forEach
 
-                results += newEpisode(
-                    LinkData(
-                        url = "https://v.vidxgo.co/t/$vidxId/$season/$episode",
-                        referer = referer
-                    )
-                ) {
-                    this.name = "Episodio $episode"
-                    this.season = season
-                    this.episode = episode
+            val title = decodeNextValue(
+                match.groupValues[2]
+            )
+
+            val plot = decodeNextValue(
+                match.groupValues[3]
+            )
+
+            val still = decodeNextValue(
+                match.groupValues[4]
+            )
+
+            results += newEpisode(
+                LinkData(
+                    url = "https://v.vidxgo.co/t/$vidxId/$season/$episode",
+                    referer = referer
+                )
+            ) {
+                this.name = title ?: "Episodio $episode"
+                this.season = season
+                this.episode = episode
+
+                still?.let {
+                    this.posterUrl = it
+                }
+
+                plot?.let {
+                    this.description = it
                 }
             }
-
-        return results
-            .distinctBy {
-                "${it.season}-${it.episode}"
-            }
+        }
     }
+
+    return results
+        .distinctBy {
+            "${it.season}-${it.episode}"
+        }
+        .sortedWith(
+            compareBy<Episode>(
+                { it.season ?: 0 },
+                { it.episode ?: 0 }
+            )
+        )
+}
+
+    private fun decodeNextValue(
+    value: String
+): String? {
+
+    if (
+        value.isBlank() ||
+        value == "null"
+    ) {
+        return null
+    }
+
+    return value
+        .removePrefix("\"")
+        .removeSuffix("\"")
+        .replace("\\\"", "\"")
+        .replace("\\/", "/")
+        .replace("\\n", "\n")
+        .replace("\\r", "")
+        .replace("\\t", "\t")
+        .replace("\\u0026", "&")
+        .replace("\\u003c", "<")
+        .replace("\\u003e", ">")
+        .trim()
+        .takeIf { it.isNotBlank() }
+}
 
     // ============================================================
     // LOAD LINKS
