@@ -208,7 +208,7 @@
 
 ### 🎥 GUARDAPLAY
 
-![Offline](https://img.shields.io/badge/STATO-OFFLINE-red?style=flat-square)
+![Online](https://img.shields.io/badge/STATO-ONLINE-brightgreen?style=flat-square)
 
 **Contenuti:** Film · Cartoni
 🌐 [Visita il sito](https://guardaplay.online/)
@@ -220,8 +220,6 @@
 * 🧸 Supporto Cartoni
 * 🖼️ Gestione dei poster
 * ▶️ Integrazione con i player del sito
-
-> ❌ Lavori in Corso.
 
 ---
 
