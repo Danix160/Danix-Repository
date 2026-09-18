@@ -39,6 +39,13 @@ class AltadefinizioneProvider : MainAPI() {
     request: MainPageRequest
 ): HomePageResponse {
 
+    if (page > 1) {
+        return newHomePageResponse(
+            emptyList<HomePageList>(),
+            false
+        )
+    }
+
     val document = app.get(mainUrl).document
 
     val sections = document
@@ -52,21 +59,44 @@ class AltadefinizioneProvider : MainAPI() {
                 ?.takeIf { it.isNotBlank() }
                 ?: return@mapNotNull null
 
-            val items = section
-                .select(".movie")
-                .mapNotNull { movie ->
-                    toHomeSearchResponse(movie)
+            val items = mutableListOf<SearchResponse>()
+
+            // Tipo 1:
+            // card verticali con wrapper .movie
+            section.select(".movie").forEach { movie ->
+                toHomeSearchResponse(movie)?.let {
+                    items += it
                 }
+            }
+
+            // Tipo 2:
+            // card orizzontali senza wrapper .movie
+            section.select(".swiper-slide").forEach { slide ->
+
+                val alreadyParsed =
+                    slide.selectFirst(".movie") != null
+
+                if (!alreadyParsed) {
+                    toHorizontalHomeResponse(slide)?.let {
+                        items += it
+                    }
+                }
+            }
+
+            val finalItems = items
                 .distinctBy { it.url }
 
-            if (items.isEmpty()) {
+            if (finalItems.isEmpty()) {
                 return@mapNotNull null
             }
 
             HomePageList(
                 name = sectionTitle,
-                list = items,
-                isHorizontalImages = false
+                list = finalItems,
+                isHorizontalImages = sectionTitle.equals(
+                    "Titoli del momento",
+                    ignoreCase = true
+                )
             )
         }
 
