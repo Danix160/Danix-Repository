@@ -303,11 +303,24 @@ if (movieCard != null) {
 
                 println("LOONEX_DEBUG: EPISODE_ROW=${row.outerHtml()}")
                 
-                val rawPlayUrl = row.selectFirst("a.btn-play-sm[href]")
-                    ?.attr("href")
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
+                val playButton = row.selectFirst("a.btn-play-sm")
                     ?: return@episodeLoop
+                
+                val rawPlayUrl = playButton.attr("href").trim()
+                val dataV = playButton.attr("data-v").trim()
+                val dataStream = playButton.attr("data-stream").trim()
+                val dataChk = row.attr("data-chk").trim()
+                
+                println("LOONEX_DEBUG: EPISODE dataV=${dataV.take(12)}...")
+                println("LOONEX_DEBUG: EPISODE dataStream=${dataStream.take(12)}...")
+                println("LOONEX_DEBUG: EPISODE dataChk=$dataChk")
+                
+                val playData = listOf(
+                    "LOONEX_EP",
+                    dataV,
+                    dataStream,
+                    dataChk
+                ).joinToString("|")
                 
                 val episodeId = Regex(
                     """[?&]id=([^&"'#]+)"""
@@ -354,7 +367,7 @@ if (movieCard != null) {
                 val cloudEpisode = index + 1
                 val displayName = if (label.isNotBlank()) label else "Episodio %02d".format(originalEpisode)
 
-                episodes.add(newEpisode(fixUrl(playUrl)) {
+                episodes.add(newEpisode(fixUrl(playData)) {
                     this.season = cloudSeason
                     this.episode = cloudEpisode
                     this.name = displayName
@@ -401,6 +414,25 @@ if (movieCard != null) {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+    
+        println("LOONEX_DEBUG: ===== LOADLINKS START =====")
+        println("LOONEX_DEBUG: rawData=${data.take(100)}")
+    
+        if (data.startsWith("LOONEX_EP|")) {
+            val parts = data.split("|", limit = 4)
+    
+            println("LOONEX_DEBUG: customParts=${parts.size}")
+    
+            val dataV = parts.getOrNull(1)
+            val dataStream = parts.getOrNull(2)
+            val dataChk = parts.getOrNull(3)
+    
+            println("LOONEX_DEBUG: dataV=${dataV?.take(16)}...")
+            println("LOONEX_DEBUG: dataStream=${dataStream?.take(16)}...")
+            println("LOONEX_DEBUG: dataChk=$dataChk")
+    
+            return false
+        }
     
         // =========================================================
         // 1. DRIME
