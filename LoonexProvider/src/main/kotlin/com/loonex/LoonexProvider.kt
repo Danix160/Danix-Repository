@@ -300,7 +300,43 @@ if (movieCard != null) {
             val rows = tabContainer.select(".episode-row")
             rows.forEachIndexed episodeLoop@ { index, row ->
                 val label = row.attr("data-ep-label").trim()
-                val playUrl = row.selectFirst("a.btn-play-sm[href]")?.attr("href")?.trim()?.takeIf { it.isNotBlank() } ?: return@episodeLoop
+
+                println("LOONEX_DEBUG: EPISODE_ROW=${row.outerHtml()}")
+                
+                val rawPlayUrl = row.selectFirst("a.btn-play-sm[href]")
+                    ?.attr("href")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@episodeLoop
+                
+                val episodeId = Regex(
+                    """[?&]id=([^&"'#]+)"""
+                ).find(rawPlayUrl)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                
+                // Se l'href contiene già il vero id usiamo la pagina guarda.php.
+                // Altrimenti proviamo a ricavarlo dagli attributi HTML della riga.
+                val rowEpisodeId =
+                    episodeId
+                        ?: row.attr("data-video-id").takeIf { it.isNotBlank() }
+                        ?: row.attr("data-id").takeIf { it.isNotBlank() }
+                        ?: row.selectFirst("[data-video-id]")
+                            ?.attr("data-video-id")
+                            ?.takeIf { it.isNotBlank() }
+                        ?: row.selectFirst("[data-id]")
+                            ?.attr("data-id")
+                            ?.takeIf { it.isNotBlank() }
+                
+                val playUrl = if (!rowEpisodeId.isNullOrBlank()) {
+                    "$mainUrl/cartoni/guarda.php?id=$rowEpisodeId"
+                } else {
+                    rawPlayUrl
+                }
+                
+                println("LOONEX_DEBUG: EPISODE rawPlayUrl=$rawPlayUrl")
+                println("LOONEX_DEBUG: EPISODE rowEpisodeId=$rowEpisodeId")
+                println("LOONEX_DEBUG: EPISODE finalPlayUrl=$playUrl")
 
                 val xMatch = Regex("""(?i)(\d+)\s*[x×]\s*0*(\d+)""").find(label) ?: Regex("""(?i)(\d+)[x×]0*(\d+)""").find(playUrl)
                 val originalSeason = xMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: cloudSeason
