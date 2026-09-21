@@ -411,63 +411,216 @@ class LoonexProvider : MainAPI() {
             }
         }
 
-        // B. Fallback: API Auth tramite session token _d
-        val currentVideoId = Regex("""const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']""")
-            .find(html)?.groupValues?.get(1) ?: Regex("""[?&]id=([^&]+)""").find(data)?.groupValues?.get(1)
-
-        if (currentVideoId != null) {
-            val dMatch = Regex("""var\s+_d\s*=\s*["']([^"']+)["']""").find(html)
-            if (dMatch != null) {
-                val dStr = dMatch.groupValues[1]
-                val rot13Str = rot13(dStr)
-                val decodedTokenKey = String(android.util.Base64.decode(rot13Str, android.util.Base64.DEFAULT))
-                val parts = decodedTokenKey.split(":")
-                
-                if (parts.size >= 2) {
-                    val sessionToken = parts[0]
-                    val sessionKey = parts[1]
-
-                    val authResponse = app.post(
-                        data,
-                        headers = headers + mapOf(
-                            "Content-Type" to "application/x-www-form-urlencoded;charset=UTF-8",
-                            "X-Requested-With" to "XMLHttpRequest"
+        // =========================================================
+        // B. Player autorizzato Loonex
+        // Replica di guardaResolveAuthorizedStream()
+        // =========================================================
+        
+        val currentVideoId = Regex(
+            """const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']"""
+        ).find(html)?.groupValues?.getOrNull(1)
+            ?: Regex("""[?&]id=([^&]+)""")
+                .find(data)?.groupValues?.getOrNull(1)
+        
+        val currentVideoIdSanitized = Regex(
+            """const\s+currentVideoIdSanitized\s*=\s*["']([^"']+)["']"""
+        ).find(html)?.groupValues?.getOrNull(1)
+            ?: currentVideoId
+        
+        if (!currentVideoId.isNullOrBlank()) {
+        
+            /*
+             * Il player NON usa var _d per l'autorizzazione.
+             *
+             * _lxSessionCtx() esegue:
+             *
+             * ROT13(_authCtx)
+             * -> Base64
+             * -> "token:chiave"
+             */
+        
+            val authCtx = Regex(
+                """var\s+_authCtx\s*=\s*["']([^"']+)["']"""
+            ).find(html)?.groupValues?.getOrNull(1)
+        
+            if (!authCtx.isNullOrBlank()) {
+                try {
+        
+                    val rot13Ctx = rot13(authCtx)
+        
+                    val decodedCtx = String(
+                        android.util.Base64.decode(
+                            rot13Ctx,
+                            android.util.Base64.DEFAULT
                         ),
-                        data = mapOf(
-                            "action" to "guarda_play_auth",
-                            "token" to sessionToken,
-                            "video_id" to currentVideoId,
-                            "raw_video_id" to currentVideoId,
-                            "player_type" to "norm",
-                            "srv" to "1"
-                        ),
-                        referer = data
+                        Charsets.UTF_8
                     )
-
-                    val authJson = authResponse.okhttpResponse.body?.string() ?: ""
-                    val payload = Regex(""""payload"\s*:\s*"([^"]+)"""").find(authJson)?.groupValues?.get(1)
-
-                    if (payload != null) {
-                        val unpacked = lxBrowserUnpack(payload, sessionKey)
-                        if (unpacked != null) {
-                            val streamUrl = Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
-                                .find(unpacked)?.groupValues?.get(1)?.replace("\\/", "/")
-                            
-                            if (!streamUrl.isNullOrBlank() && !streamUrl.contains("start1.mp4")) {
-                                callback(
-                                    newExtractorLink(
-                                        source = "Loonex",
-                                        name = "Loonex",
-                                        url = streamUrl,
-                                        type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                    ) {
-                                        this.referer = "$mainUrl/"
-                                    }
+        
+                    val ctxParts = decodedCtx.split(":", limit = 2)
+        
+                    if (ctxParts.size == 2) {
+        
+                        val sessionToken = ctxParts[0]
+                        val sessionKey = ctxParts[1]
+        
+                        /*
+                         * Il JS usa:
+                         *
+                         * window.location.pathname +
+                         * window.location.search
+                         *
+                         * quindi dobbiamo fare POST alla stessa
+                         * pagina episodio.
+                         */
+        
+                        val authHeaders = headers + mapOf(
+                            "Accept" to "application/json, text/plain, */*",
+                            "Content-Type" to
+                                "application/x-www-form-urlencoded;charset=UTF-8",
+                            "X-Requested-With" to "XMLHttpRequest",
+                            "Origin" to mainUrl
+                        )
+        
+                        val authResponse = app.post(
+                            data,
+                            headers = authHeaders,
+                            referer = data,
+                            data = mapOf(
+                                "action" to "guarda_play_auth",
+                                "token" to sessionToken,
+                                "video_id" to
+                                    (currentVideoIdSanitized ?: currentVideoId),
+                                "raw_video_id" to currentVideoId,
+                                "player_type" to "norm",
+                                "srv" to "1"
+                            )
+                        )
+        
+                        val authJson =
+                            authResponse.okhttpResponse.body
+                                ?.string()
+                                .orEmpty()
+        
+                        /*
+                         * Il server normalmente restituisce:
+                         *
+                         * {
+                         *   "ok": true,
+                         *   "payload": "..."
+                         * }
+                         */
+        
+                        val payload = Regex(
+                            """"payload"\s*:\s*"([^"]+)""""
+                        ).find(authJson)
+                            ?.groupValues
+                            ?.getOrNull(1)
+        
+                        var finalStream: String? = null
+        
+                        // -------------------------------
+                        // Risposta cifrata LX2/LX3
+                        // -------------------------------
+        
+                        if (!payload.isNullOrBlank()) {
+        
+                            val unpacked =
+                                lxBrowserUnpack(
+                                    payload,
+                                    sessionKey
                                 )
-                                return true
+        
+                            if (!unpacked.isNullOrBlank()) {
+        
+                                /*
+                                 * Il JS fa JSON.parse(dec)
+                                 */
+        
+                                val parsedOk = Regex(
+                                    """"ok"\s*:\s*true"""
+                                ).containsMatchIn(unpacked)
+        
+                                if (parsedOk) {
+        
+                                    finalStream = Regex(
+                                        """"streamUrl"\s*:\s*"([^"]+)""""
+                                    ).find(unpacked)
+                                        ?.groupValues
+                                        ?.getOrNull(1)
+                                        ?.replace("\\/", "/")
+                                        ?.replace("\\u0026", "&")
+                                        ?.replace("\\u003d", "=")
+                                }
                             }
                         }
+        
+                        // -------------------------------
+                        // Eventuale risposta non cifrata
+                        // -------------------------------
+        
+                        if (finalStream.isNullOrBlank()) {
+        
+                            finalStream = Regex(
+                                """"streamUrl"\s*:\s*"([^"]+)""""
+                            ).find(authJson)
+                                ?.groupValues
+                                ?.getOrNull(1)
+                                ?.replace("\\/", "/")
+                                ?.replace("\\u0026", "&")
+                                ?.replace("\\u003d", "=")
+                        }
+        
+                        // -------------------------------
+                        // Elimina stream civetta
+                        // -------------------------------
+        
+                        if (
+                            !finalStream.isNullOrBlank() &&
+                            !finalStream.contains(
+                                "start1.mp4",
+                                ignoreCase = true
+                            )
+                        ) {
+        
+                            callback(
+                                newExtractorLink(
+                                    source = "Loonex",
+                                    name = "Loonex",
+                                    url = finalStream,
+                                    type = if (
+                                        finalStream.contains(
+                                            ".m3u8",
+                                            ignoreCase = true
+                                        )
+                                    ) {
+                                        ExtractorLinkType.M3U8
+                                    } else {
+                                        ExtractorLinkType.VIDEO
+                                    }
+                                ) {
+        
+                                    /*
+                                     * videoserver.loonex.eu
+                                     * richiede il contesto Loonex.
+                                     */
+        
+                                    this.referer = data
+        
+                                    this.headers = mapOf(
+                                        "User-Agent" to
+                                            (headers["User-Agent"] ?: ""),
+                                        "Referer" to data,
+                                        "Origin" to mainUrl
+                                    )
+                                }
+                            )
+        
+                            return true
+                        }
                     }
+        
+                } catch (_: Exception) {
+                    // continua con fallback legacy
                 }
             }
         }
