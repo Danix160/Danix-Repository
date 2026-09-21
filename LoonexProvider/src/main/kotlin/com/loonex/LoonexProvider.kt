@@ -378,6 +378,7 @@ if (movieCard != null) {
                     }
                 )
             }
+        }
 
         if (episodes.isEmpty()) {
             doc.select(".episode-row").forEachIndexed { index, row ->
