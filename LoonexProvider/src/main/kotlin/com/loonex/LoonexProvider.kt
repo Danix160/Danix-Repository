@@ -236,54 +236,51 @@ class LoonexProvider : MainAPI() {
 
         val movieCard = doc.selectFirst(".quality-card[data-ep-label]")
 
-        if (movieCard != null) {
-            val rawMovieUrl = movieCard
-                .selectFirst("a.auto-watch-btn[href]")
-                ?.attr("href")
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
+if (movieCard != null) {
+    val rawMovieUrl = movieCard
+        .selectFirst("a.auto-watch-btn[href]")
+        ?.attr("href")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
 
-            // start1.mp4 è una civetta del nuovo player:
-            // non deve mai diventare il data passato a loadLinks().
-            val movieUrl = rawMovieUrl
-                ?.takeUnless {
-                    it.contains("start1.mp4", ignoreCase = true)
-                }
-        
-            if (movieUrl != null) {
-                return newMovieLoadResponse(
-                    title,
-                    url,
-                    TvType.Movie,
-                    fixUrl(movieUrl)
-                ) {
-                    posterUrl = poster
-                    this.plot = plot
-        
-                    if (rawTrailerUrl != null) {
-                        trailers.add(
-                            TrailerData(
-                                extractorUrl = rawTrailerUrl,
-                                referer = null,
-                                raw = true
-                            )
+    // start1.mp4 è lo stream civetta del nuovo player.
+    // Non deve essere passato direttamente a loadLinks().
+    val movieUrl = rawMovieUrl?.takeUnless {
+        it.contains("start1.mp4", ignoreCase = true)
+    }
+
+    if (movieUrl != null) {
+        return newMovieLoadResponse(
+            title,
+            url,
+            TvType.Movie,
+            fixUrl(movieUrl)
+        ) {
+            posterUrl = poster
+            this.plot = plot
+
+            if (rawTrailerUrl != null) {
+                trailers.add(
+                    TrailerData(
+                        extractorUrl = rawTrailerUrl,
+                        referer = null,
+                        raw = true
+                    )
+                )
+            } else {
+                trailerUrl?.let {
+                    trailers.add(
+                        TrailerData(
+                            extractorUrl = it,
+                            referer = null,
+                            raw = false
                         )
-                    } else {
-                        trailerUrl?.let {
-                            trailers.add(
-                                TrailerData(
-                                    extractorUrl = it,
-                                    referer = null,
-                                    raw = false
-                                )
-                            )
-                        }
-                    }
+                    )
                 }
             }
         }
-        }
-
+    }
+}
         val episodes = mutableListOf<Episode>()
         val seasonsData = mutableListOf<SeasonData>()
 
