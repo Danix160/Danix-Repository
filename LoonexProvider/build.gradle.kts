@@ -20,11 +20,11 @@ cloudstream {
     extra["prefix"] = "Loonex"
     extra["displayName"] = "Loonex"
     
-    version = 31
+    version = 32
     description = "Archivio di Anime e Cartoni animati in italiano da Loonex"
     authors = listOf("Danix")
     
-    status = 0
+    status = 1
     tvTypes = listOf("Cartoon", "Anime", "TvSeries", "Movie")
     requiresResources = false
     language = "it"
