@@ -418,19 +418,27 @@ if (movieCard != null) {
         println("LOONEX_DEBUG: ===== LOADLINKS START =====")
         println("LOONEX_DEBUG: rawData=${data.take(100)}")
     
-        if (data.startsWith("LOONEX_EP|")) {
-            val parts = data.split("|", limit = 4)
-    
+        val loonexMarker = "LOONEX_EP|"
+        val markerIndex = data.indexOf(loonexMarker)
+        
+        if (markerIndex >= 0) {
+        
+            val customData = data.substring(markerIndex)
+        
+            println("LOONEX_DEBUG: customData=${customData.take(100)}")
+        
+            val parts = customData.split("|", limit = 4)
+        
             println("LOONEX_DEBUG: customParts=${parts.size}")
-    
+        
             val dataV = parts.getOrNull(1)
             val dataStream = parts.getOrNull(2)
             val dataChk = parts.getOrNull(3)
-    
+        
             println("LOONEX_DEBUG: dataV=${dataV?.take(16)}...")
             println("LOONEX_DEBUG: dataStream=${dataStream?.take(16)}...")
             println("LOONEX_DEBUG: dataChk=$dataChk")
-    
+        
             return false
         }
     
