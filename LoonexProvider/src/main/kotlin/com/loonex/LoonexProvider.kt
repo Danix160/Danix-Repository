@@ -235,19 +235,53 @@ class LoonexProvider : MainAPI() {
         } catch (e: Exception) { null }
 
         val movieCard = doc.selectFirst(".quality-card[data-ep-label]")
+
         if (movieCard != null) {
-            val movieUrl = movieCard.selectFirst("a.auto-watch-btn[href]")?.attr("href")?.trim()?.takeIf { it.isNotBlank() }
+            val rawMovieUrl = movieCard
+                .selectFirst("a.auto-watch-btn[href]")
+                ?.attr("href")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+
+            // start1.mp4 è una civetta del nuovo player:
+            // non deve mai diventare il data passato a loadLinks().
+            val movieUrl = rawMovieUrl
+                ?.takeUnless {
+                    it.contains("start1.mp4", ignoreCase = true)
+                }
+        
             if (movieUrl != null) {
-                return newMovieLoadResponse(title, url, TvType.Movie, fixUrl(movieUrl)) {
+                return newMovieLoadResponse(
+                    title,
+                    url,
+                    TvType.Movie,
+                    fixUrl(movieUrl)
+                ) {
                     posterUrl = poster
                     this.plot = plot
+        
                     if (rawTrailerUrl != null) {
-                        trailers.add(TrailerData(extractorUrl = rawTrailerUrl, referer = null, raw = true))
+                        trailers.add(
+                            TrailerData(
+                                extractorUrl = rawTrailerUrl,
+                                referer = null,
+                                raw = true
+                            )
+                        )
                     } else {
-                        trailerUrl?.let { trailers.add(TrailerData(extractorUrl = it, referer = null, raw = false)) }
+                        trailerUrl?.let {
+                            trailers.add(
+                                TrailerData(
+                                    extractorUrl = it,
+                                    referer = null,
+                                    raw = false
+                                )
+                            )
+                        }
                     }
                 }
             }
+        }
         }
 
         val episodes = mutableListOf<Episode>()
