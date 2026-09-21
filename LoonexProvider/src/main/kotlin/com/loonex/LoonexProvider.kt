@@ -309,6 +309,21 @@ if (movieCard != null) {
 
             rows.forEachIndexed episodeLoop@ { index, row ->
                 val label = row.attr("data-ep-label").trim()
+
+                val playButton = row.selectFirst("a.btn-play-sm")
+
+                println("LOONEX_ROW: label=$label")
+                println("LOONEX_ROW: href=${playButton?.attr("href")}")
+                println("LOONEX_ROW: data-v=${playButton?.attr("data-v")}")
+                println("LOONEX_ROW: data-stream=${playButton?.attr("data-stream")}")
+                println("LOONEX_ROW: data-chk=${row.attr("data-chk")}")
+                println("LOONEX_ROW: outerHtml=${row.outerHtml()}")
+
+                if (index == 0 && cloudSeason == 1) {
+                println("LOONEX_ROW: ===== RAW FIRST EPISODE =====")
+                println(row.outerHtml())
+                println("LOONEX_ROW: ===== END RAW FIRST EPISODE =====")
+            }
             
                 val rawPlayUrl = row
                     .selectFirst("a.btn-play-sm[href]")
