@@ -234,7 +234,15 @@ class LoonexProvider : MainAPI() {
             }
         } catch (e: Exception) { null }
 
-        val movieCard = doc.selectFirst(".quality-card[data-ep-label]")
+        val hasSeasonTabs = doc.select(
+            """#season-tabs button[data-bs-target][data-season-name]"""
+        ).isNotEmpty()
+        
+        val movieCard = if (!hasSeasonTabs) {
+            doc.selectFirst(".quality-card[data-ep-label]")
+        } else {
+            null
+        }
 
 if (movieCard != null) {
     val rawMovieUrl = movieCard
@@ -298,83 +306,78 @@ if (movieCard != null) {
             seasonsData.add(SeasonData(cloudSeason, tabName))
 
             val rows = tabContainer.select(".episode-row")
+
             rows.forEachIndexed episodeLoop@ { index, row ->
                 val label = row.attr("data-ep-label").trim()
-
-                println("LOONEX_DEBUG: EPISODE_ROW=${row.outerHtml()}")
-                
-                val playButton = row.selectFirst("a.btn-play-sm")
+            
+                val rawPlayUrl = row
+                    .selectFirst("a.btn-play-sm[href]")
+                    ?.attr("href")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
                     ?: return@episodeLoop
-                
-                val rawPlayUrl = playButton.attr("href").trim()
-                val dataV = playButton.attr("data-v").trim()
-                val dataStream = playButton.attr("data-stream").trim()
-                val dataChk = row.attr("data-chk").trim()
-                
-                println("LOONEX_DEBUG: EPISODE dataV=${dataV.take(12)}...")
-                println("LOONEX_DEBUG: EPISODE dataStream=${dataStream.take(12)}...")
-                println("LOONEX_DEBUG: EPISODE dataChk=$dataChk")
-                
-                val playData = listOf(
-                    "LOONEX_EP",
-                    dataV,
-                    dataStream,
-                    dataChk
-                ).joinToString("|")
-                
-                val episodeId = Regex(
-                    """[?&]id=([^&"'#]+)"""
-                ).find(rawPlayUrl)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                
-                // Se l'href contiene già il vero id usiamo la pagina guarda.php.
-                // Altrimenti proviamo a ricavarlo dagli attributi HTML della riga.
-                val rowEpisodeId =
-                    episodeId
-                        ?: row.attr("data-video-id").takeIf { it.isNotBlank() }
-                        ?: row.attr("data-id").takeIf { it.isNotBlank() }
-                        ?: row.selectFirst("[data-video-id]")
-                            ?.attr("data-video-id")
-                            ?.takeIf { it.isNotBlank() }
-                        ?: row.selectFirst("[data-id]")
-                            ?.attr("data-id")
-                            ?.takeIf { it.isNotBlank() }
-                
-                val playUrl = if (!rowEpisodeId.isNullOrBlank()) {
-                    "$mainUrl/cartoni/guarda.php?id=$rowEpisodeId"
-                } else {
-                    rawPlayUrl
-                }
-                
+            
+                val playUrl = fixUrl(rawPlayUrl)
+            
+                println("LOONEX_DEBUG: EPISODE label=$label")
                 println("LOONEX_DEBUG: EPISODE rawPlayUrl=$rawPlayUrl")
-                println("LOONEX_DEBUG: EPISODE rowEpisodeId=$rowEpisodeId")
                 println("LOONEX_DEBUG: EPISODE finalPlayUrl=$playUrl")
-
-                val xMatch = Regex("""(?i)(\d+)\s*[x×]\s*0*(\d+)""").find(label) ?: Regex("""(?i)(\d+)[x×]0*(\d+)""").find(playUrl)
-                val originalSeason = xMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: cloudSeason
-                val originalEpisode = xMatch?.groupValues?.getOrNull(2)?.toIntOrNull() ?: Regex("""(?i)(?:episodio|episode|ep)\s*0*(\d+)""").find(label)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: (index + 1)
-                
+            
+                val xMatch =
+                    Regex("""(?i)(\d+)\s*[x×]\s*0*(\d+)""").find(label)
+                        ?: Regex("""(?i)(\d+)[x×]0*(\d+)""").find(playUrl)
+            
+                val originalSeason =
+                    xMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+                        ?: cloudSeason
+            
+                val originalEpisode =
+                    xMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
+                        ?: Regex("""(?i)(?:episodio|episode|ep)\s*0*(\d+)""")
+                            .find(label)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                            ?.toIntOrNull()
+                        ?: Regex("""^0*(\d+)""")
+                            .find(label)
+                            ?.groupValues
+                            ?.getOrNull(1)
+                            ?.toIntOrNull()
+                        ?: (index + 1)
+            
                 val episodeStill = if (tmdbId != null) {
                     var seasonStills = tmdbStillsBySeason[originalSeason]
+            
                     if (seasonStills == null) {
-                        seasonStills = getTmdbSeasonStills(tmdbId, originalSeason)
+                        seasonStills = getTmdbSeasonStills(
+                            tmdbId,
+                            originalSeason
+                        )
                         tmdbStillsBySeason[originalSeason] = seasonStills
                     }
+            
                     seasonStills[originalEpisode]
-                } else null
-
+                } else {
+                    null
+                }
+            
                 val cloudEpisode = index + 1
-                val displayName = if (label.isNotBlank()) label else "Episodio %02d".format(originalEpisode)
-
-                episodes.add(newEpisode(fixUrl(playData)) {
-                    this.season = cloudSeason
-                    this.episode = cloudEpisode
-                    this.name = displayName
-                    this.posterUrl = episodeStill ?: poster
-                })
+            
+                val displayName = if (label.isNotBlank()) {
+                    label
+                } else {
+                    "Episodio %02d".format(originalEpisode)
+                }
+            
+                episodes.add(
+                    newEpisode(playUrl) {
+                        this.season = cloudSeason
+                        this.episode = cloudEpisode
+                        this.name = displayName
+                        this.posterUrl = episodeStill ?: poster
+                    }
+                )
             }
-        }
 
         if (episodes.isEmpty()) {
             doc.select(".episode-row").forEachIndexed { index, row ->
@@ -417,30 +420,6 @@ if (movieCard != null) {
     
         println("LOONEX_DEBUG: ===== LOADLINKS START =====")
         println("LOONEX_DEBUG: rawData=${data.take(100)}")
-    
-        val loonexMarker = "LOONEX_EP|"
-        val markerIndex = data.indexOf(loonexMarker)
-        
-        if (markerIndex >= 0) {
-        
-            val customData = data.substring(markerIndex)
-        
-            println("LOONEX_DEBUG: customData=${customData.take(100)}")
-        
-            val parts = customData.split("|", limit = 4)
-        
-            println("LOONEX_DEBUG: customParts=${parts.size}")
-        
-            val dataV = parts.getOrNull(1)
-            val dataStream = parts.getOrNull(2)
-            val dataChk = parts.getOrNull(3)
-        
-            println("LOONEX_DEBUG: dataV=${dataV?.take(16)}...")
-            println("LOONEX_DEBUG: dataStream=${dataStream?.take(16)}...")
-            println("LOONEX_DEBUG: dataChk=$dataChk")
-        
-            return false
-        }
     
         // =========================================================
         // 1. DRIME
