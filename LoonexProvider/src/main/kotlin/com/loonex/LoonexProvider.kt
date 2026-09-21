@@ -386,35 +386,14 @@ class LoonexProvider : MainAPI() {
         // Estraiamo il body grezzo direttamente da OkHttp per bypassare i limiti di 5MB e le alterazioni di Jsoup
         val html = response.okhttpResponse.body?.string() ?: ""
 
-        // A. Tentativo più veloce: Prelevare il token _browserResolved pre-calcolato
-        val browserUnpackRegex = Regex("""_lxBrowserUnpack\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']+)["']\s*\)""")
-        val browserMatch = browserUnpackRegex.find(html)
-        
-        if (browserMatch != null) {
-            val payload = browserMatch.groupValues[1]
-            val key = browserMatch.groupValues[2]
-            val unpacked = lxBrowserUnpack(payload, key)
-            
-            if (!unpacked.isNullOrBlank() && !unpacked.contains("start1.mp4")) {
-                val streamUrl = unpacked.replace("\\/", "/")
-                callback(
-                    newExtractorLink(
-                        source = "Loonex",
-                        name = "Loonex",
-                        url = streamUrl,
-                        type = if (streamUrl.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = "$mainUrl/"
-                    }
-                )
-                return true
-            }
-        }
-
         // =========================================================
         // B. Player autorizzato Loonex
         // Replica di guardaResolveAuthorizedStream()
         // =========================================================
+        
+        println("LOONEX_DEBUG: ===== LOADLINKS START =====")
+        println("LOONEX_DEBUG: episodeUrl=$data")
+        println("LOONEX_DEBUG: htmlSize=${html.length}")
         
         val currentVideoId = Regex(
             """const\s+currentVideoId\s*=\s*(?:\(function\(\)\s*\{\s*return\s*)?["']([^"']+)["']"""
@@ -426,6 +405,9 @@ class LoonexProvider : MainAPI() {
             """const\s+currentVideoIdSanitized\s*=\s*["']([^"']+)["']"""
         ).find(html)?.groupValues?.getOrNull(1)
             ?: currentVideoId
+        
+        println("LOONEX_DEBUG: videoId=$currentVideoId")
+        println("LOONEX_DEBUG: sanitized=$currentVideoIdSanitized")
         
         if (!currentVideoId.isNullOrBlank()) {
         
@@ -442,6 +424,10 @@ class LoonexProvider : MainAPI() {
             val authCtx = Regex(
                 """var\s+_authCtx\s*=\s*["']([^"']+)["']"""
             ).find(html)?.groupValues?.getOrNull(1)
+
+            println(
+            "LOONEX_DEBUG: authCtxFound=${!authCtx.isNullOrBlank()} length=${authCtx?.length ?: 0}"
+        )
         
             if (!authCtx.isNullOrBlank()) {
                 try {
@@ -457,6 +443,14 @@ class LoonexProvider : MainAPI() {
                     )
         
                     val ctxParts = decodedCtx.split(":", limit = 2)
+
+                    println("LOONEX_DEBUG: decodedCtxLength=${decodedCtx.length}")
+                    println("LOONEX_DEBUG: ctxParts=${ctxParts.size}")
+                    
+                    if (ctxParts.size == 2) {
+                        println("LOONEX_DEBUG: sessionTokenLength=${ctxParts[0].length}")
+                        println("LOONEX_DEBUG: sessionKeyLength=${ctxParts[1].length}")
+                    }
         
                     if (ctxParts.size == 2) {
         
@@ -480,6 +474,10 @@ class LoonexProvider : MainAPI() {
                             "X-Requested-With" to "XMLHttpRequest",
                             "Origin" to mainUrl
                         )
+
+                        println("LOONEX_DEBUG: POST target=$data")
+                        println("LOONEX_DEBUG: action=guarda_play_auth")
+                        println("LOONEX_DEBUG: player_type=norm srv=1")
         
                         val authResponse = app.post(
                             data,
@@ -500,6 +498,13 @@ class LoonexProvider : MainAPI() {
                             authResponse.okhttpResponse.body
                                 ?.string()
                                 .orEmpty()
+
+                                println("LOONEX_DEBUG: authHttpCode=${authResponse.code}")
+                                println("LOONEX_DEBUG: authJsonLength=${authJson.length}")
+                                
+                                // Per adesso stampiamo la risposta: dovrebbe essere piccola.
+                                // Non stampiamo token/key.
+                                println("LOONEX_DEBUG: authJson=$authJson")
         
                         /*
                          * Il server normalmente restituisce:
@@ -515,6 +520,10 @@ class LoonexProvider : MainAPI() {
                         ).find(authJson)
                             ?.groupValues
                             ?.getOrNull(1)
+
+                            println(
+                            "LOONEX_DEBUG: payloadFound=${!payload.isNullOrBlank()} length=${payload?.length ?: 0}"
+                        )
         
                         var finalStream: String? = null
         
@@ -524,13 +533,17 @@ class LoonexProvider : MainAPI() {
         
                         if (!payload.isNullOrBlank()) {
         
-                            val unpacked =
-                                lxBrowserUnpack(
-                                    payload,
-                                    sessionKey
-                                )
-        
+                            val unpacked = lxBrowserUnpack(
+                                payload,
+                                sessionKey
+                            )
+                            
+                            println(
+                                "LOONEX_DEBUG: unpackSuccess=${!unpacked.isNullOrBlank()} length=${unpacked?.length ?: 0}"
+                            )
+                            
                             if (!unpacked.isNullOrBlank()) {
+                                println("LOONEX_DEBUG: unpacked=$unpacked")
         
                                 /*
                                  * Il JS fa JSON.parse(dec)
@@ -557,7 +570,8 @@ class LoonexProvider : MainAPI() {
                         // -------------------------------
                         // Eventuale risposta non cifrata
                         // -------------------------------
-        
+                        println("LOONEX_DEBUG: finalStream=$finalStream")
+                        
                         if (finalStream.isNullOrBlank()) {
         
                             finalStream = Regex(
@@ -614,13 +628,15 @@ class LoonexProvider : MainAPI() {
                                     )
                                 }
                             )
-        
+                        println("LOONEX_DEBUG: SUCCESS -> $finalStream")
+                println("LOONEX_DEBUG: ===== LOADLINKS END =====")
                             return true
                         }
                     }
         
-                } catch (_: Exception) {
-                    // continua con fallback legacy
+                } catch (e: Exception) {
+                    println("LOONEX_DEBUG: EXCEPTION=${e.javaClass.simpleName}: ${e.message}")
+                    e.printStackTrace()
                 }
             }
         }
