@@ -34,53 +34,72 @@ class ToonItaliaProvider : MainAPI() {
         mainUrl to "Home"
     )
 
-    override suspend fun getMainPage(
-        page: Int,
-        request: MainPageRequest
-    ): HomePageResponse {
 
-        if (page > 1) {
+        override suspend fun getMainPage(
+            page: Int,
+            request: MainPageRequest
+        ): HomePageResponse {
+        
+            if (page > 1) {
+                return newHomePageResponse(
+                    emptyList(),
+                    hasNext = false
+                )
+            }
+        
+            val document = app.get(
+                mainUrl,
+                interceptor = cfKiller
+            ).document
+        
+            val sections = document
+                .select(".grid > .col")
+                .mapNotNull { column ->
+        
+                    val sectionTitle = column
+                        .selectFirst("h2")
+                        ?.text()
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+        
+                    val type = getTypeFromHomeSection(
+                        sectionTitle
+                    )
+        
+                    val items = mutableListOf<SearchResponse>()
+        
+                    // Elaborazione sequenziale.
+                    // Evitiamo apmap perché è deprecato
+                    // e perché qui dobbiamo chiamare funzioni suspend.
+                    for (card in column.select(".item a.card-link[href]")) {
+        
+                        val response =
+                            card.toHomeSearchResponse(type)
+        
+                        if (response != null) {
+                            items += response
+                        }
+                    }
+        
+                    val distinctItems =
+                        items.distinctBy { it.url }
+        
+                    if (distinctItems.isEmpty()) {
+                        null
+                    } else {
+                        HomePageList(
+                            name = cleanSectionTitle(sectionTitle),
+                            list = distinctItems
+                        )
+                    }
+                }
+        
             return newHomePageResponse(
-                emptyList(),
+                sections,
                 hasNext = false
             )
         }
-
-        val document = app.get(mainUrl, interceptor = cfKiller).document
-
-        val sections = document
-            .select(".grid > .col")
-            .mapNotNull { column ->
-
-                val sectionTitle = column
-                    .selectFirst("h2")
-                    ?.text()
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
-
-                val type = getTypeFromHomeSection(sectionTitle)
-
-                val items = column.select(".item a.card-link[href]")
-                    .apmap { card -> card.toHomeSearchResponse(type) }
-                    .filterNotNull()
-                    .distinctBy { it.url }
-
-                if (items.isEmpty()) {
-                    null
-                } else {
-                    HomePageList(
-                        name = cleanSectionTitle(sectionTitle),
-                        list = items
-                    )
-                }
-            }
-
-        return newHomePageResponse(
-            sections,
-            hasNext = false
-        )
-    }
 
 
     private fun getTypeFromHomeSection(
@@ -105,98 +124,100 @@ class ToonItaliaProvider : MainAPI() {
         }
     }
 
-            private suspend Element.toHomeSearchResponse(
-                forcedType: TvType?
-            ): SearchResponse? {
-            
-                val href = attr("abs:href")
-                    .takeIf { it.isNotBlank() }
-                    ?: return null
-            
-                if (!href.startsWith(mainUrl)) {
-                    return null
-                }
-            
-                val title = selectFirst(".title")
-                    ?.text()
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: return null
-            
-                val type = forcedType ?: TvType.TvSeries
-            
-                // ============================================================
-                // POSTER TOONITALIA
-                // ============================================================
-            
-                val sitePoster = selectFirst("img")
-                    ?.let { img ->
-                        img.attr("abs:src")
+        private suspend fun Element.toHomeSearchResponse(
+            forcedType: TvType?
+        ): SearchResponse? {
+        
+            val href = attr("abs:href")
+                .takeIf { it.isNotBlank() }
+                ?: return null
+        
+            if (!href.startsWith(mainUrl)) {
+                return null
+            }
+        
+            val title = selectFirst(".title")
+                ?.text()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return null
+        
+            val type = forcedType ?: TvType.TvSeries
+        
+            // ============================================================
+            // POSTER TOONITALIA
+            // ============================================================
+        
+            val sitePoster = selectFirst("img")
+                ?.let { img ->
+        
+                    img.attr("abs:src")
+                        .takeIf { it.isNotBlank() }
+        
+                        ?: img.attr("abs:data-src")
                             .takeIf { it.isNotBlank() }
-                            ?: img.attr("abs:data-src")
-                                .takeIf { it.isNotBlank() }
+                }
+        
+            // ============================================================
+            // POSTER TMDB
+            //
+            // Se ToonItalia non ha il poster,
+            // usiamo TMDB come fallback.
+            // ============================================================
+        
+            val poster = sitePoster
+                ?: getTmdbPoster(
+                    title = title,
+                    type = type
+                )
+        
+            // ============================================================
+            // RISULTATO
+            // ============================================================
+        
+            return when (type) {
+        
+                TvType.Anime -> {
+                    newAnimeSearchResponse(
+                        title,
+                        href,
+                        TvType.Anime
+                    ) {
+                        posterUrl = poster
                     }
-            
-                // ============================================================
-                // POSTER TMDB
-                //
-                // Se ToonItalia non ha un poster valido,
-                // proviamo automaticamente TMDB.
-                // ============================================================
-            
-                val poster = sitePoster
-                    ?: getTmdbPoster(
-                        title = title,
-                        type = type
-                    )
-            
-                // ============================================================
-                // RISULTATO
-                // ============================================================
-            
-                return when (type) {
-            
-                    TvType.Anime -> {
-                        newAnimeSearchResponse(
-                            title,
-                            href,
-                            TvType.Anime
-                        ) {
-                            posterUrl = poster
-                        }
+                }
+        
+                TvType.AnimeMovie -> {
+                    newMovieSearchResponse(
+                        title,
+                        href,
+                        TvType.AnimeMovie
+                    ) {
+                        posterUrl = poster
                     }
-            
-                    TvType.AnimeMovie -> {
-                        newMovieSearchResponse(
-                            title,
-                            href,
-                            TvType.AnimeMovie
-                        ) {
-                            posterUrl = poster
-                        }
+                }
+        
+                TvType.TvSeries -> {
+                    newTvSeriesSearchResponse(
+                        title,
+                        href,
+                        TvType.TvSeries
+                    ) {
+                        posterUrl = poster
                     }
-            
-                    TvType.TvSeries -> {
-                        newTvSeriesSearchResponse(
-                            title,
-                            href,
-                            TvType.TvSeries
-                        ) {
-                            posterUrl = poster
-                        }
-                    }
-            
-                    else -> {
-                        newMovieSearchResponse(
-                            title,
-                            href,
-                            type
-                        ) {
-                            posterUrl = poster
-                        }
+                }
+        
+                else -> {
+                    newMovieSearchResponse(
+                        title,
+                        href,
+                        type
+                    ) {
+                        posterUrl = poster
                     }
                 }
             }
+        }
 
     private fun cleanSectionTitle(
         title: String
