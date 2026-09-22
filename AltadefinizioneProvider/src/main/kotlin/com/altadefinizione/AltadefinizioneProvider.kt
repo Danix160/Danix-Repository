@@ -329,7 +329,7 @@ private fun toHorizontalHomeResponse(
         
         val directPoster = posterUrl
             ?.replace(
-                "https://img.altadefinizione.fast/t/p/",
+                "https://img.altadefinizionex.live//t/p/",
                 "https://image.tmdb.org/t/p/"
             )
         
