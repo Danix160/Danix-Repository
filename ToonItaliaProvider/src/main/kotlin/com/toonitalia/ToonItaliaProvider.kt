@@ -35,72 +35,62 @@ class ToonItaliaProvider : MainAPI() {
     )
 
 
-        override suspend fun getMainPage(
-            page: Int,
-            request: MainPageRequest
-        ): HomePageResponse {
-        
-            if (page > 1) {
-                return newHomePageResponse(
-                    emptyList(),
-                    hasNext = false
-                )
-            }
-        
-            val document = app.get(
-                mainUrl,
-                interceptor = cfKiller
-            ).document
-        
-            val sections = document
-                .select(".grid > .col")
-                .mapNotNull { column ->
-        
-                    val sectionTitle = column
-                        .selectFirst("h2")
-                        ?.text()
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
-                        ?: return@mapNotNull null
-        
-                    val type = getTypeFromHomeSection(
-                        sectionTitle
-                    )
-        
-                    val items = mutableListOf<SearchResponse>()
-        
-                    // Elaborazione sequenziale.
-                    // Evitiamo apmap perché è deprecato
-                    // e perché qui dobbiamo chiamare funzioni suspend.
-                    for (card in column.select(".item a.card-link[href]")) {
-        
-                        val response =
-                            card.toHomeSearchResponse(type)
-        
-                        if (response != null) {
-                            items += response
-                        }
-                    }
-        
-                    val distinctItems =
-                        items.distinctBy { it.url }
-        
-                    if (distinctItems.isEmpty()) {
-                        null
-                    } else {
-                        HomePageList(
-                            name = cleanSectionTitle(sectionTitle),
-                            list = distinctItems
-                        )
-                    }
-                }
-        
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
+    
+        if (page > 1) {
             return newHomePageResponse(
-                sections,
+                emptyList(),
                 hasNext = false
             )
         }
-
+    
+        val document = app.get(
+            mainUrl,
+            interceptor = cfKiller
+        ).document
+    
+        val sections = mutableListOf<HomePageList>()
+    
+        for (column in document.select(".grid > .col")) {
+    
+            val sectionTitle = column
+                .selectFirst("h2")
+                ?.text()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: continue
+    
+            val type = getTypeFromHomeSection(sectionTitle)
+    
+            val items = mutableListOf<SearchResponse>()
+    
+            for (card in column.select(".item a.card-link[href]")) {
+    
+                val response = card.toHomeSearchResponse(type)
+    
+                if (response != null) {
+                    items += response
+                }
+            }
+    
+            val distinctItems = items.distinctBy { it.url }
+    
+            if (distinctItems.isNotEmpty()) {
+                sections += HomePageList(
+                    name = cleanSectionTitle(sectionTitle),
+                    list = distinctItems
+                )
+            }
+        }
+    
+        return newHomePageResponse(
+            sections,
+            hasNext = false
+        )
+    }
 
     private fun getTypeFromHomeSection(
         title: String
@@ -124,7 +114,7 @@ class ToonItaliaProvider : MainAPI() {
         }
     }
 
-        private suspend fun Element.toHomeSearchResponse(
+        private fun Element.toHomeSearchResponse(
             forcedType: TvType?
         ): SearchResponse? {
         
@@ -144,11 +134,7 @@ class ToonItaliaProvider : MainAPI() {
         
             val type = forcedType ?: TvType.TvSeries
         
-            // ============================================================
-            // POSTER TOONITALIA
-            // ============================================================
-        
-            val sitePoster = selectFirst("img")
+            val poster = selectFirst("img")
                 ?.let { img ->
         
                     val src = img
@@ -165,36 +151,6 @@ class ToonItaliaProvider : MainAPI() {
                         else -> null
                     }
                 }
-        
-            // ============================================================
-            // TMDB PRIMA SCELTA
-            //
-            // La Home di ToonItalia può avere poster vecchi,
-            // generici o associati a contenuti diversi.
-            //
-            // Per questo proviamo SEMPRE TMDB per primo.
-            // ============================================================
-        
-            val tmdbPoster = getTmdbPoster(
-                title = title,
-                type = type
-            )
-        
-            // ============================================================
-            // POSTER FINALE
-            //
-            // 1. TMDB
-            // 2. ToonItalia
-            // 3. null
-            // ============================================================
-        
-            val poster =
-                tmdbPoster
-                    ?: sitePoster
-        
-            // ============================================================
-            // RISULTATO
-            // ============================================================
         
             return when (type) {
         
