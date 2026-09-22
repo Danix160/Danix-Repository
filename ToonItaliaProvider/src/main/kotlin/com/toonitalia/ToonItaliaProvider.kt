@@ -151,25 +151,46 @@ class ToonItaliaProvider : MainAPI() {
             val sitePoster = selectFirst("img")
                 ?.let { img ->
         
-                    img.attr("abs:src")
-                        .takeIf { it.isNotBlank() }
+                    val src = img
+                        .attr("abs:src")
+                        .trim()
         
-                        ?: img.attr("abs:data-src")
-                            .takeIf { it.isNotBlank() }
+                    val dataSrc = img
+                        .attr("abs:data-src")
+                        .trim()
+        
+                    when {
+                        isValidPosterUrl(src) -> src
+                        isValidPosterUrl(dataSrc) -> dataSrc
+                        else -> null
+                    }
                 }
         
             // ============================================================
-            // POSTER TMDB
+            // TMDB PRIMA SCELTA
             //
-            // Se ToonItalia non ha il poster,
-            // usiamo TMDB come fallback.
+            // La Home di ToonItalia può avere poster vecchi,
+            // generici o associati a contenuti diversi.
+            //
+            // Per questo proviamo SEMPRE TMDB per primo.
             // ============================================================
         
-            val poster = sitePoster
-                ?: getTmdbPoster(
-                    title = title,
-                    type = type
-                )
+            val tmdbPoster = getTmdbPoster(
+                title = title,
+                type = type
+            )
+        
+            // ============================================================
+            // POSTER FINALE
+            //
+            // 1. TMDB
+            // 2. ToonItalia
+            // 3. null
+            // ============================================================
+        
+            val poster =
+                tmdbPoster
+                    ?: sitePoster
         
             // ============================================================
             // RISULTATO
@@ -217,6 +238,34 @@ class ToonItaliaProvider : MainAPI() {
                     }
                 }
             }
+        }
+
+        //////////////////////////////////////////
+        //   NUOVA FUNZIONE        //////////////
+        ////////////////////////////////////////
+
+        private fun isValidPosterUrl(
+            url: String
+        ): Boolean {
+        
+            if (url.isBlank()) {
+                return false
+            }
+        
+            val normalized = url.lowercase()
+        
+            if (
+                normalized.contains("placeholder") ||
+                normalized.contains("default-image") ||
+                normalized.contains("no-image") ||
+                normalized.contains("noimage") ||
+                normalized.contains("dummy")
+            ) {
+                return false
+            }
+        
+            return normalized.startsWith("http://") ||
+                normalized.startsWith("https://")
         }
 
     private fun cleanSectionTitle(
