@@ -13,7 +13,7 @@ import java.net.URI
 
 class AltadefinizioneProvider : MainAPI() {
 
-    private const val ALT_DOMAIN = "https://altadefinizionex.live"
+    override var mainUrl = "https://altadefinizionex.live"
     override var name = "Altadefinizione"
     override var lang = "it"
 
