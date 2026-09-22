@@ -63,15 +63,14 @@ class ToonItaliaProvider : MainAPI() {
                 ?: continue
     
             val type = getTypeFromHomeSection(sectionTitle)
-    
-            val items = mutableListOf<SearchResponse>()
-    
-            for (card in column.select(".item a.card-link[href]")) {
-                val response = card.toHomeSearchResponse(type)
-                if (response != null) {
-                    items += response
-                }
-            }
+            
+            // Prendiamo al massimo le prime 24 schede visibili per colonna per evitare sovraccarico
+            val cards = column.select(".item a.card-link[href]").take(24)
+            
+            // amap esegue le richieste TMDB contemporaneamente in parallelo
+            val items = cards.amap { card ->
+                card.toHomeSearchResponse(type)
+            }.filterNotNull()
     
             val distinctItems = items.distinctBy { it.url }
     
