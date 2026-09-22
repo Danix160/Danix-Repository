@@ -34,7 +34,6 @@ class ToonItaliaProvider : MainAPI() {
         mainUrl to "Home"
     )
 
-
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
@@ -68,9 +67,7 @@ class ToonItaliaProvider : MainAPI() {
             val items = mutableListOf<SearchResponse>()
     
             for (card in column.select(".item a.card-link[href]")) {
-    
                 val response = card.toHomeSearchResponse(type)
-    
                 if (response != null) {
                     items += response
                 }
@@ -95,498 +92,224 @@ class ToonItaliaProvider : MainAPI() {
     private fun getTypeFromHomeSection(
         title: String
     ): TvType? {
-
         val normalized = normalize(title)
-
         return when {
-
-            normalized.contains("serie tv") ->
-                TvType.TvSeries
-
-            normalized.contains("film animazione") ->
-                TvType.AnimeMovie
-
-            normalized.contains("anime") ->
-                TvType.Anime
-
-            else ->
-                null
+            normalized.contains("serie tv") -> TvType.TvSeries
+            normalized.contains("film animazione") -> TvType.AnimeMovie
+            normalized.contains("anime") -> TvType.Anime
+            else -> null
         }
     }
 
-        private fun Element.toHomeSearchResponse(
-            forcedType: TvType?
-        ): SearchResponse? {
-        
-            val href = attr("abs:href")
-                .takeIf { it.isNotBlank() }
-                ?: return null
-        
-            if (!href.startsWith(mainUrl)) {
-                return null
-            }
-        
-            val title = selectFirst(".title")
-                ?.text()
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: return null
-        
-            val type = forcedType ?: TvType.TvSeries
-        
+    private suspend fun Element.toHomeSearchResponse(
+        forcedType: TvType?
+    ): SearchResponse? {
+    
+        val href = attr("abs:href")
+            .takeIf { it.isNotBlank() }
+            ?: return null
+    
+        if (!href.startsWith(mainUrl)) {
+            return null
+        }
+    
+        val title = selectFirst(".title")
+            ?.text()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+    
+        val type = forcedType ?: TvType.TvSeries
+
+        // Priorità a TMDB per aggirare il blocco Cloudflare 403 sulle immagini
+        val tmdbPoster = getTmdbPoster(title, type)
+
+        val poster = if (!tmdbPoster.isNullOrBlank()) {
+            tmdbPoster
+        } else {
             val img = selectFirst("img")
-        
-            val src = img
-                ?.attr("abs:src")
-                ?.trim()
-                .orEmpty()
-        
-            val dataSrc = img
-                ?.attr("abs:data-src")
-                ?.trim()
-                .orEmpty()
-        
-            val rawPoster = when {
+            val src = img?.attr("abs:src")?.trim().orEmpty()
+            val dataSrc = img?.attr("abs:data-src")?.trim().orEmpty()
+            when {
                 isValidPosterUrl(src) -> src
                 isValidPosterUrl(dataSrc) -> dataSrc
                 else -> null
             }
-        
-            // Applica l'header Referer per superare la protezione hotlink di WordPress/Cloudflare
-            val poster = rawPoster?.let { url ->
-                if (url.contains("toonitalia.xyz")) {
-                    "$url|Referer=$mainUrl/"
-                } else {
-                    url
+        }
+    
+        return when (type) {
+            TvType.Anime -> {
+                newAnimeSearchResponse(title, href, TvType.Anime) {
+                    posterUrl = poster
                 }
             }
-        
-            println(
-                "[HOME POSTER] $title | raw=$rawPoster | finalWithHeaders=$poster"
-            )
-        
-            return when (type) {
-        
-                TvType.Anime -> {
-                    newAnimeSearchResponse(
-                        title,
-                        href,
-                        TvType.Anime
-                    ) {
-                        posterUrl = poster
-                    }
+            TvType.AnimeMovie -> {
+                newMovieSearchResponse(title, href, TvType.AnimeMovie) {
+                    posterUrl = poster
                 }
-        
-                TvType.AnimeMovie -> {
-                    newMovieSearchResponse(
-                        title,
-                        href,
-                        TvType.AnimeMovie
-                    ) {
-                        posterUrl = poster
-                    }
+            }
+            TvType.TvSeries -> {
+                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                    posterUrl = poster
                 }
-        
-                TvType.TvSeries -> {
-                    newTvSeriesSearchResponse(
-                        title,
-                        href,
-                        TvType.TvSeries
-                    ) {
-                        posterUrl = poster
-                    }
-                }
-        
-                else -> {
-                    newMovieSearchResponse(
-                        title,
-                        href,
-                        type
-                    ) {
-                        posterUrl = poster
-                    }
+            }
+            else -> {
+                newMovieSearchResponse(title, href, type) {
+                    posterUrl = poster
                 }
             }
         }
+    }
 
-        //////////////////////////////////////////
-        //   NUOVA FUNZIONE        //////////////
-        ////////////////////////////////////////
-
-        private fun isValidPosterUrl(
-            url: String
-        ): Boolean {
-        
-            if (url.isBlank()) {
-                return false
-            }
-        
-            val normalized = url.lowercase()
-        
-            if (
-                normalized.contains("placeholder") ||
-                normalized.contains("default-image") ||
-                normalized.contains("no-image") ||
-                normalized.contains("noimage") ||
-                normalized.contains("dummy")
-            ) {
-                return false
-            }
-        
-            return normalized.startsWith("http://") ||
-                normalized.startsWith("https://")
+    private fun isValidPosterUrl(
+        url: String
+    ): Boolean {
+        if (url.isBlank()) return false
+    
+        val normalized = url.lowercase()
+    
+        if (
+            normalized.contains("placeholder") ||
+            normalized.contains("default-image") ||
+            normalized.contains("no-image") ||
+            normalized.contains("noimage") ||
+            normalized.contains("dummy")
+        ) {
+            return false
         }
+    
+        return normalized.startsWith("http://") || normalized.startsWith("https://")
+    }
 
     private fun cleanSectionTitle(
         title: String
     ): String {
-
         return title
-            .replace(
-                Regex("""^[^\p{L}\p{N}]+"""),
-                ""
-            )
+            .replace(Regex("""^[^\p{L}\p{N}]+"""), "")
             .trim()
     }
 
-        // ============================================================
-        // SEARCH
-        // ============================================================
-        
-        private val tmdbPosterCache =
-            mutableMapOf<String, String?>()
-        
+    // ============================================================
+    // SEARCH
+    // ============================================================
+    
+    private val tmdbPosterCache = mutableMapOf<String, String?>()
 
-        private suspend fun getTmdbPoster(
-            title: String,
-            type: TvType
-        ): String? {
-        
-            val cleanTitle = title
-                .trim()
-                .takeIf { it.isNotBlank() }
-                ?: return null
-        
-            val cacheKey =
-                "${type.name}:${normalize(cleanTitle)}"
-        
-            if (tmdbPosterCache.containsKey(cacheKey)) {
-                return tmdbPosterCache[cacheKey]
+    private suspend fun getTmdbPoster(
+        title: String,
+        type: TvType
+    ): String? {
+    
+        val cleanTitle = title
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?: return null
+    
+        val cacheKey = "${type.name}:${normalize(cleanTitle)}"
+    
+        if (tmdbPosterCache.containsKey(cacheKey)) {
+            return tmdbPosterCache[cacheKey]
+        }
+    
+        val directPoster = runCatching {
+            when (type) {
+                TvType.AnimeMovie, TvType.Movie -> {
+                    Tmdb.getMovie(title = cleanTitle, year = null)?.posterUrl
+                }
+                TvType.Anime, TvType.TvSeries -> {
+                    Tmdb.getTv(title = cleanTitle, year = null)?.posterUrl
+                }
+                else -> null
             }
-        
-            // ------------------------------------------------------------
-            // 1. PRIMO TENTATIVO
-            //
-            // Usiamo il titolo esattamente come fornito da ToonItalia.
-            // ------------------------------------------------------------
-        
-            val directPoster = runCatching {
-        
+        }.getOrNull()
+    
+        if (!directPoster.isNullOrBlank()) {
+            tmdbPosterCache[cacheKey] = directPoster
+            return directPoster
+        }
+    
+        val fallbackTitle = cleanTitle
+            .replace(Regex("""\s*[\[(](?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)[\])]\s*""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""\s*[-–—]\s*(?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+(?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*[\[(]?(?:episodi|episode|episodes)\s*\d+(?:\s*[-–—]\s*\d+)?[\])]?""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*[-–—]\s*\d+\s*episodi?\s*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*\(\s*\d{4}\s*\)\s*$"""), "")
+            .replace(Regex("""\s*\[\s*\d{4}\s*\]\s*$"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    
+        if (fallbackTitle.isNotBlank() && normalize(fallbackTitle) != normalize(cleanTitle)) {
+            val fallbackPoster = runCatching {
                 when (type) {
-        
-                    TvType.AnimeMovie,
-                    TvType.Movie -> {
-        
-                        Tmdb.getMovie(
-                            title = cleanTitle,
-                            year = null
-                        )?.posterUrl
+                    TvType.AnimeMovie, TvType.Movie -> {
+                        Tmdb.getMovie(title = fallbackTitle, year = null)?.posterUrl
                     }
-        
-                    TvType.Anime,
-                    TvType.TvSeries -> {
-        
-                        Tmdb.getTv(
-                            title = cleanTitle,
-                            year = null
-                        )?.posterUrl
+                    TvType.Anime, TvType.TvSeries -> {
+                        Tmdb.getTv(title = fallbackTitle, year = null)?.posterUrl
                     }
-        
                     else -> null
                 }
-        
             }.getOrNull()
-        
-            if (!directPoster.isNullOrBlank()) {
-        
-                tmdbPosterCache[cacheKey] = directPoster
-        
-                return directPoster
+    
+            if (!fallbackPoster.isNullOrBlank()) {
+                tmdbPosterCache[cacheKey] = fallbackPoster
+                return fallbackPoster
             }
-        
-            // ------------------------------------------------------------
-            // 2. FALLBACK
-            //
-            // Ripuliamo i titoli che possono contenere informazioni
-            // aggiuntive usate da ToonItalia ma non presenti su TMDB.
-            // ------------------------------------------------------------
-        
-            val fallbackTitle = cleanTitle
-                .replace(
-                    Regex(
-                        """\s*[\[(](?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)[\])]\s*""",
-                        RegexOption.IGNORE_CASE
-                    ),
-                    " "
-                )
-                .replace(
-                    Regex(
-                        """\s*[-–—]\s*(?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)\s*$""",
-                        RegexOption.IGNORE_CASE
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        """\s+(?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)\s*$""",
-                        RegexOption.IGNORE_CASE
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        """\s*[\[(]?(?:episodi|episode|episodes)\s*\d+(?:\s*[-–—]\s*\d+)?[\])]?""",
-                        RegexOption.IGNORE_CASE
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        """\s*[-–—]\s*\d+\s*episodi?\s*$""",
-                        RegexOption.IGNORE_CASE
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        """\s*\(\s*\d{4}\s*\)\s*$"""
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        """\s*\[\s*\d{4}\s*\]\s*$"""
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex("""\s+"""),
-                    " "
-                )
-                .trim()
-        
-            // Se la pulizia non ha cambiato nulla, non facciamo
-            // una seconda richiesta identica.
-            if (
-                fallbackTitle.isNotBlank() &&
-                normalize(fallbackTitle) != normalize(cleanTitle)
-            ) {
-        
-                val fallbackPoster = runCatching {
-        
-                    when (type) {
-        
-                        TvType.AnimeMovie,
-                        TvType.Movie -> {
-        
-                            Tmdb.getMovie(
-                                title = fallbackTitle,
-                                year = null
-                            )?.posterUrl
-                        }
-        
-                        TvType.Anime,
-                        TvType.TvSeries -> {
-        
-                            Tmdb.getTv(
-                                title = fallbackTitle,
-                                year = null
-                            )?.posterUrl
-                        }
-        
-                        else -> null
-                    }
-        
-                }.getOrNull()
-        
-                if (!fallbackPoster.isNullOrBlank()) {
-        
-                    tmdbPosterCache[cacheKey] = fallbackPoster
-        
-                    return fallbackPoster
-                }
-            }
-        
-            // ------------------------------------------------------------
-            // NESSUN POSTER TROVATO
-            // ------------------------------------------------------------
-        
-            tmdbPosterCache[cacheKey] = null
-        
-            return null
         }
+    
+        tmdbPosterCache[cacheKey] = null
+        return null
+    }
 
-        
-        
-        override suspend fun search(
-            query: String
-        ): List<SearchResponse> {
-        
-            val cleanQuery = query
-                .trim()
-        
-            if (cleanQuery.isBlank()) {
-                return emptyList()
+    override suspend fun search(
+        query: String
+    ): List<SearchResponse> {
+    
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) return emptyList()
+    
+        val document = runCatching {
+            app.get(
+                "$mainUrl/",
+                params = mapOf("s" to cleanQuery),
+                interceptor = cfKiller
+            ).document
+        }.getOrNull() ?: return emptyList()
+    
+        val articles = document.select("article.post").toList()
+        val results = mutableListOf<SearchResponse>()
+    
+        for (article in articles) {
+            val link = article.selectFirst("h2.entry-title a[href], .entry-title a[href]") ?: continue
+            val href = link.attr("abs:href").takeIf { it.isNotBlank() } ?: continue
+            val title = link.text().trim().takeIf { it.isNotBlank() } ?: continue
+    
+            if (!href.startsWith(mainUrl) || isNavigationUrl(href)) continue
+    
+            val classes = article.classNames().map { it.lowercase() }.toSet()
+    
+            val type = when {
+                classes.any { it == "category-serie-tv" || it == "category-serie" } -> TvType.TvSeries
+                classes.any { it == "category-film-animazione" || it == "category-film" } -> TvType.AnimeMovie
+                classes.any { it == "category-anime" } -> TvType.Anime
+                else -> TvType.TvSeries
             }
-        
-            // --------------------------------------------------------
-            // RICERCA TOONITALIA
-            // --------------------------------------------------------
-        
-            val document = runCatching {
-        
-                app.get(
-                    "$mainUrl/",
-                    params = mapOf(
-                        "s" to cleanQuery
-                    ),
-                    interceptor = cfKiller
-                ).document
-        
-            }.getOrNull()
-                ?: return emptyList()
-        
-            val articles = document
-                .select("article.post")
-                .toList()
-        
-            val results = mutableListOf<SearchResponse>()
-        
-            // --------------------------------------------------------
-            // ELABORAZIONE SEQUENZIALE
-            //
-            // Non usiamo amap:
-            // evitiamo molte richieste TMDB contemporaneamente.
-            // --------------------------------------------------------
-        
-            for (article in articles) {
-        
-                val link = article.selectFirst(
-                    "h2.entry-title a[href], .entry-title a[href]"
-                ) ?: continue
-        
-                val href = link
-                    .attr("abs:href")
-                    .takeIf { it.isNotBlank() }
-                    ?: continue
-        
-                val title = link
-                    .text()
-                    .trim()
-                    .takeIf { it.isNotBlank() }
-                    ?: continue
-        
-                if (!href.startsWith(mainUrl)) {
-                    continue
-                }
-        
-                if (isNavigationUrl(href)) {
-                    continue
-                }
-        
-                // ----------------------------------------------------
-                // TIPO
-                // ----------------------------------------------------
-        
-                val classes = article
-                    .classNames()
-                    .map { it.lowercase() }
-                    .toSet()
-        
-                val type = when {
-        
-                    classes.any {
-                        it == "category-serie-tv" ||
-                            it == "category-serie"
-                    } -> TvType.TvSeries
-        
-                    classes.any {
-                        it == "category-film-animazione" ||
-                            it == "category-film"
-                    } -> TvType.AnimeMovie
-        
-                    classes.any {
-                        it == "category-anime"
-                    } -> TvType.Anime
-        
-                    else -> TvType.TvSeries
-                }
-        
-                // ----------------------------------------------------
-                // POSTER TMDB
-                // ----------------------------------------------------
-        
-                val poster = getTmdbPoster(
-                    title = title,
-                    type = type
-                )
-        
-                // ----------------------------------------------------
-                // RISULTATO
-                // ----------------------------------------------------
-        
-                val response = when (type) {
-        
-                    TvType.Anime -> {
-        
-                        newAnimeSearchResponse(
-                            title,
-                            href,
-                            TvType.Anime
-                        ) {
-                            posterUrl = poster
-                        }
-                    }
-        
-                    TvType.AnimeMovie -> {
-        
-                        newMovieSearchResponse(
-                            title,
-                            href,
-                            TvType.AnimeMovie
-                        ) {
-                            posterUrl = poster
-                        }
-                    }
-        
-                    TvType.TvSeries -> {
-        
-                        newTvSeriesSearchResponse(
-                            title,
-                            href,
-                            TvType.TvSeries
-                        ) {
-                            posterUrl = poster
-                        }
-                    }
-        
-                    else -> {
-        
-                        newMovieSearchResponse(
-                            title,
-                            href,
-                            TvType.Movie
-                        ) {
-                            posterUrl = poster
-                        }
-                    }
-                }
-        
-                results += response
+    
+            val poster = getTmdbPoster(title = title, type = type)
+    
+            val response = when (type) {
+                TvType.Anime -> newAnimeSearchResponse(title, href, TvType.Anime) { posterUrl = poster }
+                TvType.AnimeMovie -> newMovieSearchResponse(title, href, TvType.AnimeMovie) { posterUrl = poster }
+                TvType.TvSeries -> newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster }
+                else -> newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
             }
-        
-            return results
+    
+            results += response
         }
+    
+        return results
+    }
 
     // ============================================================
     // SPLIT BLOCCHI CON <br>
@@ -595,220 +318,83 @@ class ToonItaliaProvider : MainAPI() {
     private fun splitByBr(
         element: Element
     ): List<ToonLine> {
-    
         val html = element.html()
-    
         return html
-            .split(
-                Regex(
-                    """<br\s*/?>""",
-                    RegexOption.IGNORE_CASE
-                )
-            )
+            .split(Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE))
             .mapNotNull { fragment ->
-    
-                val fragmentDocument =
-                    org.jsoup.Jsoup.parse(
-                        fragment,
-                        element.baseUri()
-                            .ifBlank { mainUrl }
-                    )
-    
-                // ------------------------------------------------
-                // PLAYER
-                // ------------------------------------------------
+                val fragmentDocument = org.jsoup.Jsoup.parse(
+                    fragment,
+                    element.baseUri().ifBlank { mainUrl }
+                )
     
                 val links = fragmentDocument
                     .select("a[href]")
                     .mapNotNull { link ->
-    
-                        val url = link
-                            .attr("abs:href")
-                            .trim()
-                            .takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: return@mapNotNull null
-    
-                        val label = link
-                            .text()
-                            .trim()
-                            .takeIf {
-                                it.isNotBlank()
-                            }
-                            ?: runCatching {
-                                java.net.URI(url)
-                                    .host
-                                    ?.substringBefore(".")
-                                    ?.uppercase()
-                            }.getOrNull()
+                        val url = link.attr("abs:href").trim().takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        val label = link.text().trim().takeIf { it.isNotBlank() }
+                            ?: runCatching { java.net.URI(url).host?.substringBefore(".")?.uppercase() }.getOrNull()
                             ?: "PLAYER"
     
-                        ToonPlayerLink(
-                            label = label,
-                            url = url
-                        )
+                        ToonPlayerLink(label = label, url = url)
                     }
-                    .distinctBy {
-                        it.url
-                    }
+                    .distinctBy { it.url }
     
-                // ------------------------------------------------
-                // TESTO EPISODIO
-                //
-                // Rimuoviamo gli <a> dal clone in modo che:
-                //
-                // "01 - Titolo - VOE - RPMShare"
-                //
-                // diventi:
-                //
-                // "01 - Titolo"
-                // ------------------------------------------------
+                val textDocument = fragmentDocument.clone()
+                textDocument.select("a").remove()
     
-                val textDocument =
-                    fragmentDocument.clone()
+                val text = textDocument.text().trim().trimEnd('-', '–', '—').trim()
+                if (text.isBlank()) return@mapNotNull null
     
-                textDocument
-                    .select("a")
-                    .remove()
-    
-                val text = textDocument
-                    .text()
-                    .trim()
-                    .trimEnd(
-                        '-',
-                        '–',
-                        '—'
-                    )
-                    .trim()
-    
-                if (text.isBlank()) {
-                    return@mapNotNull null
-                }
-    
-                ToonLine(
-                    text = text,
-                    links = links
-                )
+                ToonLine(text = text, links = links)
             }
     }
 
-    /////////////////////////////////////////
-    /////         TRAILER         //////////
-    ///////////////////////////////////////
+    // ============================================================
+    // TRAILER & FILM
+    // ============================================================
 
-    private fun extractSeriesTrailer(
-            content: Element?
-        ): String? {
-        
-            if (content == null) {
-                return null
-            }
-        
-            val trailerBlock =
-                content.select("p, div, span")
-                    .firstOrNull { element ->
-        
-                        val text =
-                            normalize(element.text())
-        
-                        text.contains("sigla iniziale") ||
-                            text.contains("opening") ||
-                            text.contains("intro")
-                    }
-                    ?: return null
-        
-            return trailerBlock
-                .selectFirst("a[href]")
-                ?.attr("abs:href")
-                ?.trim()
-                ?.takeIf {
-                    it.startsWith("http://") ||
-                        it.startsWith("https://")
-                }
-        }
-    
+    private fun extractSeriesTrailer(content: Element?): String? {
+        if (content == null) return null
+        val trailerBlock = content.select("p, div, span").firstOrNull { element ->
+            val text = normalize(element.text())
+            text.contains("sigla iniziale") || text.contains("opening") || text.contains("intro")
+        } ?: return null
 
-    private fun extractMoviePlayerLinks(
-        content: Element?
-    ): List<ToonPlayerLink> {
-    
-        if (content == null) {
-            return emptyList()
+        return trailerBlock.selectFirst("a[href]")?.attr("abs:href")?.trim()?.takeIf {
+            it.startsWith("http://") || it.startsWith("https://")
         }
-    
-        val streamingBlock = content
-            .select("p")
-            .firstOrNull { paragraph ->
-    
-                val text = normalize(paragraph.text())
-    
-                text.startsWith("link streaming") ||
-                    text.contains("link streaming")
-            }
-            ?: return emptyList()
-    
-        return streamingBlock
-            .select("a[href]")
-            .mapNotNull { link ->
-    
-                val url = link
-                    .attr("abs:href")
-                    .trim()
-                    .takeIf {
-                        it.startsWith("http://") ||
-                            it.startsWith("https://")
-                    }
-                    ?: return@mapNotNull null
-    
-                val label = link
-                    .text()
-                    .trim()
-                    .takeIf { it.isNotBlank() }
-                    ?: runCatching {
-                        java.net.URI(url)
-                            .host
-                            ?.substringBefore(".")
-                            ?.uppercase()
-                    }.getOrNull()
-                    ?: "PLAYER"
-    
-                ToonPlayerLink(
-                    label = label,
-                    url = url
-                )
-            }
-            .distinctBy {
-                it.url
-            }
+    }
+
+    private fun extractMoviePlayerLinks(content: Element?): List<ToonPlayerLink> {
+        if (content == null) return emptyList()
+        val streamingBlock = content.select("p").firstOrNull { paragraph ->
+            val text = normalize(paragraph.text())
+            text.startsWith("link streaming") || text.contains("link streaming")
+        } ?: return emptyList()
+
+        return streamingBlock.select("a[href]").mapNotNull { link ->
+            val url = link.attr("abs:href").trim().takeIf {
+                it.startsWith("http://") || it.startsWith("https://")
+            } ?: return@mapNotNull null
+
+            val label = link.text().trim().takeIf { it.isNotBlank() }
+                ?: runCatching { java.net.URI(url).host?.substringBefore(".")?.uppercase() }.getOrNull()
+                ?: "PLAYER"
+
+            ToonPlayerLink(label = label, url = url)
+        }.distinctBy { it.url }
     }
 
     private fun buildMovieData(
         pageUrl: String,
         links: List<ToonPlayerLink>
     ): String {
-    
-        if (links.isEmpty()) {
-            return pageUrl
-        }
-    
+        if (links.isEmpty()) return pageUrl
         val encodedLinks = links.joinToString("|") { player ->
-    
-            val encodedLabel =
-                java.net.URLEncoder.encode(
-                    player.label,
-                    "UTF-8"
-                )
-    
-            val encodedUrl =
-                java.net.URLEncoder.encode(
-                    player.url,
-                    "UTF-8"
-                )
-    
+            val encodedLabel = java.net.URLEncoder.encode(player.label, "UTF-8")
+            val encodedUrl = java.net.URLEncoder.encode(player.url, "UTF-8")
             "$encodedLabel@@$encodedUrl"
         }
-    
         return "$pageUrl||$encodedLinks"
     }
 
@@ -817,211 +403,73 @@ class ToonItaliaProvider : MainAPI() {
     // ============================================================
 
     private data class ToonPlayerLink(
-    val label: String,
-    val url: String
-)
+        val label: String,
+        val url: String
+    )
 
-private data class ToonLine(
-    val text: String,
-    val links: List<ToonPlayerLink>
-)
+    private data class ToonLine(
+        val text: String,
+        val links: List<ToonPlayerLink>
+    )
 
     private data class ToonEpisode(
-    val season: Int,
-    val episode: Int,
-    val absoluteEpisode: Int?,
-    val originalEpisode: Int?,
-    val suffix: String?,
-    val title: String,
-    val links: List<ToonPlayerLink> = emptyList()
-)
+        val season: Int,
+        val episode: Int,
+        val absoluteEpisode: Int?,
+        val originalEpisode: Int?,
+        val suffix: String?,
+        val title: String,
+        val links: List<ToonPlayerLink> = emptyList()
+    )
 
     private suspend fun remapAbsoluteEpisodesWithTmdb(
         episodes: List<Episode>,
         tmdbId: Int?
     ): List<Episode> {
-    
-        if (
-            tmdbId == null ||
-            episodes.isEmpty()
-        ) {
-            return episodes
-        }
-    
-        // ------------------------------------------------------------
-        // PROTEZIONE 1
-        //
-        // Questa funzione interviene SOLTANTO quando ToonItalia
-        // ha interpretato tutti gli episodi come una singola stagione.
-        //
-        // Serie che hanno già S1, S2, S3... restano completamente
-        // invariate.
-        // ------------------------------------------------------------
-    
-        val normalEpisodes =
-            episodes.filter {
-                (it.season ?: 1) > 0
-            }
-    
-        val specials =
-            episodes.filter {
-                it.season == 0
-            }
-    
-        if (normalEpisodes.isEmpty()) {
-            return episodes
-        }
-    
-        val toonSeasons =
-            normalEpisodes
-                .map {
-                    it.season ?: 1
-                }
-                .distinct()
-    
-        if (toonSeasons.size != 1) {
-            println(
-                "[TMDB REMAP] Ignorato: ToonItalia possiede già " +
-                    "${toonSeasons.size} stagioni"
-            )
-    
-            return episodes
-        }
-    
-        // ------------------------------------------------------------
-        // PROTEZIONE 2
-        //
-        // Gli episodi devono essere 1,2,3,4...N senza buchi.
-        // ------------------------------------------------------------
-    
-        val sortedEpisodes =
-            normalEpisodes.sortedBy {
-                it.episode ?: Int.MAX_VALUE
-            }
-    
-        val episodeNumbers =
-            sortedEpisodes.mapNotNull {
-                it.episode
-            }
-    
-        if (episodeNumbers.size != sortedEpisodes.size) {
-            return episodes
-        }
-    
-        val expectedNumbers =
-            (1..sortedEpisodes.size).toList()
-    
-        if (episodeNumbers != expectedNumbers) {
-    
-            println(
-                "[TMDB REMAP] Ignorato: numerazione ToonItalia " +
-                    "non consecutiva"
-            )
-    
-            return episodes
-        }
-    
-        // ------------------------------------------------------------
-        // STAGIONI TMDB
-        // ------------------------------------------------------------
-    
-        val tmdbSeasons =
-            Tmdb.getTvSeasons(tmdbId)
-    
-        if (tmdbSeasons.size <= 1) {
-    
-            println(
-                "[TMDB REMAP] Ignorato: TMDB non possiede " +
-                    "più stagioni"
-            )
-    
-            return episodes
-        }
-    
-        val tmdbTotal =
-            tmdbSeasons.sumOf {
-                it.episodeCount
-            }
-    
-        // ------------------------------------------------------------
-        // PROTEZIONE PRINCIPALE
-        //
-        // Il totale deve coincidere ESATTAMENTE.
-        // ------------------------------------------------------------
-    
-        if (tmdbTotal != sortedEpisodes.size) {
-    
-            println(
-                "[TMDB REMAP] Ignorato: " +
-                    "ToonItalia=${sortedEpisodes.size}, " +
-                    "TMDB=$tmdbTotal"
-            )
-    
-            return episodes
-        }
-    
-        println(
-            "[TMDB REMAP] Match perfetto: " +
-                "${sortedEpisodes.size} episodi"
-        )
-    
-        println(
-            "[TMDB REMAP] Stagioni TMDB: " +
-                tmdbSeasons.joinToString {
-                    "S${it.season}=${it.episodeCount}"
-                }
-        )
-    
-        // ------------------------------------------------------------
-        // REMAPPING
-        // ------------------------------------------------------------
-    
-        var absoluteIndex = 0
+        if (tmdbId == null || episodes.isEmpty()) return episodes
 
-        val mapping =
-            mutableListOf<Triple<Episode, Int, Int>>()
-        
+        val normalEpisodes = episodes.filter { (it.season ?: 1) > 0 }
+        val specials = episodes.filter { it.season == 0 }
+
+        if (normalEpisodes.isEmpty()) return episodes
+
+        val toonSeasons = normalEpisodes.map { it.season ?: 1 }.distinct()
+        if (toonSeasons.size != 1) return episodes
+
+        val sortedEpisodes = normalEpisodes.sortedBy { it.episode ?: Int.MAX_VALUE }
+        val episodeNumbers = sortedEpisodes.mapNotNull { it.episode }
+
+        if (episodeNumbers.size != sortedEpisodes.size) return episodes
+        if (episodeNumbers != (1..sortedEpisodes.size).toList()) return episodes
+
+        val tmdbSeasons = Tmdb.getTvSeasons(tmdbId)
+        if (tmdbSeasons.size <= 1) return episodes
+
+        val tmdbTotal = tmdbSeasons.sumOf { it.episodeCount }
+        if (tmdbTotal != sortedEpisodes.size) return episodes
+
+        var absoluteIndex = 0
+        val mapping = mutableListOf<Triple<Episode, Int, Int>>()
+
         tmdbSeasons.forEach { season ->
-        
-            for (
-                episodeNumber in
-                1..season.episodeCount
-            ) {
-        
-                val original =
-                    sortedEpisodes.getOrNull(
-                        absoluteIndex
-                    ) ?: return episodes
-        
-                mapping += Triple(
-                    original,
-                    season.season,
-                    episodeNumber
-                )
-        
+            for (episodeNumber in 1..season.episodeCount) {
+                val original = sortedEpisodes.getOrNull(absoluteIndex) ?: return episodes
+                mapping += Triple(original, season.season, episodeNumber)
                 absoluteIndex++
             }
         }
-        
-        // Ultima verifica PRIMA di modificare gli Episode.
-        if (
-            absoluteIndex != sortedEpisodes.size ||
-            mapping.size != sortedEpisodes.size
-        ) {
+
+        if (absoluteIndex != sortedEpisodes.size || mapping.size != sortedEpisodes.size) {
             return episodes
         }
-        
-        // Da questo punto sappiamo che il mapping è completo.
-        val remapped =
-            mapping.map {
-                (episode, seasonNumber, episodeNumber) ->
-        
-                episode.apply {
-                    season = seasonNumber
-                    this.episode = episodeNumber
-                }
+
+        val remapped = mapping.map { (episode, seasonNumber, episodeNumber) ->
+            episode.apply {
+                season = seasonNumber
+                this.episode = episodeNumber
             }
-        
+        }
+
         return remapped + specials
     }
 
@@ -1036,306 +484,98 @@ private data class ToonLine(
         val article = document.selectFirst("article")
         val content = document.selectFirst(".entry-content")
 
-        // --------------------------------------------------------
-        // TITOLO
-        // --------------------------------------------------------
-
-        val title = document
-            .selectFirst("h1.entry-title")
-            ?.text()
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-
-            ?: content
-                ?.selectFirst("h2")
-                ?.text()
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-
-            ?: document
-                .selectFirst("meta[property=og:title]")
-                ?.attr("content")
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-
+        val title = document.selectFirst("h1.entry-title")?.text()?.trim()?.takeIf { it.isNotBlank() }
+            ?: content?.selectFirst("h2")?.text()?.trim()?.takeIf { it.isNotBlank() }
+            ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.trim()?.takeIf { it.isNotBlank() }
             ?: return null
 
-        // --------------------------------------------------------
-        // POSTER
-        // --------------------------------------------------------
-
-        val poster = content
-            ?.selectFirst("img")
-            ?.let { img ->
-
-                img.attr("abs:src")
-                    .takeIf { it.isNotBlank() }
-
-                    ?: img.attr("abs:data-src")
-                        .takeIf { it.isNotBlank() }
-            }
-
-        // --------------------------------------------------------
-        // ANNO
-        // --------------------------------------------------------
+        val poster = content?.selectFirst("img")?.let { img ->
+            img.attr("abs:src").takeIf { it.isNotBlank() }
+                ?: img.attr("abs:data-src").takeIf { it.isNotBlank() }
+        }
 
         val year = extractYear(content)
-
-        // --------------------------------------------------------
-        // TRAMA
-        // --------------------------------------------------------
-
         val plot = extractPlot(content)
-        val trailerUrl =
-                   extractSeriesTrailer(content)
+        val trailerUrl = extractSeriesTrailer(content)
+        val moviePlayerLinks = extractMoviePlayerLinks(content)
+        val movieData = buildMovieData(url, moviePlayerLinks)
 
-        // --------------------------------------------------------
-        // PLAYER FILM
-        // --------------------------------------------------------
-
-        val moviePlayerLinks =
-            extractMoviePlayerLinks(content)
-        
-        val movieData =
-            buildMovieData(
-                url,
-                moviePlayerLinks
-            )
-
-        // --------------------------------------------------------
-        // TIPO
-        // --------------------------------------------------------
-
-        val type = detectLoadType(
-            article = article,
-            content = content
-        )
+        val type = detectLoadType(article = article, content = content)
 
         val tmdb = when (type) {
-
-            TvType.Movie,
-            TvType.AnimeMovie -> {
-                Tmdb.getMovie(
-                    title = title,
-                    year = year
-                )
-            }
-        
-            TvType.TvSeries,
-            TvType.Anime -> {
-                Tmdb.getTv(
-                    title = title,
-                    year = year
-                )
-            }
-        
+            TvType.Movie, TvType.AnimeMovie -> Tmdb.getMovie(title = title, year = year)
+            TvType.TvSeries, TvType.Anime -> Tmdb.getTv(title = title, year = year)
             else -> null
         }
 
-        val parsedEpisodes =
-            parseEpisodes(content)
-        
-        val rawEpisodes =
-            if (
-                tmdb != null &&
-                (
-                    type == TvType.TvSeries ||
-                    type == TvType.Anime
-                )
-            ) {
-                remapAbsoluteEpisodesWithTmdb(
-                    episodes = parsedEpisodes,
-                    tmdbId = tmdb.id
-                )
-            } else {
-                parsedEpisodes
-            }
-        
-        val seriesPoster =
-            tmdb?.posterUrl
-                ?: poster
-        
-        val tmdbEpisodeImages =
-            if (
-                tmdb != null &&
-                (
-                    type == TvType.TvSeries ||
-                    type == TvType.Anime
-                )
-            ) {
-        
-                Tmdb.getEpisodeImages(
-                    tvId = tmdb.id,
-                    seasons = rawEpisodes
-                        .mapNotNull { it.season }
-                        .toSet()
-                )
-        
-            } else {
-                emptyMap()
-            }
-        
-        val episodes =
-            rawEpisodes.map { ep ->
-        
-                val episodePoster =
-                    tmdbEpisodeImages[
-                        (ep.season ?: 1) to
-                            (ep.episode ?: 1)
-                    ]
-        
-                ep.apply {
-                    posterUrl =
-                        episodePoster
-                            ?: seriesPoster
-                }
-            }
+        val parsedEpisodes = parseEpisodes(content)
 
-        // --------------------------------------------------------
-        // LOAD RESPONSE
-        // --------------------------------------------------------
+        val rawEpisodes = if (tmdb != null && (type == TvType.TvSeries || type == TvType.Anime)) {
+            remapAbsoluteEpisodesWithTmdb(episodes = parsedEpisodes, tmdbId = tmdb.id)
+        } else {
+            parsedEpisodes
+        }
+
+        val seriesPoster = tmdb?.posterUrl ?: poster
+
+        val tmdbEpisodeImages = if (tmdb != null && (type == TvType.TvSeries || type == TvType.Anime)) {
+            Tmdb.getEpisodeImages(
+                tvId = tmdb.id,
+                seasons = rawEpisodes.mapNotNull { it.season }.toSet()
+            )
+        } else {
+            emptyMap()
+        }
+
+        val episodes = rawEpisodes.map { ep ->
+            val episodePoster = tmdbEpisodeImages[(ep.season ?: 1) to (ep.episode ?: 1)]
+            ep.apply {
+                posterUrl = episodePoster ?: seriesPoster
+            }
+        }
 
         return when (type) {
-
             TvType.Anime -> {
-                newAnimeLoadResponse(
-                    title,
-                    url,
-                    TvType.Anime
-                ) {
-                    posterUrl =
-                        tmdb?.posterUrl
-                            ?: poster
-                
-                    backgroundPosterUrl =
-                        tmdb?.backgroundPosterUrl
-                
-                    this.year =
-                        tmdb?.year
-                            ?: year
-                
-                    this.plot =
-                        tmdb?.plot
-                            ?: plot
-                
-                    tags =
-                        tmdb?.genres
-                
-                    tmdb?.score?.let {
-                        score = Score.from10(it / 10.0)
-                    }
-
-                    trailerUrl?.let {
-                        addTrailer(
-                            it,
-                            mainUrl
-                        )
-                    }
-                
-                    addEpisodes(
-                        DubStatus.Dubbed,
-                        episodes
-                    )
+                newAnimeLoadResponse(title, url, TvType.Anime) {
+                    posterUrl = tmdb?.posterUrl ?: poster
+                    backgroundPosterUrl = tmdb?.backgroundPosterUrl
+                    this.year = tmdb?.year ?: year
+                    this.plot = tmdb?.plot ?: plot
+                    tags = tmdb?.genres
+                    tmdb?.score?.let { score = Score.from10(it / 10.0) }
+                    trailerUrl?.let { addTrailer(it, mainUrl) }
+                    addEpisodes(DubStatus.Dubbed, episodes)
                 }
             }
-
             TvType.TvSeries -> {
-                newTvSeriesLoadResponse(
-                    title,
-                    url,
-                    TvType.TvSeries,
-                    episodes
-                ) {
-                    posterUrl =
-                        tmdb?.posterUrl
-                            ?: poster
-                
-                    backgroundPosterUrl =
-                        tmdb?.backgroundPosterUrl
-                
-                    this.year =
-                        tmdb?.year
-                            ?: year
-                
-                    this.plot =
-                        tmdb?.plot
-                            ?: plot
-                
-                    tags =
-                        tmdb?.genres
-                
-                    tmdb?.score?.let {
-                        score = Score.from10(it / 10.0)
-                    }
-
-                    trailerUrl?.let {
-                        addTrailer(
-                            it,
-                            mainUrl
-                        )
-                    }
+                newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                    posterUrl = tmdb?.posterUrl ?: poster
+                    backgroundPosterUrl = tmdb?.backgroundPosterUrl
+                    this.year = tmdb?.year ?: year
+                    this.plot = tmdb?.plot ?: plot
+                    tags = tmdb?.genres
+                    tmdb?.score?.let { score = Score.from10(it / 10.0) }
+                    trailerUrl?.let { addTrailer(it, mainUrl) }
                 }
             }
-
             TvType.AnimeMovie -> {
-                newMovieLoadResponse(
-                    title,
-                    url,
-                    TvType.AnimeMovie,
-                    movieData
-                ) {
-                    posterUrl =
-                        tmdb?.posterUrl
-                            ?: poster
-                
-                    backgroundPosterUrl =
-                        tmdb?.backgroundPosterUrl
-                
-                    this.year =
-                        tmdb?.year
-                            ?: year
-                
-                    this.plot =
-                        tmdb?.plot
-                            ?: plot
-                
-                    tags =
-                        tmdb?.genres
-                
-                    tmdb?.score?.let {
-                        score = Score.from10(it / 10.0)
-                    }
+                newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
+                    posterUrl = tmdb?.posterUrl ?: poster
+                    backgroundPosterUrl = tmdb?.backgroundPosterUrl
+                    this.year = tmdb?.year ?: year
+                    this.plot = tmdb?.plot ?: plot
+                    tags = tmdb?.genres
+                    tmdb?.score?.let { score = Score.from10(it / 10.0) }
                 }
             }
-
             else -> {
-                newMovieLoadResponse(
-                    title,
-                    url,
-                    TvType.Movie,
-                    movieData
-                ) {
-                    posterUrl =
-                        tmdb?.posterUrl
-                            ?: poster
-                
-                    backgroundPosterUrl =
-                        tmdb?.backgroundPosterUrl
-                
-                    this.year =
-                        tmdb?.year
-                            ?: year
-                
-                    this.plot =
-                        tmdb?.plot
-                            ?: plot
-                
-                    tags =
-                        tmdb?.genres
-                
-                    tmdb?.score?.let {
-                        score = Score.from10(it / 10.0)
-                    }
+                newMovieLoadResponse(title, url, TvType.Movie, movieData) {
+                    posterUrl = tmdb?.posterUrl ?: poster
+                    backgroundPosterUrl = tmdb?.backgroundPosterUrl
+                    this.year = tmdb?.year ?: year
+                    this.plot = tmdb?.plot ?: plot
+                    tags = tmdb?.genres
+                    tmdb?.score?.let { score = Score.from10(it / 10.0) }
                 }
             }
         }
@@ -1352,651 +592,207 @@ private data class ToonLine(
         callback: (ExtractorLink) -> Unit
     ): Boolean {
     
-        val encodedPart = data
-            .substringAfter("||", "")
-            .trim()
-    
-        if (encodedPart.isBlank()) {
-            return false
-        }
+        val encodedPart = data.substringAfter("||", "").trim()
+        if (encodedPart.isBlank()) return false
     
         val playerLinks = encodedPart
             .split("|")
             .mapNotNull { encodedPlayer ->
-        
-                val parts =
-                    encodedPlayer.split(
-                        "@@",
-                        limit = 2
-                    )
-        
-                if (parts.size != 2) {
-                    return@mapNotNull null
-                }
-        
-                val label = runCatching {
-                    java.net.URLDecoder.decode(
-                        parts[0],
-                        "UTF-8"
-                    )
-                }.getOrNull()
-                    ?.trim()
-                    .orEmpty()
-        
-                val url = runCatching {
-                    java.net.URLDecoder.decode(
-                        parts[1],
-                        "UTF-8"
-                    )
-                }.getOrNull()
-                    ?.trim()
-                    ?: return@mapNotNull null
-        
-                if (
-                    !url.startsWith("http://") &&
-                    !url.startsWith("https://")
-                ) {
-                    return@mapNotNull null
-                }
-        
-                ToonPlayerLink(
-                    label = label.ifBlank {
-                        "PLAYER"
-                    },
-                    url = url
-                )
-            }
-            .distinctBy {
-                it.url
-            }
+                val parts = encodedPlayer.split("@@", limit = 2)
+                if (parts.size != 2) return@mapNotNull null
     
-        if (playerLinks.isEmpty()) {
-            return false
-        }
-
-        println("========== TOONITALIA PLAYERS ==========")
-
-        playerLinks.forEach { player ->
-        
-            val host = runCatching {
-                java.net.URI(player.url)
-                    .host
-                    ?.lowercase()
-                    .orEmpty()
-            }.getOrDefault("")
-        
-            println(
-                "[ToonItalia] " +
-                    "LABEL=${player.label} | " +
-                    "HOST=$host | " +
-                    "URL=${player.url}"
-            )
-        }
-        
-        println("=========================================")
+                val label = runCatching { java.net.URLDecoder.decode(parts[0], "UTF-8") }.getOrNull()?.trim().orEmpty()
+                val url = runCatching { java.net.URLDecoder.decode(parts[1], "UTF-8") }.getOrNull()?.trim() ?: return@mapNotNull null
+    
+                if (!url.startsWith("http://") && !url.startsWith("https://")) return@mapNotNull null
+    
+                ToonPlayerLink(label = label.ifBlank { "PLAYER" }, url = url)
+            }
+            .distinctBy { it.url }
+    
+        if (playerLinks.isEmpty()) return false
     
         var loaded = false
-
-            playerLinks.forEach { player ->
-            
-                // LuluStream lo ignoriamo
-                if (player.label.equals("LuluStream", ignoreCase = true)) {
-                    println("[ToonItalia] LuluStream ignorato")
-                    return@forEach
-                }
-            
-                println(
-                    "[ToonItalia] provo extractor: " +
-                        "${player.label} -> ${player.url}"
-                )
-            
-                val result = runCatching {
-            
-                    loadExtractor(
-                        player.url,
-                        mainUrl,
-                        subtitleCallback,
-                        callback
-                    )
-            
-                }.onFailure { error ->
-            
-                    println(
-                        "[ToonItalia] extractor ERROR: " +
-                            "${player.label} -> " +
-                            "${error.javaClass.simpleName}: ${error.message}"
-                    )
-            
-                }.getOrDefault(false)
-            
-                println(
-                    "[ToonItalia] extractor result: " +
-                        "${player.label} -> $result"
-                )
-            
-                if (result) {
-                    loaded = true
-                }
-            }
-            
-            return loaded
+        playerLinks.forEach { player ->
+            if (player.label.equals("LuluStream", ignoreCase = true)) return@forEach
+    
+            val result = runCatching {
+                loadExtractor(player.url, mainUrl, subtitleCallback, callback)
+            }.getOrDefault(false)
+    
+            if (result) loaded = true
+        }
+        return loaded
     }
 
     // ============================================================
-    // RILEVAMENTO TIPO
+    // RILEVAMENTO TIPO, ANNO, TRAMA
     // ============================================================
 
-    private fun detectLoadType(
-        article: Element?,
-        content: Element?
-    ): TvType {
-
-        val classes = article
-            ?.classNames()
-            ?.map { it.lowercase() }
-            ?.toSet()
-            ?: emptySet()
-
+    private fun detectLoadType(article: Element?, content: Element?): TvType {
+        val classes = article?.classNames()?.map { it.lowercase() }?.toSet() ?: emptySet()
         return when {
-
-            classes.any {
-                it == "category-film-animazione" ||
-                    it == "category-film"
-            } -> TvType.AnimeMovie
-
-            classes.any {
-                it == "category-serie-tv" ||
-                    it == "category-serie"
-            } -> TvType.TvSeries
-
-            classes.any {
-                it == "category-anime"
-            } -> TvType.Anime
-
-            else -> {
-                detectTypeFromContent(content)
-            }
+            classes.any { it == "category-film-animazione" || it == "category-film" } -> TvType.AnimeMovie
+            classes.any { it == "category-serie-tv" || it == "category-serie" } -> TvType.TvSeries
+            classes.any { it == "category-anime" } -> TvType.Anime
+            else -> detectTypeFromContent(content)
         }
     }
 
-    private fun detectTypeFromContent(
-        content: Element?
-    ): TvType {
-
-        val text = normalize(
-            content
-                ?.text()
-                .orEmpty()
-        )
-
+    private fun detectTypeFromContent(content: Element?): TvType {
+        val text = normalize(content?.text().orEmpty())
         return when {
-
-            text.contains("film animazione") ->
-                TvType.AnimeMovie
-
-            text.contains("serie tv") ->
-                TvType.TvSeries
-
-            text.contains("anime") ->
-                TvType.Anime
-
-            else ->
-                TvType.TvSeries
+            text.contains("film animazione") -> TvType.AnimeMovie
+            text.contains("serie tv") -> TvType.TvSeries
+            text.contains("anime") -> TvType.Anime
+            else -> TvType.TvSeries
         }
     }
 
-    // ============================================================
-    // ANNO
-    // ============================================================
-
-    private fun extractYear(
-        content: Element?
-    ): Int? {
-
-        if (content == null) {
-            return null
-        }
-
+    private fun extractYear(content: Element?): Int? {
+        if (content == null) return null
         val text = content.text()
+        val publicationRegex = Regex("""Data\s+di\s+pubblicazione\s*:?\s*(?:Jap\s*:?\s*)?(\d{4})""", RegexOption.IGNORE_CASE)
+        publicationRegex.find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
 
-        val publicationRegex = Regex(
-            """Data\s+di\s+pubblicazione\s*:?\s*(?:Jap\s*:?\s*)?(\d{4})""",
-            RegexOption.IGNORE_CASE
-        )
-
-        publicationRegex
-            .find(text)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toIntOrNull()
-            ?.let {
-                return it
-            }
-
-        val genericYearRegex = Regex(
-            """\b(19\d{2}|20\d{2})\b"""
-        )
-
-        return genericYearRegex
-            .find(text)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toIntOrNull()
+        val genericYearRegex = Regex("""\b(19\d{2}|20\d{2})\b""")
+        return genericYearRegex.find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
 
-    // ============================================================
-    // TRAMA
-    // ============================================================
+    private fun extractPlot(content: Element?): String? {
+        if (content == null) return null
+        val plotHeader = content.select("h2, h3, h4").firstOrNull {
+            normalize(it.text()).startsWith("trama")
+        } ?: return null
 
-    private fun extractPlot(
-        content: Element?
-    ): String? {
+        val paragraph = plotHeader.nextElementSibling() ?: return null
+        val clone = paragraph.clone()
+        clone.select("a").filter { normalize(it.text()) == "wikipedia" }.forEach { it.remove() }
 
-        if (content == null) {
-            return null
-        }
-
-        val plotHeader = content
-            .select("h2, h3, h4")
-            .firstOrNull { element ->
-
-                normalize(element.text())
-                    .startsWith("trama")
-            }
-
-        if (plotHeader != null) {
-
-            val paragraph = plotHeader
-                .nextElementSibling()
-
-            if (paragraph != null) {
-
-                val clone = paragraph.clone()
-
-                clone
-                    .select("a")
-                    .filter {
-                        normalize(it.text()) == "wikipedia"
-                    }
-                    .forEach {
-                        it.remove()
-                    }
-
-                var text = clone
-                    .text()
-                    .trim()
-
-                text = text
-                    .replace(
-                        Regex(
-                            """Fonte\s*:?.*$""",
-                            setOf(
-                                RegexOption.IGNORE_CASE,
-                                RegexOption.DOT_MATCHES_ALL
-                            )
-                        ),
-                        ""
-                    )
-                    .trim()
-
-                if (text.isNotBlank()) {
-                    return text
-                }
-            }
-        }
-
-        return null
+        var text = clone.text().trim()
+        text = text.replace(Regex("""Fonte\s*:?.*$""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "").trim()
+        return text.takeIf { it.isNotBlank() }
     }
 
     // ============================================================
     // PARSER EPISODI
     // ============================================================
 
-    private fun parseEpisodes(
-        content: Element?
-    ): List<Episode> {
-
-        if (content == null) {
-            return emptyList()
-        }
+    private fun parseEpisodes(content: Element?): List<Episode> {
+        if (content == null) return emptyList()
 
         val parsedEpisodes = mutableListOf<ToonEpisode>()
-
         var currentSeason: Int? = null
         var seasonFirstAbsolute: Int? = null
-
         var currentGroupName: String? = null
         var groupSeasonCounter = 0
 
         val explicitSeenCounts = mutableMapOf<Pair<Int, Int>, Int>()
         val explicitDuplicateOffsets = mutableMapOf<Int, Int>()
-
         val unnumberedSpecialCounters = mutableMapOf<String, Int>()
 
-        // Esempio:
-        // 1° Stagione
-        // Stagione 1
-        val seasonRegex = Regex(
-            """(?:Stagione\s*(\d+)|(\d+)\s*°?\s*Stagione)""",
-            RegexOption.IGNORE_CASE
-        )
-
-        // Esempio:
-        // 52 – Il più forte vince
-        val episodeRegex = Regex(
-            """^\s*(\d{1,4})\s*[-–—]\s*(.+?)\s*$"""
-        )
-
-        val decimalEpisodeRegex = Regex(
-            """^\s*(\d{1,4})\.(\d+)\s*[-–—]\s*(.+?)\s*$"""
-        )
-
-        // Esempio:
-        // Special-Tv-01 – Avventura nell'ombelico dell'oceano
-        val specialTvRegex = Regex(
-            """^\s*Special[\s-]*Tv[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""",
-            RegexOption.IGNORE_CASE
-        )
-
-        val specialGenericRegex = Regex(
-            """^\s*(OVA|OAV|Special|Extra)[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""",
-            RegexOption.IGNORE_CASE
-        )
-
-        val unnumberedSpecialRegex = Regex(
-            """^\s*(?:(.+?)\s+)?(OVA|OAV|Speciale|Special|Extra)\s*[-–—]\s*(.+?)\s*$""",
-            RegexOption.IGNORE_CASE
-        )
-
-        val multiEpisodeRegex = Regex(
-            """^\s*(\d+)\s*[xX×]\s*(\d+(?:\s*-\s*\d+)+)\s*[-–—]\s*(.+?)\s*$"""
-        )
-
-        // Esempio:
-        // 1x01A – Bugie pericolose
-        // 1x01B – Al lupo al lupo
-        // 2x03 – Titolo episodio
-        val explicitEpisodeRegex = Regex(
-            """^\s*(\d+)\s*[xX×]\s*(\d+)([A-Za-z])?\s*[-–—]\s*(.+?)\s*$"""
-        )
-
-        val diskRegex = Regex(
-            """^(?:Disk|Disc|Disco)\s*(\d+)\s*[-–—]?\s*(.*)$""",
-            RegexOption.IGNORE_CASE
-        )
+        val seasonRegex = Regex("""(?:Stagione\s*(\d+)|(\d+)\s*°?\s*Stagione)""", RegexOption.IGNORE_CASE)
+        val episodeRegex = Regex("""^\s*(\d{1,4})\s*[-–—]\s*(.+?)\s*$""")
+        val decimalEpisodeRegex = Regex("""^\s*(\d{1,4})\.(\d+)\s*[-–—]\s*(.+?)\s*$""")
+        val specialTvRegex = Regex("""^\s*Special[\s-]*Tv[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""", RegexOption.IGNORE_CASE)
+        val specialGenericRegex = Regex("""^\s*(OVA|OAV|Special|Extra)[\s-]*(\d+)\s*[-–—]\s*(.+?)\s*$""", RegexOption.IGNORE_CASE)
+        val unnumberedSpecialRegex = Regex("""^\s*(?:(.+?)\s+)?(OVA|OAV|Speciale|Special|Extra)\s*[-–—]\s*(.+?)\s*$""", RegexOption.IGNORE_CASE)
+        val multiEpisodeRegex = Regex("""^\s*(\d+)\s*[xX×]\s*(\d+(?:\s*-\s*\d+)+)\s*[-–—]\s*(.+?)\s*$""")
+        val explicitEpisodeRegex = Regex("""^\s*(\d+)\s*[xX×]\s*(\d+)([A-Za-z])?\s*[-–—]\s*(.+?)\s*$""")
+        val diskRegex = Regex("""^(?:Disk|Disc|Disco)\s*(\d+)\s*[-–—]?\s*(.*)$""", RegexOption.IGNORE_CASE)
 
         content.children().forEach elementLoop@ { element ->
-
-            // ----------------------------------------------------
-            // CAMBIO STAGIONE
-            // ----------------------------------------------------
-            if (
-                element.tagName() == "h2" ||
-                element.tagName() == "h3" ||
-                element.tagName() == "h4"
-            ) {
-                
+            if (element.tagName() in listOf("h2", "h3", "h4")) {
                 val rawHeadingText = element.text().trim()
                 val headingText = normalize(rawHeadingText)
 
-                // ----------------------------------------------------
-                // SPECIALI / OVA
-                // ----------------------------------------------------
-
-                if (
-                    headingText.contains("speciali") ||
-                    headingText.contains("special") ||
-                    headingText.contains("ova") ||
-                    headingText.contains("oav") ||
-                    headingText.contains("extra")
-                ) {
+                if (headingText.contains("speciali") || headingText.contains("special") || headingText.contains("ova") || headingText.contains("oav") || headingText.contains("extra")) {
                     currentSeason = 0
                     seasonFirstAbsolute = null
                     currentGroupName = null
-                
                     return@elementLoop
                 }
-
-                // ----------------------------------------------------
-                // DISK / DISC / DISCO
-                // ----------------------------------------------------
 
                 val diskMatch = diskRegex.find(rawHeadingText)
-                
                 if (diskMatch != null) {
-                
-                    val diskNumber = diskMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.toIntOrNull()
-                
-                    val diskTitle = diskMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.trim()
-                        ?.takeIf { it.isNotBlank() }
-                
+                    val diskNumber = diskMatch.groupValues.getOrNull(1)?.toIntOrNull()
+                    val diskTitle = diskMatch.groupValues.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() }
                     groupSeasonCounter++
-                
                     currentSeason = groupSeasonCounter
                     seasonFirstAbsolute = null
-                
                     currentGroupName = buildString {
-                
                         append("Disk")
-                
-                        if (diskNumber != null) {
-                            append(" ")
-                            append(diskNumber)
-                        }
-                
-                        if (diskTitle != null) {
-                            append(" - ")
-                            append(diskTitle)
-                        }
+                        if (diskNumber != null) append(" $diskNumber")
+                        if (diskTitle != null) append(" - $diskTitle")
                     }
-                
                     return@elementLoop
                 }
 
-                // ----------------------------------------------------
-                // STAGIONI NORMALI
-                // ----------------------------------------------------
-
-                val match = seasonRegex.find(
-                    element.text()
-                )
-
+                val match = seasonRegex.find(element.text())
                 if (match != null) {
-
-                    val seasonNumber =
-                        match.groupValues
-                            .getOrNull(1)
-                            ?.toIntOrNull()
-                            ?: match.groupValues
-                                .getOrNull(2)
-                                ?.toIntOrNull()
-
+                    val seasonNumber = match.groupValues.getOrNull(1)?.toIntOrNull() ?: match.groupValues.getOrNull(2)?.toIntOrNull()
                     if (seasonNumber != null) {
-
                         currentGroupName = null
-
-                        // Se l'HTML ripete due volte la stessa stagione,
-                        // non azzeriamo inutilmente il riferimento.
                         if (currentSeason != seasonNumber) {
                             currentSeason = seasonNumber
                             seasonFirstAbsolute = null
                         }
                     }
                 }
-
                 return@elementLoop
             }
 
-            // ----------------------------------------------------
-            // BLOCCHI EPISODI
-            // ----------------------------------------------------
-
-            if (element.tagName() != "p") {
-                return@elementLoop
-            }
+            if (element.tagName() != "p") return@elementLoop
 
             val lines = splitByBr(element)
 
             lines.forEach lineLoop@ { lineData ->
-            
-                val cleanLine = lineData.text
-                    .trim()
-                    .replace(
-                        Regex("""\s+"""),
-                        " "
-                    )
-            
+                val cleanLine = lineData.text.trim().replace(Regex("""\s+"""), " ")
                 val playerLinks = lineData.links
+                val normalizedLine = normalize(cleanLine)
 
-                    // ====================================================
-                    // CAMBIO SEZIONE DENTRO I PARAGRAFI
-                    // ====================================================
-                    
-                    val normalizedLine = normalize(cleanLine)
-                    
-                    // ----------------------------------------------------
-                    // SPECIALI / OVA
-                    // Esempio: <span>Speciali Tv:</span>
-                    // ----------------------------------------------------
-                    
-                    if (
-                        normalizedLine == "speciali" ||
-                        normalizedLine == "special" ||
-                        normalizedLine == "speciali tv" ||
-                        normalizedLine == "special tv" ||
-                        normalizedLine == "episodi speciali" ||
-                        normalizedLine == "ova" ||
-                        normalizedLine == "oav" ||
-                        normalizedLine == "extra" ||
-                        normalizedLine == "episodi extra"
-                    ) {
-                        currentSeason = 0
-                        seasonFirstAbsolute = null
-                        currentGroupName = null
-                    
-                        return@lineLoop
-                    }
-                    
-                    // ----------------------------------------------------
-                    // DISK / DISC / DISCO
-                    // ----------------------------------------------------
-                    
-                    val paragraphDiskMatch = diskRegex.find(cleanLine)
-                    
-                    if (paragraphDiskMatch != null) {
-                    
-                        val diskNumber = paragraphDiskMatch
-                            .groupValues
-                            .getOrNull(1)
-                            ?.toIntOrNull()
-                    
-                        val diskTitle = paragraphDiskMatch
-                            .groupValues
-                            .getOrNull(2)
-                            ?.trim()
-                            ?.takeIf { it.isNotBlank() }
-                    
-                        groupSeasonCounter++
-                    
-                        currentSeason = groupSeasonCounter
-                        seasonFirstAbsolute = null
-                    
-                        currentGroupName = buildString {
-                    
-                            append("Disk")
-                    
-                            if (diskNumber != null) {
-                                append(" ")
-                                append(diskNumber)
-                            }
-                    
-                            if (diskTitle != null) {
-                                append(" - ")
-                                append(diskTitle)
-                            }
-                        }
-                    
-                        return@lineLoop
-                    }
-
-                // ====================================================
-                // SPECIALI TV
-                // ====================================================
-                
-                val specialMatch = specialTvRegex.find(cleanLine)
-                
-                if (specialMatch != null) {
-                
-                    val specialNumber = specialMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
-                
-                    var specialTitle = specialMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.trim()
-                        .orEmpty()
-                
-                    specialTitle = cleanEpisodeTitle(specialTitle)
-                
-                    if (specialTitle.isBlank()) {
-                        return@lineLoop
-                    }
-                
-                    parsedEpisodes += ToonEpisode(
-                        season = 0,
-                        episode = specialNumber,
-                        absoluteEpisode = null,
-                        originalEpisode = specialNumber,
-                        suffix = "TV",
-                        title = specialTitle,
-                        links = playerLinks
-                    )
-                
+                if (normalizedLine in listOf("speciali", "special", "speciali tv", "special tv", "episodi speciali", "ova", "oav", "extra", "episodi extra")) {
+                    currentSeason = 0
+                    seasonFirstAbsolute = null
+                    currentGroupName = null
                     return@lineLoop
                 }
-                
-                
-                // ====================================================
-                // OVA / OAV / SPECIAL / EXTRA NUMERATI
-                // ====================================================
-                
-                val genericSpecialMatch = specialGenericRegex.find(cleanLine)
-                
-                if (genericSpecialMatch != null) {
-                
-                    val specialType = genericSpecialMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.uppercase()
-                        .orEmpty()
-                
-                    val specialNumber = genericSpecialMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
-                
-                    var specialTitle = genericSpecialMatch
-                        .groupValues
-                        .getOrNull(3)
-                        ?.trim()
-                        .orEmpty()
-                
-                    specialTitle = cleanEpisodeTitle(specialTitle)
-                
-                    if (specialTitle.isBlank()) {
-                        return@lineLoop
+
+                val paragraphDiskMatch = diskRegex.find(cleanLine)
+                if (paragraphDiskMatch != null) {
+                    val diskNumber = paragraphDiskMatch.groupValues.getOrNull(1)?.toIntOrNull()
+                    val diskTitle = paragraphDiskMatch.groupValues.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() }
+                    groupSeasonCounter++
+                    currentSeason = groupSeasonCounter
+                    seasonFirstAbsolute = null
+                    currentGroupName = buildString {
+                        append("Disk")
+                        if (diskNumber != null) append(" $diskNumber")
+                        if (diskTitle != null) append(" - $diskTitle")
                     }
-                
+                    return@lineLoop
+                }
+
+                val specialMatch = specialTvRegex.find(cleanLine)
+                if (specialMatch != null) {
+                    val specialNumber = specialMatch.groupValues.getOrNull(1)?.toIntOrNull() ?: return@lineLoop
+                    var specialTitle = cleanEpisodeTitle(specialMatch.groupValues.getOrNull(2)?.trim().orEmpty())
+                    if (specialTitle.isBlank()) return@lineLoop
+
+                    parsedEpisodes += ToonEpisode(
+                        season = 0, episode = specialNumber, absoluteEpisode = null,
+                        originalEpisode = specialNumber, suffix = "TV", title = specialTitle, links = playerLinks
+                    )
+                    return@lineLoop
+                }
+
+                val genericSpecialMatch = specialGenericRegex.find(cleanLine)
+                if (genericSpecialMatch != null) {
+                    val specialType = genericSpecialMatch.groupValues.getOrNull(1)?.uppercase().orEmpty()
+                    val specialNumber = genericSpecialMatch.groupValues.getOrNull(2)?.toIntOrNull() ?: return@lineLoop
+                    var specialTitle = cleanEpisodeTitle(genericSpecialMatch.groupValues.getOrNull(3)?.trim().orEmpty())
+                    if (specialTitle.isBlank()) return@lineLoop
+
                     val label = when (specialType) {
                         "OAV" -> "OAV"
                         "OVA" -> "OVA"
@@ -2004,48 +800,21 @@ private data class ToonLine(
                         "EXTRA" -> "Extra"
                         else -> specialType
                     }
-                
+
                     parsedEpisodes += ToonEpisode(
-                        season = 0,
-                        episode = specialNumber,
-                        absoluteEpisode = null,
-                        originalEpisode = specialNumber,
-                        suffix = label.uppercase(),
-                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle",
-                        links = playerLinks
+                        season = 0, episode = specialNumber, absoluteEpisode = null,
+                        originalEpisode = specialNumber, suffix = label.uppercase(),
+                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle", links = playerLinks
                     )
-                
                     return@lineLoop
                 }
-                
-                
-                // ====================================================
-                // OVA / OAV / SPECIAL / SPECIALE / EXTRA SENZA NUMERO
-                // ====================================================
-                
-                val unnumberedSpecialMatch =
-                    unnumberedSpecialRegex.find(cleanLine)
-                
+
+                val unnumberedSpecialMatch = unnumberedSpecialRegex.find(cleanLine)
                 if (unnumberedSpecialMatch != null) {
-                
-                    val specialType = unnumberedSpecialMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.uppercase()
-                        .orEmpty()
-                
-                    var specialTitle = unnumberedSpecialMatch
-                        .groupValues
-                        .getOrNull(3)
-                        ?.trim()
-                        .orEmpty()
-                
-                    specialTitle = cleanEpisodeTitle(specialTitle)
-                
-                    if (specialTitle.isBlank()) {
-                        return@lineLoop
-                    }
-                
+                    val specialType = unnumberedSpecialMatch.groupValues.getOrNull(2)?.uppercase().orEmpty()
+                    var specialTitle = cleanEpisodeTitle(unnumberedSpecialMatch.groupValues.getOrNull(3)?.trim().orEmpty())
+                    if (specialTitle.isBlank()) return@lineLoop
+
                     val label = when (specialType) {
                         "OAV" -> "OAV"
                         "OVA" -> "OVA"
@@ -2054,419 +823,167 @@ private data class ToonLine(
                         "EXTRA" -> "Extra"
                         else -> specialType
                     }
-                
-                    val specialNumber =
-                        (unnumberedSpecialCounters[specialType] ?: 0) + 1
-                
+
+                    val specialNumber = (unnumberedSpecialCounters[specialType] ?: 0) + 1
                     unnumberedSpecialCounters[specialType] = specialNumber
-                
+
                     parsedEpisodes += ToonEpisode(
-                        season = 0,
-                        episode = specialNumber,
-                        absoluteEpisode = null,
-                        originalEpisode = specialNumber,
-                        suffix = "${label.uppercase()}UN",
-                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle",
-                        links = playerLinks
+                        season = 0, episode = specialNumber, absoluteEpisode = null,
+                        originalEpisode = specialNumber, suffix = "${label.uppercase()}UN",
+                        title = "$label ${specialNumber.toString().padStart(2, '0')} - $specialTitle", links = playerLinks
                     )
-                
                     return@lineLoop
                 }
 
-                    // ====================================================
-                    // FORMATO MULTI-EPISODIO
-                    // Esempio:
-                    // 2x05-06-07 – Carly va in Giappone
-                    // 3x08-09 – Lascio iCarly
-                    // ====================================================
-                    
-                    val multiMatch = multiEpisodeRegex.find(cleanLine)
-                    
-                    if (multiMatch != null) {
-                    
-                        val explicitSeason = multiMatch
-                            .groupValues
-                            .getOrNull(1)
-                            ?.toIntOrNull()
-                            ?: return@lineLoop
-                    
-                        val episodeNumbers = multiMatch
-                            .groupValues
-                            .getOrNull(2)
-                            ?.split(Regex("""\s*-\s*"""))
-                            ?.mapNotNull { it.toIntOrNull() }
-                            .orEmpty()
-                    
-                        var title = multiMatch
-                            .groupValues
-                            .getOrNull(3)
-                            ?.trim()
-                            .orEmpty()
-                    
-                        title = cleanEpisodeTitle(title)
-                    
-                        if (episodeNumbers.isEmpty() || title.isBlank()) {
-                            return@lineLoop
-                        }
-                    
-                        val firstEpisode = episodeNumbers.first()
-                    
-                        val sourceLabel = buildString {
-                            append(explicitSeason)
-                            append("x")
-                            append(
-                                episodeNumbers.joinToString("-") {
-                                    it.toString().padStart(2, '0')
-                                }
-                            )
-                        }
-                    
-                        parsedEpisodes += ToonEpisode(
-                            season = explicitSeason,
-                            episode = firstEpisode,
-                            absoluteEpisode = null,
-                            originalEpisode = firstEpisode,
-                            suffix = "MULTI",
-                            title = "$sourceLabel - $title",
-                            links = playerLinks
-                        )
-                    
-                        return@lineLoop
-                    }
+                val multiMatch = multiEpisodeRegex.find(cleanLine)
+                if (multiMatch != null) {
+                    val explicitSeason = multiMatch.groupValues.getOrNull(1)?.toIntOrNull() ?: return@lineLoop
+                    val episodeNumbers = multiMatch.groupValues.getOrNull(2)?.split(Regex("""\s*-\s*"""))?.mapNotNull { it.toIntOrNull() }.orEmpty()
+                    var title = cleanEpisodeTitle(multiMatch.groupValues.getOrNull(3)?.trim().orEmpty())
+                    if (episodeNumbers.isEmpty() || title.isBlank()) return@lineLoop
 
-                // ====================================================
-                // FORMATO ESPLICITO SxE / SxEA-B
-                // ====================================================
+                    val firstEpisode = episodeNumbers.first()
+                    val sourceLabel = "${explicitSeason}x" + episodeNumbers.joinToString("-") { it.toString().padStart(2, '0') }
 
-                val explicitMatch =
-                    explicitEpisodeRegex.find(cleanLine)
+                    parsedEpisodes += ToonEpisode(
+                        season = explicitSeason, episode = firstEpisode, absoluteEpisode = null,
+                        originalEpisode = firstEpisode, suffix = "MULTI", title = "$sourceLabel - $title", links = playerLinks
+                    )
+                    return@lineLoop
+                }
 
+                val explicitMatch = explicitEpisodeRegex.find(cleanLine)
                 if (explicitMatch != null) {
-
-                    val explicitSeason = explicitMatch
-                        .groupValues
-                        .getOrNull(1)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
-
-                    val originalEpisode = explicitMatch
-                        .groupValues
-                        .getOrNull(2)
-                        ?.toIntOrNull()
-                        ?: return@lineLoop
+                    val explicitSeason = explicitMatch.groupValues.getOrNull(1)?.toIntOrNull() ?: return@lineLoop
+                    val originalEpisode = explicitMatch.groupValues.getOrNull(2)?.toIntOrNull() ?: return@lineLoop
 
                     if (originalEpisode == 0) {
+                        var specialTitle = cleanEpisodeTitle(explicitMatch.groupValues.getOrNull(4)?.trim().orEmpty())
+                        if (specialTitle.isBlank()) return@lineLoop
 
-                        var specialTitle = explicitMatch
-                            .groupValues
-                            .getOrNull(4)
-                            ?.trim()
-                            .orEmpty()
-                    
-                        specialTitle = cleanEpisodeTitle(specialTitle)
-                    
-                        if (specialTitle.isBlank()) {
-                            return@lineLoop
-                        }
-                    
                         parsedEpisodes += ToonEpisode(
-                            season = 0,
-                            episode = 1,
-                            absoluteEpisode = null,
-                            originalEpisode = 0,
-                            suffix = "S${explicitSeason}E00",
-                            title = "${explicitSeason}x00 - $specialTitle",
-                            links = playerLinks
+                            season = 0, episode = 1, absoluteEpisode = null,
+                            originalEpisode = 0, suffix = "S${explicitSeason}E00",
+                            title = "${explicitSeason}x00 - $specialTitle", links = playerLinks
                         )
-                    
                         return@lineLoop
                     }
 
-                    val suffix = explicitMatch
-                        .groupValues
-                        .getOrNull(3)
-                        ?.trim()
-                        ?.uppercase()
-                        ?.takeIf {
-                            it.isNotBlank()
-                        }
-
-                    var title = explicitMatch
-                        .groupValues
-                        .getOrNull(4)
-                        ?.trim()
-                        .orEmpty()
-
-                    title = cleanEpisodeTitle(title)
-
-                    if (title.isBlank()) {
-                        return@lineLoop
-                    }
+                    val suffix = explicitMatch.groupValues.getOrNull(3)?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+                    var title = cleanEpisodeTitle(explicitMatch.groupValues.getOrNull(4)?.trim().orEmpty())
+                    if (title.isBlank()) return@lineLoop
 
                     val episodeKey = explicitSeason to originalEpisode
+                    val seenCount = explicitSeenCounts[episodeKey] ?: 0
+                    var duplicateOffset = explicitDuplicateOffsets[explicitSeason] ?: 0
 
-                    val seenCount =
-                        explicitSeenCounts[episodeKey] ?: 0
-                    
-                    var duplicateOffset =
-                        explicitDuplicateOffsets[explicitSeason] ?: 0
-                    
                     if (seenCount > 0) {
                         duplicateOffset++
-                    
-                        explicitDuplicateOffsets[explicitSeason] =
-                            duplicateOffset
+                        explicitDuplicateOffsets[explicitSeason] = duplicateOffset
                     }
-                    
-                    val nextEpisode =
-                        originalEpisode + duplicateOffset
-                    
-                    explicitSeenCounts[episodeKey] =
-                        seenCount + 1
+
+                    val nextEpisode = originalEpisode + duplicateOffset
+                    explicitSeenCounts[episodeKey] = seenCount + 1
 
                     val originalLabel = buildString {
-
-                        append(explicitSeason)
-                        append("x")
-
-                        append(
-                            originalEpisode
-                                .toString()
-                                .padStart(2, '0')
-                        )
-
-                        if (suffix != null) {
-                            append(suffix)
-                        }
+                        append("${explicitSeason}x${originalEpisode.toString().padStart(2, '0')}")
+                        if (suffix != null) append(suffix)
                     }
 
                     parsedEpisodes += ToonEpisode(
-                        season = explicitSeason,
-                        episode = nextEpisode,
-                        absoluteEpisode = null,
-                        originalEpisode = originalEpisode,
-                        suffix = suffix,
-                        title = "$originalLabel - $title",
-                        links = playerLinks
+                        season = explicitSeason, episode = nextEpisode, absoluteEpisode = null,
+                        originalEpisode = originalEpisode, suffix = suffix,
+                        title = "$originalLabel - $title", links = playerLinks
                     )
-
                     return@lineLoop
                 }
-                
+
                 val decimalMatch = decimalEpisodeRegex.find(cleanLine)
-                    
-                    if (decimalMatch != null) {
-                    
-                        val whole = decimalMatch
-                            .groupValues
-                            .getOrNull(1)
-                            ?.toIntOrNull()
-                            ?: return@lineLoop
-                    
-                        val decimal = decimalMatch
-                            .groupValues
-                            .getOrNull(2)
-                            ?.toIntOrNull()
-                            ?: return@lineLoop
-                    
-                        var title = decimalMatch
-                            .groupValues
-                            .getOrNull(3)
-                            ?.trim()
-                            .orEmpty()
-                    
-                        title = cleanEpisodeTitle(title)
-                    
-                        if (title.isBlank()) {
-                            return@lineLoop
-                        }
-                    
-                        val specialNumber = parsedEpisodes.count {
-                            it.season == 0 &&
-                                it.suffix?.startsWith("DECIMAL") == true
-                        } + 1
-                    
-                        parsedEpisodes += ToonEpisode(
-                            season = 0,
-                            episode = specialNumber,
-                            absoluteEpisode = null,
-                            originalEpisode = whole,
-                            suffix = "DECIMAL${whole}_${decimal}",
-                            title = "$whole.$decimal - $title",
-                            links = playerLinks
-                        )
-                    
-                        return@lineLoop
-                    }
-                // ====================================================
-                // FORMATO NUMERICO ASSOLUTO
-                // ====================================================
+                if (decimalMatch != null) {
+                    val whole = decimalMatch.groupValues.getOrNull(1)?.toIntOrNull() ?: return@lineLoop
+                    val decimal = decimalMatch.groupValues.getOrNull(2)?.toIntOrNull() ?: return@lineLoop
+                    var title = cleanEpisodeTitle(decimalMatch.groupValues.getOrNull(3)?.trim().orEmpty())
+                    if (title.isBlank()) return@lineLoop
+
+                    val specialNumber = parsedEpisodes.count { it.season == 0 && it.suffix?.startsWith("DECIMAL") == true } + 1
+
+                    parsedEpisodes += ToonEpisode(
+                        season = 0, episode = specialNumber, absoluteEpisode = null,
+                        originalEpisode = whole, suffix = "DECIMAL${whole}_${decimal}",
+                        title = "$whole.$decimal - $title", links = playerLinks
+                    )
+                    return@lineLoop
+                }
 
                 val season = currentSeason ?: 1
-
-                val match = episodeRegex.find(cleanLine)
-                    ?: return@lineLoop
-
-                val absoluteEpisode = match
-                    .groupValues
-                    .getOrNull(1)
-                    ?.toIntOrNull()
-                    ?: return@lineLoop
+                val match = episodeRegex.find(cleanLine) ?: return@lineLoop
+                val absoluteEpisode = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return@lineLoop
 
                 if (absoluteEpisode == 0) {
+                    var specialTitle = cleanEpisodeTitle(match.groupValues.getOrNull(2)?.trim().orEmpty())
+                    if (specialTitle.isBlank()) return@lineLoop
 
-                    var specialTitle = match
-                        .groupValues
-                        .getOrNull(2)
-                        ?.trim()
-                        .orEmpty()
-                
-                    specialTitle = cleanEpisodeTitle(specialTitle)
-                
-                    if (specialTitle.isBlank()) {
-                        return@lineLoop
-                    }
-                
                     parsedEpisodes += ToonEpisode(
-                        season = 0,
-                        episode = 1,
-                        absoluteEpisode = null,
-                        originalEpisode = 0,
-                        suffix = "ZERO",
-                        title = "00 - $specialTitle",
-                        links = playerLinks
+                        season = 0, episode = 1, absoluteEpisode = null,
+                        originalEpisode = 0, suffix = "ZERO",
+                        title = "00 - $specialTitle", links = playerLinks
                     )
-                
                     return@lineLoop
                 }
 
-                var title = match
-                    .groupValues
-                    .getOrNull(2)
-                    ?.trim()
-                    .orEmpty()
-
-                title = cleanEpisodeTitle(title)
-
-                if (title.isBlank()) {
-                    return@lineLoop
-                }
+                var title = cleanEpisodeTitle(match.groupValues.getOrNull(2)?.trim().orEmpty())
+                if (title.isBlank()) return@lineLoop
 
                 if (seasonFirstAbsolute == null) {
                     seasonFirstAbsolute = absoluteEpisode
                 }
 
-                val relativeEpisode =
-                    absoluteEpisode -
-                        (seasonFirstAbsolute ?: absoluteEpisode) +
-                        1
+                val relativeEpisode = absoluteEpisode - (seasonFirstAbsolute ?: absoluteEpisode) + 1
+                if (relativeEpisode <= 0) return@lineLoop
 
-                if (relativeEpisode <= 0) {
-                    return@lineLoop
-                }
+                val finalTitle = if (currentGroupName != null) "$currentGroupName - $title" else title
 
-                val finalTitle = if (currentGroupName != null) {
-                    "${currentGroupName} - $title"
-                } else {
-                    title
-                }
-                
                 parsedEpisodes += ToonEpisode(
-                    season = season,
-                    episode = relativeEpisode,
-                    absoluteEpisode = absoluteEpisode,
-                    originalEpisode = absoluteEpisode,
-                    suffix = null,
-                    title = finalTitle,
-                    links = playerLinks
+                    season = season, episode = relativeEpisode, absoluteEpisode = absoluteEpisode,
+                    originalEpisode = absoluteEpisode, suffix = null, title = finalTitle, links = playerLinks
                 )
             }
         }
 
         return parsedEpisodes
             .distinctBy { item ->
-
                 if (item.absoluteEpisode != null) {
-
-                    "ABS-" +
-                        item.season +
-                        "-" +
-                        item.absoluteEpisode
-
+                    "ABS-${item.season}-${item.absoluteEpisode}"
                 } else {
-
-                    "EXP-" +
-                        item.season +
-                        "-" +
-                        item.originalEpisode +
-                        "-" +
-                        item.suffix +
-                        "-" +
-                        item.episode
+                    "EXP-${item.season}-${item.originalEpisode}-${item.suffix}-${item.episode}"
                 }
             }
             .map { item ->
-
-                val encodedLinks = item.links
-                    .map { player ->
-                
-                        val encodedLabel =
-                            java.net.URLEncoder.encode(
-                                player.label,
-                                "UTF-8"
-                            )
-                
-                        val encodedUrl =
-                            java.net.URLEncoder.encode(
-                                player.url,
-                                "UTF-8"
-                            )
-                
-                        "$encodedLabel@@$encodedUrl"
-                    }
+                val encodedLinks = item.links.map { player ->
+                    val encodedLabel = java.net.URLEncoder.encode(player.label, "UTF-8")
+                    val encodedUrl = java.net.URLEncoder.encode(player.url, "UTF-8")
+                    "$encodedLabel@@$encodedUrl"
+                }
 
                 val episodeId = buildString {
-
-                    append("toonitalia://")
-                    append(item.season)
-                    append("/")
-
+                    append("toonitalia://${item.season}/")
                     if (item.absoluteEpisode != null) {
-
                         append(item.absoluteEpisode)
-
                     } else {
-
-                        append(
-                            item.originalEpisode
-                                ?: item.episode
-                        )
-                    
-                        if (item.suffix != null) {
-                            append(item.suffix)
-                        }
-                    
-                        append("-")
-                        append(item.episode)
+                        append(item.originalEpisode ?: item.episode)
+                        if (item.suffix != null) append(item.suffix)
+                        append("-${item.episode}")
                     }
                 }
 
                 val episodeData = buildString {
-
                     append(episodeId)
-                
                     if (encodedLinks.isNotEmpty()) {
-                        append("||")
-                
-                        append(
-                            encodedLinks.joinToString("|")
-                        )
+                        append("||" + encodedLinks.joinToString("|"))
                     }
                 }
 
-                newEpisode(
-                    episodeData
-                ) {
+                newEpisode(episodeData) {
                     name = item.title
                     season = item.season
                     episode = item.episode
@@ -2474,44 +991,15 @@ private data class ToonLine(
             }
     }
 
-    // ============================================================
-    // PULIZIA TITOLO EPISODIO
-    // ============================================================
-
-    private fun cleanEpisodeTitle(
-        input: String
-    ): String {
-
+    private fun cleanEpisodeTitle(input: String): String {
         return input
-            .replace(
-                Regex(
-                    """\s*[-–—]\s*PLAYER\s*\d+.*$""",
-                    RegexOption.IGNORE_CASE
-                ),
-                ""
-            )
-            .replace(
-                Regex(
-                    """\s+PLAYER\s*\d+.*$""",
-                    RegexOption.IGNORE_CASE
-                ),
-                ""
-            )
+            .replace(Regex("""\s*[-–—]\s*PLAYER\s*\d+.*$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+PLAYER\s*\d+.*$""", RegexOption.IGNORE_CASE), "")
             .trim()
     }
 
-    // ============================================================
-    // FILTRI
-    // ============================================================
-
-    private fun isNavigationUrl(
-        url: String
-    ): Boolean {
-
-        val clean = url
-            .substringBefore("#")
-            .trimEnd('/')
-
+    private fun isNavigationUrl(url: String): Boolean {
+        val clean = url.substringBefore("#").trimEnd('/')
         val excluded = setOf(
             mainUrl,
             "$mainUrl/anime-ita",
@@ -2519,18 +1007,10 @@ private data class ToonLine(
             "$mainUrl/film-animazione",
             "$mainUrl/serie-tv"
         )
-
         return clean in excluded
     }
 
-    // ============================================================
-    // NORMALIZZAZIONE
-    // ============================================================
-
-    private fun normalize(
-        text: String
-    ): String {
-
+    private fun normalize(text: String): String {
         return text
             .lowercase()
             .replace("à", "a")
@@ -2539,14 +1019,8 @@ private data class ToonLine(
             .replace("ì", "i")
             .replace("ò", "o")
             .replace("ù", "u")
-            .replace(
-                Regex("""[^\p{L}\p{N}\s]"""),
-                " "
-            )
-            .replace(
-                Regex("""\s+"""),
-                " "
-            )
+            .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
     }
 }
