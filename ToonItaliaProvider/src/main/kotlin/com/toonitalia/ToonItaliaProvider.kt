@@ -5,7 +5,6 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.amap
 import org.jsoup.nodes.Element
 
 class ToonItaliaProvider : MainAPI() {
@@ -85,8 +84,6 @@ class ToonItaliaProvider : MainAPI() {
         )
     }
 
-    private val posterCache =
-        mutableMapOf<String, String?>()
 
     private fun getTypeFromHomeSection(
         title: String
@@ -190,21 +187,80 @@ class ToonItaliaProvider : MainAPI() {
             .trim()
     }
 
-    // ============================================================
-    // SEARCH
-    // ============================================================
-
-    override suspend fun search(
+        // ============================================================
+        // SEARCH
+        // ============================================================
+        
+        private val tmdbPosterCache =
+            mutableMapOf<String, String?>()
+        
+        private suspend fun getTmdbPoster(
+            title: String,
+            type: TvType
+        ): String? {
+        
+            val cleanTitle = title
+                .trim()
+                .takeIf { it.isNotBlank() }
+                ?: return null
+        
+            val cacheKey =
+                "${type.name}:${normalize(cleanTitle)}"
+        
+            if (tmdbPosterCache.containsKey(cacheKey)) {
+                return tmdbPosterCache[cacheKey]
+            }
+        
+            val poster = runCatching {
+        
+                when (type) {
+        
+                    TvType.AnimeMovie,
+                    TvType.Movie -> {
+        
+                        Tmdb.getMovie(
+                            title = cleanTitle,
+                            year = null
+                        )?.posterUrl
+                    }
+        
+                    TvType.Anime,
+                    TvType.TvSeries -> {
+        
+                        Tmdb.getTv(
+                            title = cleanTitle,
+                            year = null
+                        )?.posterUrl
+                    }
+        
+                    else -> null
+                }
+        
+            }.getOrNull()
+        
+            tmdbPosterCache[cacheKey] = poster
+        
+            return poster
+        }
+        
+        
+        override suspend fun search(
             query: String
         ): List<SearchResponse> {
         
-            val cleanQuery = query.trim()
+            val cleanQuery = query
+                .trim()
         
             if (cleanQuery.isBlank()) {
                 return emptyList()
             }
         
+            // --------------------------------------------------------
+            // RICERCA TOONITALIA
+            // --------------------------------------------------------
+        
             val document = runCatching {
+        
                 app.get(
                     "$mainUrl/",
                     params = mapOf(
@@ -212,257 +268,141 @@ class ToonItaliaProvider : MainAPI() {
                     ),
                     interceptor = cfKiller
                 ).document
-            }.getOrNull() ?: return emptyList()
+        
+            }.getOrNull()
+                ?: return emptyList()
         
             val articles = document
                 .select("article.post")
                 .toList()
         
-            return articles
-                .amap { article ->
-            
-                    val link = article.selectFirst(
-                        "h2.entry-title a[href], .entry-title a[href]"
-                    ) ?: return@amap null
-            
-                    val href = link
-                        .attr("abs:href")
-                        .takeIf { it.isNotBlank() }
-                        ?: return@amap null
-            
-                    val title = link
-                        .text()
-                        .trim()
-                        .takeIf { it.isNotBlank() }
-                        ?: return@amap null
-            
-                    if (!href.startsWith(mainUrl)) {
-                        return@amap null
-                    }
-            
-                    if (isNavigationUrl(href)) {
-                        return@amap null
-                    }
-            
-                    val classes = article
-                        .classNames()
-                        .map { it.lowercase() }
-                        .toSet()
-            
-                    val type = when {
-            
-                        classes.any {
-                            it == "category-serie-tv" ||
-                                it == "category-serie"
-                        } -> TvType.TvSeries
-            
-                        classes.any {
-                            it == "category-film-animazione" ||
-                                it == "category-film"
-                        } -> TvType.AnimeMovie
-            
-                        classes.any {
-                            it == "category-anime"
-                        } -> TvType.Anime
-            
-                        else -> TvType.TvSeries
-                    }
-            
-                    // Poster preso direttamente dalla pagina
-                    // della serie/film su ToonItalia.
-                    val poster =
-                        if (posterCache.containsKey(href)) {
-                    
-                            posterCache[href]
-                    
-                        } else {
-                    
-                            val loadedPoster = runCatching {
-                    
-                                val detailDocument =
-                                    app.get(href, interceptor = cfKiller).document
-                    
-                                val content =
-                                    detailDocument.selectFirst(
-                                        ".entry-content"
-                                    )
-                    
-                                content
-                                    ?.selectFirst("img")
-                                    ?.let { img ->
-                    
-                                        img.attr("abs:src")
-                                            .takeIf { it.isNotBlank() }
-                    
-                                            ?: img.attr("abs:data-src")
-                                                .takeIf { it.isNotBlank() }
-                    
-                                            ?: img.attr("abs:data-lazy-src")
-                                                .takeIf { it.isNotBlank() }
-                                    }
-                    
-                            }.getOrNull()
-                    
-                            posterCache[href] = loadedPoster
-                    
-                            loadedPoster
-                        }
-            
-                    when (type) {
-            
-                        TvType.Anime -> {
-                            newAnimeSearchResponse(
-                                title,
-                                href,
-                                TvType.Anime
-                            ) {
-                                posterUrl = poster
-                            }
-                        }
-            
-                        TvType.AnimeMovie -> {
-                            newMovieSearchResponse(
-                                title,
-                                href,
-                                TvType.AnimeMovie
-                            ) {
-                                posterUrl = poster
-                            }
-                        }
-            
-                        TvType.TvSeries -> {
-                            newTvSeriesSearchResponse(
-                                title,
-                                href,
-                                TvType.TvSeries
-                            ) {
-                                posterUrl = poster
-                            }
-                        }
-            
-                        else -> {
-                            newMovieSearchResponse(
-                                title,
-                                href,
-                                type
-                            ) {
-                                posterUrl = poster
-                            }
-                        }
-                    }
-            
-                }
-                .filterNotNull()
-                .distinctBy { it.url 
-            }
-
-    }
-
-    // ============================================================
-    // CONVERSIONE ELEMENTI TOONITALIA
-    // ============================================================
-
-    private fun Element.toSearchResult(): SearchResponse? {
-
-        val link = selectFirst(
-            "h2.entry-title a[href], .entry-title a[href]"
-        ) ?: return null
-
-        val href = link
-            .attr("abs:href")
-            .takeIf { it.isNotBlank() }
-            ?: return null
-
-        val title = link
-            .text()
-            .trim()
-            .takeIf { it.isNotBlank() }
-            ?: return null
-
-        if (!href.startsWith(mainUrl)) {
-            return null
-        }
-
-        if (isNavigationUrl(href)) {
-            return null
-        }
-
-        val classes = classNames()
-            .map { it.lowercase() }
-            .toSet()
-
-        val type = when {
-
-            classes.any {
-                it == "category-serie-tv" ||
-                    it == "category-serie"
-            } -> TvType.TvSeries
-
-            classes.any {
-                it == "category-film-animazione" ||
-                    it == "category-film"
-            } -> TvType.AnimeMovie
-
-            classes.any {
-                it == "category-anime"
-            } -> TvType.Anime
-
-            else -> TvType.TvSeries
-        }
-
-        val poster = selectFirst("img")
-            ?.let { img ->
-
-                img.attr("abs:src")
+            val results = mutableListOf<SearchResponse>()
+        
+            // --------------------------------------------------------
+            // ELABORAZIONE SEQUENZIALE
+            //
+            // Non usiamo amap:
+            // evitiamo molte richieste TMDB contemporaneamente.
+            // --------------------------------------------------------
+        
+            for (article in articles) {
+        
+                val link = article.selectFirst(
+                    "h2.entry-title a[href], .entry-title a[href]"
+                ) ?: continue
+        
+                val href = link
+                    .attr("abs:href")
                     .takeIf { it.isNotBlank() }
-
-                    ?: img.attr("abs:data-src")
-                        .takeIf { it.isNotBlank() }
-            }
-
-        return when (type) {
-
-            TvType.Anime -> {
-                newAnimeSearchResponse(
-                    title,
-                    href,
-                    TvType.Anime
-                ) {
-                    posterUrl = poster
+                    ?: continue
+        
+                val title = link
+                    .text()
+                    .trim()
+                    .takeIf { it.isNotBlank() }
+                    ?: continue
+        
+                if (!href.startsWith(mainUrl)) {
+                    continue
                 }
-            }
-
-            TvType.AnimeMovie -> {
-                newMovieSearchResponse(
-                    title,
-                    href,
-                    TvType.AnimeMovie
-                ) {
-                    posterUrl = poster
+        
+                if (isNavigationUrl(href)) {
+                    continue
                 }
-            }
-
-            TvType.TvSeries -> {
-                newTvSeriesSearchResponse(
-                    title,
-                    href,
-                    TvType.TvSeries
-                ) {
-                    posterUrl = poster
+        
+                // ----------------------------------------------------
+                // TIPO
+                // ----------------------------------------------------
+        
+                val classes = article
+                    .classNames()
+                    .map { it.lowercase() }
+                    .toSet()
+        
+                val type = when {
+        
+                    classes.any {
+                        it == "category-serie-tv" ||
+                            it == "category-serie"
+                    } -> TvType.TvSeries
+        
+                    classes.any {
+                        it == "category-film-animazione" ||
+                            it == "category-film"
+                    } -> TvType.AnimeMovie
+        
+                    classes.any {
+                        it == "category-anime"
+                    } -> TvType.Anime
+        
+                    else -> TvType.TvSeries
                 }
-            }
-
-            else -> {
-                newTvSeriesSearchResponse(
-                    title,
-                    href,
-                    TvType.TvSeries
-                ) {
-                    posterUrl = poster
+        
+                // ----------------------------------------------------
+                // POSTER TMDB
+                // ----------------------------------------------------
+        
+                val poster = getTmdbPoster(
+                    title = title,
+                    type = type
+                )
+        
+                // ----------------------------------------------------
+                // RISULTATO
+                // ----------------------------------------------------
+        
+                val response = when (type) {
+        
+                    TvType.Anime -> {
+        
+                        newAnimeSearchResponse(
+                            title,
+                            href,
+                            TvType.Anime
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
+        
+                    TvType.AnimeMovie -> {
+        
+                        newMovieSearchResponse(
+                            title,
+                            href,
+                            TvType.AnimeMovie
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
+        
+                    TvType.TvSeries -> {
+        
+                        newTvSeriesSearchResponse(
+                            title,
+                            href,
+                            TvType.TvSeries
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
+        
+                    else -> {
+        
+                        newMovieSearchResponse(
+                            title,
+                            href,
+                            TvType.Movie
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
                 }
+        
+                results += response
             }
+        
+            return results
         }
-    }
 
     // ============================================================
     // SPLIT BLOCCHI CON <br>
