@@ -14,7 +14,7 @@ import java.net.URLEncoder
 class Altadefinizione01Provider : MainAPI() {
 
     override var mainUrl =
-        "https://altadefinizione-01.fun"
+        "https://altadefinizione-01.surf"
 
     override var name =
         "Altadefinizione01"
