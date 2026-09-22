@@ -61,11 +61,9 @@ class ToonItaliaProvider : MainAPI() {
 
                 val type = getTypeFromHomeSection(sectionTitle)
 
-                val items = column
-                    .select(".item a.card-link[href]")
-                    .mapNotNull { card ->
-                        card.toHomeSearchResponse(type)
-                    }
+                val items = column.select(".item a.card-link[href]")
+                    .apmap { card -> card.toHomeSearchResponse(type) }
+                    .filterNotNull()
                     .distinctBy { it.url }
 
                 if (items.isEmpty()) {
@@ -107,73 +105,98 @@ class ToonItaliaProvider : MainAPI() {
         }
     }
 
-    private fun Element.toHomeSearchResponse(
-        forcedType: TvType?
-    ): SearchResponse? {
-
-        val href = attr("abs:href")
-            .takeIf { it.isNotBlank() }
-            ?: return null
-
-        if (!href.startsWith(mainUrl)) {
-            return null
-        }
-
-        val title = selectFirst(".title")
-            ?.text()
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-
-        val poster = selectFirst("img")
-            ?.attr("abs:src")
-            ?.takeIf { it.isNotBlank() }
-
-        val type = forcedType ?: TvType.TvSeries
-
-        return when (type) {
-
-            TvType.Anime -> {
-                newAnimeSearchResponse(
-                    title,
-                    href,
-                    TvType.Anime
-                ) {
-                    posterUrl = poster
+            private suspend Element.toHomeSearchResponse(
+                forcedType: TvType?
+            ): SearchResponse? {
+            
+                val href = attr("abs:href")
+                    .takeIf { it.isNotBlank() }
+                    ?: return null
+            
+                if (!href.startsWith(mainUrl)) {
+                    return null
+                }
+            
+                val title = selectFirst(".title")
+                    ?.text()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return null
+            
+                val type = forcedType ?: TvType.TvSeries
+            
+                // ============================================================
+                // POSTER TOONITALIA
+                // ============================================================
+            
+                val sitePoster = selectFirst("img")
+                    ?.let { img ->
+                        img.attr("abs:src")
+                            .takeIf { it.isNotBlank() }
+                            ?: img.attr("abs:data-src")
+                                .takeIf { it.isNotBlank() }
+                    }
+            
+                // ============================================================
+                // POSTER TMDB
+                //
+                // Se ToonItalia non ha un poster valido,
+                // proviamo automaticamente TMDB.
+                // ============================================================
+            
+                val poster = sitePoster
+                    ?: getTmdbPoster(
+                        title = title,
+                        type = type
+                    )
+            
+                // ============================================================
+                // RISULTATO
+                // ============================================================
+            
+                return when (type) {
+            
+                    TvType.Anime -> {
+                        newAnimeSearchResponse(
+                            title,
+                            href,
+                            TvType.Anime
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
+            
+                    TvType.AnimeMovie -> {
+                        newMovieSearchResponse(
+                            title,
+                            href,
+                            TvType.AnimeMovie
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
+            
+                    TvType.TvSeries -> {
+                        newTvSeriesSearchResponse(
+                            title,
+                            href,
+                            TvType.TvSeries
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
+            
+                    else -> {
+                        newMovieSearchResponse(
+                            title,
+                            href,
+                            type
+                        ) {
+                            posterUrl = poster
+                        }
+                    }
                 }
             }
-
-            TvType.AnimeMovie -> {
-                newMovieSearchResponse(
-                    title,
-                    href,
-                    TvType.AnimeMovie
-                ) {
-                    posterUrl = poster
-                }
-            }
-
-            TvType.TvSeries -> {
-                newTvSeriesSearchResponse(
-                    title,
-                    href,
-                    TvType.TvSeries
-                ) {
-                    posterUrl = poster
-                }
-            }
-
-            else -> {
-                newMovieSearchResponse(
-                    title,
-                    href,
-                    type
-                ) {
-                    posterUrl = poster
-                }
-            }
-        }
-    }
 
     private fun cleanSectionTitle(
         title: String
@@ -194,6 +217,7 @@ class ToonItaliaProvider : MainAPI() {
         private val tmdbPosterCache =
             mutableMapOf<String, String?>()
         
+
         private suspend fun getTmdbPoster(
             title: String,
             type: TvType
@@ -211,7 +235,13 @@ class ToonItaliaProvider : MainAPI() {
                 return tmdbPosterCache[cacheKey]
             }
         
-            val poster = runCatching {
+            // ------------------------------------------------------------
+            // 1. PRIMO TENTATIVO
+            //
+            // Usiamo il titolo esattamente come fornito da ToonItalia.
+            // ------------------------------------------------------------
+        
+            val directPoster = runCatching {
         
                 when (type) {
         
@@ -238,10 +268,125 @@ class ToonItaliaProvider : MainAPI() {
         
             }.getOrNull()
         
-            tmdbPosterCache[cacheKey] = poster
+            if (!directPoster.isNullOrBlank()) {
         
-            return poster
+                tmdbPosterCache[cacheKey] = directPoster
+        
+                return directPoster
+            }
+        
+            // ------------------------------------------------------------
+            // 2. FALLBACK
+            //
+            // Ripuliamo i titoli che possono contenere informazioni
+            // aggiuntive usate da ToonItalia ma non presenti su TMDB.
+            // ------------------------------------------------------------
+        
+            val fallbackTitle = cleanTitle
+                .replace(
+                    Regex(
+                        """\s*[\[(](?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)[\])]\s*""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    " "
+                )
+                .replace(
+                    Regex(
+                        """\s*[-–—]\s*(?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)\s*$""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    ""
+                )
+                .replace(
+                    Regex(
+                        """\s+(?:ITA|SUB|SUB ITA|ITALIANO|DOPPIATO)\s*$""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    ""
+                )
+                .replace(
+                    Regex(
+                        """\s*[\[(]?(?:episodi|episode|episodes)\s*\d+(?:\s*[-–—]\s*\d+)?[\])]?""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    ""
+                )
+                .replace(
+                    Regex(
+                        """\s*[-–—]\s*\d+\s*episodi?\s*$""",
+                        RegexOption.IGNORE_CASE
+                    ),
+                    ""
+                )
+                .replace(
+                    Regex(
+                        """\s*\(\s*\d{4}\s*\)\s*$"""
+                    ),
+                    ""
+                )
+                .replace(
+                    Regex(
+                        """\s*\[\s*\d{4}\s*\]\s*$"""
+                    ),
+                    ""
+                )
+                .replace(
+                    Regex("""\s+"""),
+                    " "
+                )
+                .trim()
+        
+            // Se la pulizia non ha cambiato nulla, non facciamo
+            // una seconda richiesta identica.
+            if (
+                fallbackTitle.isNotBlank() &&
+                normalize(fallbackTitle) != normalize(cleanTitle)
+            ) {
+        
+                val fallbackPoster = runCatching {
+        
+                    when (type) {
+        
+                        TvType.AnimeMovie,
+                        TvType.Movie -> {
+        
+                            Tmdb.getMovie(
+                                title = fallbackTitle,
+                                year = null
+                            )?.posterUrl
+                        }
+        
+                        TvType.Anime,
+                        TvType.TvSeries -> {
+        
+                            Tmdb.getTv(
+                                title = fallbackTitle,
+                                year = null
+                            )?.posterUrl
+                        }
+        
+                        else -> null
+                    }
+        
+                }.getOrNull()
+        
+                if (!fallbackPoster.isNullOrBlank()) {
+        
+                    tmdbPosterCache[cacheKey] = fallbackPoster
+        
+                    return fallbackPoster
+                }
+            }
+        
+            // ------------------------------------------------------------
+            // NESSUN POSTER TROVATO
+            // ------------------------------------------------------------
+        
+            tmdbPosterCache[cacheKey] = null
+        
+            return null
         }
+
         
         
         override suspend fun search(
