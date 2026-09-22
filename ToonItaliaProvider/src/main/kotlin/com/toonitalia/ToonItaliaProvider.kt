@@ -146,14 +146,23 @@ class ToonItaliaProvider : MainAPI() {
                 ?.trim()
                 .orEmpty()
         
-            val poster = when {
+            val rawPoster = when {
                 isValidPosterUrl(src) -> src
                 isValidPosterUrl(dataSrc) -> dataSrc
                 else -> null
             }
         
+            // Applica l'header Referer per superare la protezione hotlink di WordPress/Cloudflare
+            val poster = rawPoster?.let { url ->
+                if (url.contains("toonitalia.xyz")) {
+                    "$url|Referer=$mainUrl/"
+                } else {
+                    url
+                }
+            }
+        
             println(
-                "[HOME POSTER] $title | src=$src | dataSrc=$dataSrc | poster=$poster"
+                "[HOME POSTER] $title | raw=$rawPoster | finalWithHeaders=$poster"
             )
         
             return when (type) {
