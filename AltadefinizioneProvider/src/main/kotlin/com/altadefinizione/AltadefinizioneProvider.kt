@@ -730,7 +730,7 @@ private fun toHorizontalHomeResponse(
 
                 episodes += newEpisode(
                     LinkData(
-                        url = "https://v.vidxgo.co/t/$vidxId/$season/$episode",
+                        url = "https://v.vidxgo.co/$vidxId/$season/$episode?se=0",
                         referer = pageUrl
                     )
                 ) {
@@ -889,7 +889,7 @@ private fun toHorizontalHomeResponse(
 
             results += newEpisode(
                 LinkData(
-                    url = "https://v.vidxgo.co/t/$vidxId/$season/$episode",
+                    url = "https://v.vidxgo.co/$vidxId/$season/$episode?se=0",
                     referer = referer
                 )
             ) {
