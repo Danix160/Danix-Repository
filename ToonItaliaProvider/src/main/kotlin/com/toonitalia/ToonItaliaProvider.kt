@@ -134,23 +134,27 @@ class ToonItaliaProvider : MainAPI() {
         
             val type = forcedType ?: TvType.TvSeries
         
-            val poster = selectFirst("img")
-                ?.let { img ->
+            val img = selectFirst("img")
         
-                    val src = img
-                        .attr("abs:src")
-                        .trim()
+            val src = img
+                ?.attr("abs:src")
+                ?.trim()
+                .orEmpty()
         
-                    val dataSrc = img
-                        .attr("abs:data-src")
-                        .trim()
+            val dataSrc = img
+                ?.attr("abs:data-src")
+                ?.trim()
+                .orEmpty()
         
-                    when {
-                        isValidPosterUrl(src) -> src
-                        isValidPosterUrl(dataSrc) -> dataSrc
-                        else -> null
-                    }
-                }
+            val poster = when {
+                isValidPosterUrl(src) -> src
+                isValidPosterUrl(dataSrc) -> dataSrc
+                else -> null
+            }
+        
+            println(
+                "[HOME POSTER] $title | src=$src | dataSrc=$dataSrc | poster=$poster"
+            )
         
             return when (type) {
         
