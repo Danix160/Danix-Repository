@@ -63,227 +63,245 @@ data class ArchiveItem(
 )
 
 override suspend fun getMainPage(
-    page: Int,
-    request: MainPageRequest
-): HomePageResponse {
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
 
-    // HOME PRINCIPALE
-    if (request.data == "$mainUrl/" || request.data == mainUrl) {
+        // HOME PRINCIPALE
+        if (request.data == "$mainUrl/" || request.data == mainUrl) {
 
-        if (page > 1) {
+            if (page > 1) {
+                return newHomePageResponse(
+                    emptyList<HomePageList>(),
+                    false
+                )
+            }
+
+            val document = app.get(mainUrl).document
+            val sections = mutableListOf<HomePageList>()
+
+            // 1. GESTIONE HERO BANNER SLIDER (In alto)
+            val sliderItems = document.select("#slider .swiper-slide").mapNotNull { slide ->
+                val link = slide.selectFirst(".slide-caption a[href*='.html'], a.slide-play, .slide-title a")
+                    ?: slide.selectFirst("a[href*='.html']")
+                    ?: return@mapNotNull null
+
+                val href = link.attr("href").takeIf { it.isNotBlank() && !it.startsWith("#") } ?: return@mapNotNull null
+                val url = fixUrl(href)
+
+                val title = slide.selectFirst(".slide-title, .slide-caption img")?.let { el ->
+                    if (el.tagName() == "img") el.attr("alt").ifBlank { el.attr("title") }
+                    else el.text()
+                }?.trim()?.takeIf { it.isNotBlank() } ?: extractTitleFromUrl(url) ?: return@mapNotNull null
+
+                val poster = slide.selectFirst("img.layer-image")?.let { img ->
+                    img.attr("data-src").ifBlank { img.attr("src") }
+                }?.takeIf { it.isNotBlank() }?.let(::fixUrl)
+
+                val isSeries = url.contains("/serie-tv/")
+
+                if (isSeries) {
+                    newTvSeriesSearchResponse(cleanTitle(title), url, TvType.TvSeries) {
+                        this.posterUrl = poster
+                    }
+                } else {
+                    newMovieSearchResponse(cleanTitle(title), url, TvType.Movie) {
+                        this.posterUrl = poster
+                    }
+                }
+            }.distinctBy { it.url }
+
+            if (sliderItems.isNotEmpty()) {
+                sections.add(
+                    HomePageList(
+                        name = "In Primo Piano",
+                        list = sliderItems,
+                        isHorizontalImages = true
+                    )
+                )
+            }
+
+            // 2. GESTIONE SEZIONI NORMALI
+            document.select("section.section").forEach { section ->
+                // Salta lo slider superiore già parsato
+                if (section.id() == "slider") return@forEach
+
+                val sectionTitle = section
+                    .selectFirst(".section-title")
+                    ?.text()
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+
+                val isTrending = sectionTitle.contains("Titoli del momento", ignoreCase = true) ||
+                                 section.selectFirst("#trending") != null
+
+                val items = mutableListOf<SearchResponse>()
+
+                if (isTrending) {
+                    // Card orizzontali del blocco trending
+                    section.select(".swiper-slide").forEach { slide ->
+                        val response = toHorizontalHomeResponse(slide)
+                        if (response != null) items.add(response)
+                    }
+                } else {
+                    // Sezione a Tab: prendi solo il tab attivo o il primo per evitare duplicati/sporcizia
+                    val container = section.selectFirst(".tab-content .tab-pane.active")
+                        ?: section.selectFirst(".tab-content .tab-pane")
+                        ?: section
+
+                    container.select(".movie").forEach { movie ->
+                        val response = toHomeSearchResponse(movie)
+                        if (response != null) items.add(response)
+                    }
+                }
+
+                val finalItems = items.distinctBy { it.url }
+
+                if (finalItems.isNotEmpty()) {
+                    sections.add(
+                        HomePageList(
+                            name = sectionTitle,
+                            list = finalItems,
+                            isHorizontalImages = isTrending
+                        )
+                    )
+                }
+            }
+
             return newHomePageResponse(
-                emptyList<HomePageList>(),
+                sections,
                 false
             )
         }
 
-        val document = app.get(mainUrl).document
-        val sections = mutableListOf<HomePageList>()
-
-        document.select("section.section").forEach { section ->
-
-            val sectionTitle = section
-                .selectFirst(".section-title")
-                ?.text()
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: return@forEach
-
-            val items = mutableListOf<SearchResponse>()
-
-            // Card verticali
-            section.select(".movie").forEach { movie ->
-                val response = toHomeSearchResponse(movie)
-
-                if (response != null) {
-                    items.add(response)
-                }
-            }
-
-            // Card orizzontali
-            section.select(".swiper-slide").forEach { slide ->
-
-                if (slide.selectFirst(".movie") == null) {
-                    val response = toHorizontalHomeResponse(slide)
-
-                    if (response != null) {
-                        items.add(response)
-                    }
-                }
-            }
-
-            val finalItems = items.distinctBy { it.url }
-
-            if (finalItems.isNotEmpty()) {
-                sections.add(
-                    HomePageList(
-                        name = sectionTitle,
-                        list = finalItems,
-                        isHorizontalImages = sectionTitle.equals(
-                            "Titoli del momento",
-                            ignoreCase = true
-                        )
-                    )
-                )
-            }
+        // CATEGORIE / GENERI
+        val categoryUrl = if (page > 1) {
+            "${request.data.trimEnd('/')}/page/$page/"
+        } else {
+            request.data
         }
 
+        val document = app.get(categoryUrl).document
+
+        val items = parseCards(document)
+            .distinctBy { it.url }
+
         return newHomePageResponse(
-            sections,
-            false
+            request.name,
+            items,
+            hasNext = items.isNotEmpty()
         )
     }
 
-    // CATEGORIE / GENERI
-    val categoryUrl = if (page > 1) {
-        "${request.data}?page=$page"
-    } else {
-        request.data
-    }
+    private fun toHomeSearchResponse(movie: Element): SearchResponse? {
+        val link = movie.selectFirst(".movie-poster a, .movie-title a, a[href*='.html']")
+            ?: return null
 
-    val document = app.get(categoryUrl).document
+        val href = movie.attr("data-link")
+            .ifBlank { link.attr("href") }
+            .trim()
+            .takeIf { it.isNotBlank() && !it.startsWith("#") }
+            ?: return null
 
-    val items = parseCards(document)
-        .distinctBy { it.url }
-    
-    return newHomePageResponse(
-        request.name,
-        items
-    )
-}
+        val url = fixUrl(href)
 
-private fun toHomeSearchResponse(
-    movie: Element
-): SearchResponse? {
-
-    val link = movie.selectFirst(
-        "a[href*='-streaming.html']"
-    ) ?: return null
-
-    val href = movie
-        .attr("data-link")
-        .ifBlank {
-            link.attr("href")
-        }
-        .takeIf { it.isNotBlank() }
-        ?: return null
-
-    val url = fixUrl(href)
-
-    val title = movie
-        .attr("data-title")
-        .ifBlank {
-            link.attr("data-title")
-        }
-        .ifBlank {
-            movie.selectFirst("img")
-                ?.attr("alt")
-                .orEmpty()
-        }
-        .trim()
-        .let(::cleanTitle)
-        .takeIf { it.isNotBlank() }
-        ?: return null
-
-    val poster = movie
-        .selectFirst("img")
-        ?.let { image ->
-            image.attr("data-src")
-                .ifBlank { image.attr("src") }
-        }
-        ?.takeIf { it.isNotBlank() }
-        ?.let(::fixUrl)
-
-    val kind = movie
-        .attr("data-kind")
-        .ifBlank {
-            link.attr("data-kind")
-        }
-
-    val isSeries =
-        kind.equals("series", ignoreCase = true) ||
-        url.contains("/serie-tv/")
-
-    return if (isSeries) {
-        newTvSeriesSearchResponse(
-            title,
-            url,
-            TvType.TvSeries
-        ) {
-            this.posterUrl = poster
-        }
-    } else {
-        newMovieSearchResponse(
-            title,
-            url,
-            TvType.Movie
-        ) {
-            this.posterUrl = poster
-        }
-    }
-}
-
-private fun toHorizontalHomeResponse(
-    slide: Element
-): SearchResponse? {
-
-    val link = slide.selectFirst(
-        ".movie-poster a[href*='-streaming.html'], " +
-            ".movie-title a[href*='-streaming.html']"
-    ) ?: return null
-
-    val href = link
-        .attr("href")
-        .trim()
-        .takeIf { it.isNotBlank() }
-        ?: return null
-
-    val url = fixUrl(href)
-
-    val image = slide.selectFirst(".movie-poster img")
-
-    val title = slide
-        .selectFirst(".movie-title")
-        ?.text()
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?: image
-            ?.attr("alt")
+        // 1. .movie-title 2. attributi 3. alt/title 4. slug url
+        val title = movie.selectFirst(".movie-title, h2, h3")
+            ?.text()
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-        ?: return null
+            ?: movie.attr("data-title").takeIf { it.isNotBlank() }
+            ?: link.attr("data-title").takeIf { it.isNotBlank() }
+            ?: movie.selectFirst("img")?.attr("alt")?.trim()?.takeIf { it.isNotBlank() }
+            ?: extractTitleFromUrl(url)
+            ?: return null
 
-    val poster = image
-        ?.let { img ->
-            img.attr("data-src")
-                .ifBlank { img.attr("src") }
-        }
-        ?.takeIf { it.isNotBlank() }
-        ?.let(::fixUrl)
+        val poster = movie.selectFirst("img")
+            ?.let { img ->
+                img.attr("data-src").ifBlank { img.attr("src") }
+            }
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::fixUrl)
 
-    val isSeries = url.contains(
-        "/serie-tv/",
-        ignoreCase = true
-    )
+        val kind = movie.attr("data-kind").ifBlank { link.attr("data-kind") }
+        val isSeries = kind.equals("series", ignoreCase = true) || url.contains("/serie-tv/")
 
-    return if (isSeries) {
-        newTvSeriesSearchResponse(
-            cleanTitle(title),
-            url,
-            TvType.TvSeries
-        ) {
-            this.posterUrl = poster
-        }
-    } else {
-        newMovieSearchResponse(
-            cleanTitle(title),
-            url,
-            TvType.Movie
-        ) {
-            this.posterUrl = poster
+        return if (isSeries) {
+            newTvSeriesSearchResponse(cleanTitle(title), url, TvType.TvSeries) {
+                this.posterUrl = poster
+            }
+        } else {
+            newMovieSearchResponse(cleanTitle(title), url, TvType.Movie) {
+                this.posterUrl = poster
+            }
         }
     }
-}
+
+    private fun toHorizontalHomeResponse(slide: Element): SearchResponse? {
+        val link = slide.selectFirst(".movie-poster a, a[href*='.html']")
+            ?: return null
+
+        val href = link.attr("href")
+            .trim()
+            .takeIf { it.isNotBlank() && !it.startsWith("#") }
+            ?: return null
+
+        val url = fixUrl(href)
+
+        val image = slide.selectFirst(".movie-poster img, img")
+
+        val poster = image
+            ?.let { img ->
+                img.attr("data-src").ifBlank { img.attr("src") }
+            }
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::fixUrl)
+
+        // Ricava il titolo dal commento HTML (<!--- <h2><a>Titolo</a></h2> --->) o dal link
+        val title = slide.selectFirst(".movie-title, h2, h3")
+            ?.text()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: image?.attr("alt")?.trim()?.takeIf { it.isNotBlank() }
+            ?: Regex("""<!--+.*?<a[^>]*>([^<]+)</a>.*?--+>""", RegexOption.DOT_MATCHES_ALL)
+                .find(slide.html())
+                ?.groupValues
+                ?.get(1)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+            ?: extractTitleFromUrl(url)
+            ?: return null
+
+        val isSeries = url.contains("/serie-tv/", ignoreCase = true)
+
+        return if (isSeries) {
+            newTvSeriesSearchResponse(cleanTitle(title), url, TvType.TvSeries) {
+                this.posterUrl = poster
+            }
+        } else {
+            newMovieSearchResponse(cleanTitle(title), url, TvType.Movie) {
+                this.posterUrl = poster
+            }
+        }
+    }
+
+    private fun extractTitleFromUrl(url: String): String? {
+        val slug = url.substringAfterLast("/")
+            .removeSuffix(".html")
+            .removeSuffix("-streaming")
+            .replace(Regex("""^\d+-"""), "")
+            .replace("-", " ")
+            .trim()
+
+        if (slug.isBlank()) return null
+
+        return slug.split(" ")
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { word ->
+                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
+    }
 
     // ============================================================
     // SEARCH
@@ -441,22 +459,15 @@ private fun toHorizontalHomeResponse(
     // CARD PARSER
     // ============================================================
 
-    private fun parseCards(
-        document: Document
-    ): List<SearchResponse> {
+    private fun parseCards(document: Document): List<SearchResponse> {
+        // Se la pagina contiene elementi con classe .movie, usiamo direttamente toHomeSearchResponse
+        val movies = document.select(".movie")
+        if (movies.isNotEmpty()) {
+            return movies.mapNotNull(::toHomeSearchResponse).distinctBy { it.url }
+        }
 
-        /*
-         * Usiamo href come elemento principale invece di dipendere
-         * eccessivamente dalle classi CSS.
-         *
-         * Le schede hanno URL del tipo:
-         *
-         * /fantascienza/12345-titolo-streaming.html
-         * /serie-tv/12345-titolo-streaming.html
-         */
-
-        return document
-            .select("a[href*='-streaming.html']")
+        return document.select("a[href*='.html']")
+            .filter { it.attr("href").contains("-streaming") }
             .mapNotNull(::toSearchResponse)
             .distinctBy { it.url }
     }
