@@ -41,6 +41,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Test JitPack
+        run: |
+          curl -I https://jitpack.io/com/github/recloudstream/gradle/-SNAPSHOT/maven-metadata.xml
+          curl -L https://jitpack.io/com/github/recloudstream/gradle/-SNAPSHOT/maven-metadata.xml
+
       - name: Build Plugins
         run: |
           cd $GITHUB_WORKSPACE/src
