@@ -1,0 +1,155 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/Altadefinizione01Provider.cs3",
+        "status": 1,
+        "version": 19,
+        "name": "Altadefinizione01Provider",
+        "internalName": "Altadefinizione01Provider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "Altadefinizione01.surf (Primo altadefinizione)",
+        "fileSize": 61366,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Cartoon"
+        ],
+        "iconUrl": "https://altadefinizione-01.fun/templates/altadefinizione01/images/logo.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-5942adb4d5cb6017c00ed488b1ef7ab37b73c1255cb8ebfeaa33a22e15c9027a"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/AltadefinizioneProvider.cs3",
+        "status": 1,
+        "version": 14,
+        "name": "AltadefinizioneProvider",
+        "internalName": "AltadefinizioneProvider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "Altadefinizione.space (Secondo Altadefinizione)",
+        "fileSize": 62451,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Cartoon"
+        ],
+        "iconUrl": "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/AltadefinizioneProvider/logo.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-df24ed4d00fd7fa0ffbec730401a47d6952bbca9a6bc0058f69a299eeb5950ec"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/CbProvider.cs3",
+        "status": 1,
+        "version": 91,
+        "name": "CbProvider",
+        "internalName": "CbProvider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "cb01uno.one",
+        "fileSize": 77979,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Cartoon"
+        ],
+        "iconUrl": "https://cb01uno.one/wp-content/uploads/2026/01/logo-official-uno-2026.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-35f09ff0fc7df82226855aeb4ef48ef8531fb828559a90d90d3fdbfcea91059f"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/GuardaPlayProvider.cs3",
+        "status": 1,
+        "version": 13,
+        "name": "GuardaPlayProvider",
+        "internalName": "GuardaPlayProvider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "GuardaPlay",
+        "fileSize": 29758,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Movie"
+        ],
+        "iconUrl": "https://guardaplay.online/wp-content/uploads/2026/06/cropped-GuardaPlay.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-9d03f4465c6a77be5da939724fb5e775ba2ae53d5f0b97155274873985df4f2a"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/LoonexProvider.cs3",
+        "status": 1,
+        "version": 39,
+        "name": "LoonexProvider",
+        "internalName": "LoonexProvider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "Archivio di Anime e Cartoni animati in italiano da Loonex",
+        "fileSize": 36512,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Cartoon",
+            "Anime",
+            "TvSeries",
+            "Movie"
+        ],
+        "iconUrl": "https://loonex.eu/archivio-cartoni-logo.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-767141bb82aa58b2c857847f8c7c3628101b9ab2681c25239cd577d28559bccb"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/OnlineSerieTvProvider.cs3",
+        "status": 1,
+        "version": 166,
+        "name": "OnlineSerieTvProvider",
+        "internalName": "OnlineSerieTvProvider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "OnlineSerieTV",
+        "fileSize": 63430,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Movie",
+            "TvSeries"
+        ],
+        "iconUrl": "https://raw.githubusercontent.com/Danix160/Danix-Repository/refs/heads/master/OnlineSerieTvProvider/1000108206.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-6e00fdb6e17802cd0f2a3bb4a47dffea6916c2234ad1b8710b096c99e530b0b1"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/Danix160/Danix-Repository/builds/ToonItaliaProvider.cs3",
+        "status": 1,
+        "version": 127,
+        "name": "ToonItaliaProvider",
+        "internalName": "ToonItaliaProvider",
+        "authors": [
+            "Danix"
+        ],
+        "description": "Archivio di Anime e Cartoni animati in italiano da ToonItalia.xyz",
+        "fileSize": 75672,
+        "repositoryUrl": "https://github.com/Danix160/Danix-Repository",
+        "language": "it",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Anime",
+            "Cartoon"
+        ],
+        "iconUrl": "https://toonitalia.xyz/wp-content/uploads/2023/08/cropped-Majintoon-192x192.jpg",
+        "apiVersion": 1,
+        "fileHash": "sha256-e3f6effdd36311933f71d03f78ae46fbc8339b5ef0c1fb09d1a62c1a91b03827"
+    }
+]
