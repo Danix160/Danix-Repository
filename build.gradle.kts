@@ -12,8 +12,8 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // Coordinate dirette del plugin su JitPack:
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
+        // Usa la versione esatta presente su JitPack:
+        classpath("com.github.recloudstream:gradle:master-32895aedb6-1")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
