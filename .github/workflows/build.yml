@@ -43,7 +43,8 @@ jobs:
 
       - name: Test CloudStream Gradle
         run: |
-          curl -I https://jitpack.io/com/github/recloudstream/gradle/32895aedb6/gradle-32895aedb6.pom
+          echo "Testing CloudStream Gradle plugin..."
+          curl -I -L https://jitpack.io/com/github/recloudstream/gradle/master-SNAPSHOT/maven-metadata.xml
 
       - name: Build Plugins
         run: |
