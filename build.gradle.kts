@@ -12,10 +12,8 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        
-        // Sostituisci master-SNAPSHOT con master-32895aedb6-1
-        classpath("com.github.recloudstream.gradle:com.lagradost.cloudstream3.gradle.gradle.plugin:master-32895aedb6-1")
-        
+        // Coordinate dirette del plugin su JitPack:
+        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
@@ -84,16 +82,13 @@ subprojects {
     dependencies {
         val implementation by configurations
 
-
-        implementation("com.github.recloudstream.cloudstream:library:master-SNAPSHOT")
+        // Usa pre-release-SNAPSHOT o master-SNAPSHOT
+        implementation("com.github.recloudstream.cloudstream:library:pre-release-SNAPSHOT")
 
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-
-        implementation(
-            "com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1"
-        )
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
     }
 }
 
