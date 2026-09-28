@@ -48,6 +48,19 @@ jobs:
           chmod +x gradlew
           ./gradlew publishToMavenLocal
 
+      - name: Inspect CloudStream library
+        run: |
+          echo "=== Maven cache ==="
+          find ~/.gradle/caches -type f \
+            | grep -E 'cloudstream.*library|library.*cloudstream' \
+            | head -50 || true
+      
+          echo "=== Gradle dependencies ==="
+          cd $GITHUB_WORKSPACE/src
+          ./gradlew :GuardaPlayProvider:dependencies \
+            --configuration debugCompileClasspath \
+            | grep -i -A5 -B2 cloudstream || true
+
       - name: Build Plugins
         run: |
           cd $GITHUB_WORKSPACE/src
