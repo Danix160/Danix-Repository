@@ -84,10 +84,10 @@ subprojects {
     dependencies {
         val implementation by configurations
 
-        // Corretto anche qui da :-SNAPSHOT a :master-SNAPSHOT (o :pre-release-SNAPSHOT)
-        implementation(
-            "com.github.recloudstream.cloudstream:library:master-SNAPSHOT"
-        )
+        // Se master-SNAPSHOT fallisce, usa pre-release-SNAPSHOT o un tag commit valido
+        implementation("com.github.recloudstream.cloudstream:library:pre-release-SNAPSHOT")
+        // oppure:
+        // implementation("com.github.recloudstream.cloudstream:library:master-SNAPSHOT")
 
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
