@@ -12,8 +12,7 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // Usa la versione esatta presente su JitPack:
-        classpath("com.github.recloudstream:gradle:master-32895aedb6-1")
+        classpath("com.github.recloudstream:gradle:32895aedb6")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
@@ -82,9 +81,7 @@ subprojects {
     dependencies {
         val implementation by configurations
 
-        // Usa pre-release-SNAPSHOT o master-SNAPSHOT
         implementation("com.github.recloudstream.cloudstream:library:pre-release-SNAPSHOT")
-
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
