@@ -12,8 +12,10 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // Usa il branch o un commit hash specifico
-        classpath("com.github.recloudstream.gradle:com.lagradost.cloudstream3.gradle.gradle.plugin:master-SNAPSHOT")
+        
+        // Sostituisci master-SNAPSHOT con master-32895aedb6-1
+        classpath("com.github.recloudstream.gradle:com.lagradost.cloudstream3.gradle.gradle.plugin:master-32895aedb6-1")
+        
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
