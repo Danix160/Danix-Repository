@@ -13,7 +13,7 @@ import java.net.URI
 
 class AltadefinizioneProvider : MainAPI() {
 
-    override var mainUrl = "https://altadefinizionex.live"
+    override var mainUrl = "https://altadefinizionex.me"
     override var name = "Altadefinizione"
     override var lang = "it"
 
@@ -347,7 +347,7 @@ override suspend fun getMainPage(
         
         val directPoster = posterUrl
             ?.replace(
-                "https://img.altadefinizionex.live//t/p/",
+                "https://img.altadefinizionex.me//t/p/",
                 "https://image.tmdb.org/t/p/"
             )
         
