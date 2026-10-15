@@ -60,7 +60,7 @@ class VidxGoExtractor : ExtractorApi() {
                     ?.takeIf {
                         it.isNotBlank()
                     }
-                    ?: "https://altadefinizione-01.surf/"
+                    ?: "https://altadefinizione-01.autos/"
 
             /*
              * =========================================================
@@ -378,7 +378,7 @@ class VidxGoExtractor : ExtractorApi() {
                 .find(pageReferer)
                 ?.groupValues
                 ?.getOrNull(1)
-                ?: "https://altadefinizione-01.surf"
+                ?: "https://altadefinizione-01.autos"
 
         val headers =
             mutableMapOf(
